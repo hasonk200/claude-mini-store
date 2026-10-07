@@ -273,8 +273,16 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
       <div class="autobox">
         <label class="check" for="inWeeklyReset">
           <input type="checkbox" id="inWeeklyReset">
-          <span><b>廠家啱啱重新重置咗每週額度</b><br><span class="c-muted">勾選後，呢次記錄時間會成為新嘅每週重置日子同時間；如果每週用量留空，會由 0% 開始。</span></span>
+          <span>
+            <b>廠家啱啱重新重置咗每週額度</b><br>
+            <span class="c-muted">勾選後，可以直接填重置發生時間；如果每週用量留空，會由 0% 開始。</span>
+          </span>
         </label>
+        <div class="field" id="weeklyResetTimeWrap" hidden style="margin:12px 0 0">
+          <label for="inWeeklyResetAt">重置發生時間</label>
+          <input type="datetime-local" id="inWeeklyResetAt" aria-label="每週額度重置時間" style="width:100%">
+          <div class="c-muted" style="font-size:13px;margin-top:6px">預設用而家時間；如果廠家較早已經重置，可以改返真正時間。</div>
+        </div>
       </div>
       <div class="field">
         <label for="inNote">備註（可以唔填）</label>
@@ -924,41 +932,67 @@ function linkRange(n,r){
   $(n).addEventListener('input',()=>{const v=num($(n).value);if(v!==null)$(r).value=Math.round(v);updateConv();});
 }
 linkRange('inW','rgW');linkRange('inS','rgS');
-$('inWeeklyReset').addEventListener('change',e=>{
-  if(!e.target.checked||$('inW').value!=='')return;
-  const v=toInput(0,tr().modeW);
-  $('inW').value=f1(v);$('rgW').value=Math.round(v);updateConv();
-});
+const resetBox=$('inWeeklyReset');
+const resetTimeWrap=$('weeklyResetTimeWrap');
+const resetTimeInput=$('inWeeklyResetAt');
+function syncWeeklyResetUI(){
+  resetTimeWrap.hidden=!resetBox.checked;
+  if(resetBox.checked){
+    if(!resetTimeInput.value)resetTimeInput.value=toLocalInput(Date.now());
+    if($('inW').value===''){
+      const v=toInput(0,tr().modeW);
+      $('inW').value=f1(v);$('rgW').value=Math.round(v);updateConv();
+    }
+  }else{
+    resetTimeInput.value='';
+  }
+}
+resetBox.addEventListener('change',syncWeeklyResetUI);
 function addRecord(){
   const t=tr();
-  const weeklyReset=$('inWeeklyReset').checked;
+  const weeklyReset=resetBox.checked;
   let w=fromInput(num($('inW').value),t.modeW);
   const s=fromInput(num($('inS').value),t.modeS);
   if(weeklyReset&&w===null)w=0;
   if(w===null&&s===null){toast('最少要填一個百分比');$('inW').focus();return;}
-  const ts=recordTime();
-  if(ts>Date.now()+M){toast('記錄時間唔可以喺將來');return;}
+
+  let ts=recordTime();
+  if(weeklyReset&&resetTimeInput.value){
+    const picked=new Date(resetTimeInput.value).getTime();
+    if(isFinite(picked))ts=picked;
+  }
+
+  if(ts>Date.now()+M){toast('重置／記錄時間唔可以喺將來');return;}
+
   if(weeklyReset){
     const rd=new Date(ts);
     t.weekDay=rd.getDay();
     t.weekTime=pad(rd.getHours())+':'+pad(rd.getMinutes());
   }
+
   let r=null;
   {
     const rh=parseFloat($('inRh').value)||0,rm=parseFloat($('inRm').value)||0;
     if(rh>0||rm>0)r=ts+clamp(rh,0,48)*H+clamp(rm,0,59)*M;
   }
+
   const ws=weekStart(t,ts);
   const prior=t.logs.filter(l=>l.w!==null&&l.t>=ws&&l.t<=ts);
   const prevW=prior.length?prior[prior.length-1].w:null;
+
   t.logs.push({id:uid(),t:ts,s,w,r,weeklyReset,note:$('inNote').value.trim().slice(0,200)});
   t.logs.sort((a,b)=>a.t-b.t);
   recomputeReset(t);
-  $('inRh').value='';$('inRm').value='';$('inNote').value='';$('inT').value='';$('inWeeklyReset').checked=false;$('moreT').open=false;
+
+  $('inRh').value='';$('inRm').value='';$('inNote').value='';$('inT').value='';
+  resetBox.checked=false;resetTimeInput.value='';syncWeeklyResetUI();
+  $('moreT').open=false;
+
   viewOffset=0;selDot=null;
   persist();render();prefill();
-  if(weeklyReset)toast('每週額度已重設 ✓ 新時間：逢'+fmtDay(ts)+' '+t.weekTime);
-  else if(w!==null&&prevW!==null&&w<prevW-0.5)toast('記低咗。每週用量少咗？可能已經重置，記得喺設定檢查重置時間');
+
+  if(weeklyReset)toast('每週額度已重新重設 ✓ 新週期：逢'+fmtDay(ts)+' '+t.weekTime);
+  else if(w!==null&&prevW!==null&&w<prevW-0.5)toast('記低咗。每週用量突然下降，可能發生咗額度重置。');
   else toast('記低咗 ✓ '+fmtDT(ts)+(w!==null?'，每週已用 '+f1(w)+'%':''));
 }
 $('addBtn').addEventListener('click',addRecord);
