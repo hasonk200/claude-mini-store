@@ -969,6 +969,7 @@ function fillSettings(){const t=tr();$('sName').value=t.name;$('sDay').value=Str
 function openSettings(){fillSettings();$('remBox').hidden=true;if(typeof dlg.showModal==='function')dlg.showModal();else dlg.setAttribute('open','');}
 function closeSettings(){if(typeof dlg.close==='function')dlg.close();else dlg.removeAttribute('open');}
 $('openSettings').addEventListener('click',openSettings);
+dlg.addEventListener('click',e=>{if(e.target===dlg)closeSettings();});
 let remCalc=null;
 function calcRemaining(){
   const d=parseFloat($('remD').value)||0,hh=parseFloat($('remH').value)||0,mm=parseFloat($('remM').value)||0;
