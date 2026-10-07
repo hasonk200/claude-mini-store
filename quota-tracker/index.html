@@ -270,6 +270,12 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
           <input type="number" class="sm" id="inRm" min="0" max="59" inputmode="numeric" placeholder="0" aria-label="分鐘"><span>分鐘</span>
         </div>
       </div>
+      <div class="autobox">
+        <label class="check" for="inWeeklyReset">
+          <input type="checkbox" id="inWeeklyReset">
+          <span><b>廠家啱啱重新重置咗每週額度</b><br><span class="c-muted">勾選後，呢次記錄時間會成為新嘅每週重置日子同時間；如果每週用量留空，會由 0% 開始。</span></span>
+        </label>
+      </div>
       <div class="field">
         <label for="inNote">備註（可以唔填）</label>
         <input type="text" id="inNote" maxlength="200" placeholder="例如：幫手寫咗份報告">
@@ -424,7 +430,7 @@ function normalize(s){
     out.modeW=out.modeW==='left'?'left':'used';out.modeS=out.modeS==='left'?'left':'used';out.autoReset=!!out.autoReset;
     out.sessionResetAt=typeof out.sessionResetAt==='number'?out.sessionResetAt:null;
     out.logs=(Array.isArray(t.logs)?t.logs:[]).filter(l=>l&&typeof l.t==='number'&&isFinite(l.t)).map(l=>({
-      id:l.id||uid(),t:l.t,s:num(l.s),w:num(l.w),r:typeof l.r==='number'?l.r:null,note:typeof l.note==='string'?l.note.slice(0,200):''
+      id:l.id||uid(),t:l.t,s:num(l.s),w:num(l.w),r:typeof l.r==='number'?l.r:null,weeklyReset:!!l.weeklyReset,note:typeof l.note==='string'?l.note.slice(0,200):''
     })).filter(l=>l.s!==null||l.w!==null).sort((a,b)=>a.t-b.t);
     return out;
   });
@@ -658,8 +664,10 @@ function renderAlert(t,s){
 function needleLabelShift(p){return p<12?'0%':p>88?'-100%':'-50%';}
 function renderHero(t,s,now){
   const diff=s.cur-s.pace;
+  const lastW=s.logsW.length?s.logsW[s.logsW.length-1]:null;
   let cls='c-muted',status;
-  if(!s.has){status='今個星期仲未有記錄。喺下面填低第一個數字，就可以開始追蹤。';}
+  if(lastW&&lastW.weeklyReset){cls='c-ok';status='每週額度已重新重設。新一輪由 '+f1(s.cur)+'% 開始，之後會按新重置時間計。';}
+  else if(!s.has){status='今個星期仲未有記錄。喺下面填低第一個數字，就可以開始追蹤。';}
   else if(s.cur>=100){cls='c-danger';status='用晒啦。';}
   else if(diff<=-5){cls='c-ok';status='用得幾慳，比平均進度少 '+f1(-diff)+'%。';}
   else if(diff<5){cls='c-ok';status='啱啱好，同平均進度差唔多（'+(diff>=0?'+':'')+f1(diff)+'%）。';}
@@ -846,6 +854,7 @@ function renderLog(){
     let chips='';
     if(l.w!==null){const d=deltas[l.id];chips+='<span class="chip w">每週 <b>'+f1(l.w)+'%</b><em class="'+(d>0?'up':'')+'">'+(d>=0?'+':'')+f1(d)+'</em></span>';}
     if(l.s!==null)chips+='<span class="chip">'+t.sessionHours+' 小時 <b>'+f1(l.s)+'%</b></span>';
+    if(l.weeklyReset)chips+='<span class="chip"><em>↺ 每週額度已重置</em></span>';
     if(l.r!==null)chips+='<span class="chip"><em>'+fmtTime(l.r)+' 重置</em></span>';
     return '<li><div class="lt"><b>'+fmtDate(l.t)+'（'+WD[new Date(l.t).getDay()]+'）</b><span>'+fmtTime(l.t)+'</span></div>'+
       '<div class="chips">'+chips+'</div>'+
@@ -915,12 +924,25 @@ function linkRange(n,r){
   $(n).addEventListener('input',()=>{const v=num($(n).value);if(v!==null)$(r).value=Math.round(v);updateConv();});
 }
 linkRange('inW','rgW');linkRange('inS','rgS');
+$('inWeeklyReset').addEventListener('change',e=>{
+  if(!e.target.checked||$('inW').value!=='')return;
+  const v=toInput(0,tr().modeW);
+  $('inW').value=f1(v);$('rgW').value=Math.round(v);updateConv();
+});
 function addRecord(){
   const t=tr();
-  const w=fromInput(num($('inW').value),t.modeW),s=fromInput(num($('inS').value),t.modeS);
+  const weeklyReset=$('inWeeklyReset').checked;
+  let w=fromInput(num($('inW').value),t.modeW);
+  const s=fromInput(num($('inS').value),t.modeS);
+  if(weeklyReset&&w===null)w=0;
   if(w===null&&s===null){toast('最少要填一個百分比');$('inW').focus();return;}
   const ts=recordTime();
   if(ts>Date.now()+M){toast('記錄時間唔可以喺將來');return;}
+  if(weeklyReset){
+    const rd=new Date(ts);
+    t.weekDay=rd.getDay();
+    t.weekTime=pad(rd.getHours())+':'+pad(rd.getMinutes());
+  }
   let r=null;
   {
     const rh=parseFloat($('inRh').value)||0,rm=parseFloat($('inRm').value)||0;
@@ -929,13 +951,14 @@ function addRecord(){
   const ws=weekStart(t,ts);
   const prior=t.logs.filter(l=>l.w!==null&&l.t>=ws&&l.t<=ts);
   const prevW=prior.length?prior[prior.length-1].w:null;
-  t.logs.push({id:uid(),t:ts,s,w,r,note:$('inNote').value.trim().slice(0,200)});
+  t.logs.push({id:uid(),t:ts,s,w,r,weeklyReset,note:$('inNote').value.trim().slice(0,200)});
   t.logs.sort((a,b)=>a.t-b.t);
   recomputeReset(t);
-  $('inRh').value='';$('inRm').value='';$('inNote').value='';$('inT').value='';$('moreT').open=false;
+  $('inRh').value='';$('inRm').value='';$('inNote').value='';$('inT').value='';$('inWeeklyReset').checked=false;$('moreT').open=false;
   viewOffset=0;selDot=null;
   persist();render();prefill();
-  if(w!==null&&prevW!==null&&w<prevW-0.5)toast('記低咗。每週用量少咗？可能已經重置，記得喺設定檢查重置時間');
+  if(weeklyReset)toast('每週額度已重設 ✓ 新時間：逢'+fmtDay(ts)+' '+t.weekTime);
+  else if(w!==null&&prevW!==null&&w<prevW-0.5)toast('記低咗。每週用量少咗？可能已經重置，記得喺設定檢查重置時間');
   else toast('記低咗 ✓ '+fmtDT(ts)+(w!==null?'，每週已用 '+f1(w)+'%':''));
 }
 $('addBtn').addEventListener('click',addRecord);
@@ -1023,10 +1046,10 @@ $('sExpJson').addEventListener('click',()=>{
 });
 $('sExpCsv').addEventListener('click',()=>{
   const t=tr();const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
-  const rows=[['時間','每週用量(%)',t.sessionHours+'小時用量(%)',t.sessionHours+'小時重置時間','備註']];
+  const rows=[['時間','每週用量(%)',t.sessionHours+'小時用量(%)',t.sessionHours+'小時重置時間','每週額度重置','備註']];
   for(const l of t.logs){
     const dt=new Date(l.t);
-    rows.push([dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate())+' '+fmtTime(l.t),l.w===null?'':l.w,l.s===null?'':l.s,l.r===null?'':toLocalInput(l.r).replace('T',' '),l.note]);
+    rows.push([dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate())+' '+fmtTime(l.t),l.w===null?'':l.w,l.s===null?'':l.s,l.r===null?'':toLocalInput(l.r).replace('T',' '),l.weeklyReset?'是':'',l.note]);
   }
   saveFile(t.name.replace(/[\\/:*?"<>|]/g,'')+'-記錄.csv','\ufeff'+rows.map(r=>r.map(q).join(',')).join('\r\n'));
 });
