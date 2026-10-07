@@ -1,0 +1,970 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>額度追蹤</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E8ECF0; --surface:#F7F9FB; --ink:#16202B; --muted:#5B6878; --line:#C9D1DA; --line-soft:#DCE2E8;
+  --use:#2A4FD4; --use-soft:rgba(42,79,212,.13); --pace:#B27600; --ok:#1B7A50; --warn:#C04A0B; --danger:#B42318;
+  --num:"Archivo","Arial Narrow",Arial,"Noto Sans TC",sans-serif;
+  --txt:"Noto Sans TC","PingFang TC","Microsoft JhengHei","Heiti TC",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F141C; --surface:#172030; --ink:#E5EAF1; --muted:#93A0B2; --line:#2C384A; --line-soft:#222C3B;
+    --use:#7D9BFF; --use-soft:rgba(125,155,255,.16); --pace:#F0B23A; --ok:#4CC38A; --warn:#FF9459; --danger:#FF6B5E;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F141C; --surface:#172030; --ink:#E5EAF1; --muted:#93A0B2; --line:#2C384A; --line-soft:#222C3B;
+  --use:#7D9BFF; --use-soft:rgba(125,155,255,.16); --pace:#F0B23A; --ok:#4CC38A; --warn:#FF9459; --danger:#FF6B5E;
+  color-scheme:dark;
+}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--txt);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:780px;margin:0 auto;padding:20px 18px 40px}
+h1,h2,h3{margin:0;line-height:1.3}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--use);outline-offset:2px}
+
+/* header */
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.top h1{font-size:22px;font-weight:700;letter-spacing:.02em}
+.sub{margin:2px 0 0;color:var(--muted);font-size:13.5px}
+.top-actions{display:flex;gap:8px;align-items:center}
+select,input[type=text],input[type=number],input[type=time],input[type=datetime-local]{
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:40px;max-width:100%}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:8px 14px;border-radius:8px;
+  border:1px solid var(--line);background:var(--surface);cursor:pointer;font-weight:500;font-size:15px;text-decoration:none}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--use);border-color:var(--use);color:#fff;font-weight:700}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent}
+.btn.danger-ghost{background:transparent;color:var(--danger);border-color:transparent}
+.btn.danger-ghost[data-armed="1"],.del[data-armed="1"]{background:var(--danger);color:#fff;border-color:var(--danger)}
+.btn:disabled{opacity:.4;cursor:default}
+
+/* alert */
+.alert{border-left:4px solid var(--danger);background:var(--surface);padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:16px;font-size:15px}
+.alert p{margin:0}
+.alert p+p{margin-top:4px}
+
+/* hero */
+.hero{padding:4px 0 6px}
+.hero-top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.kicker{font-size:15px;color:var(--muted);font-weight:500}
+.big{font-family:var(--num);font-stretch:68%;font-weight:800;font-size:clamp(84px,24vw,148px);line-height:.86;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.big .pct{font-size:.42em;font-weight:700;margin-left:.04em;vertical-align:.95em}
+.hero-day{text-align:right}
+.hero-day b{display:block;font-family:var(--num);font-stretch:75%;font-weight:700;font-size:30px;line-height:1}
+.hero-day span{color:var(--muted);font-size:13.5px}
+.status{margin:12px 0 18px;font-size:16.5px;font-weight:500}
+.c-ok{color:var(--ok)} .c-warn{color:var(--warn)} .c-danger{color:var(--danger)} .c-muted{color:var(--muted)}
+
+/* track */
+.track{position:relative;height:46px;margin-top:30px;border:1px solid var(--line);border-radius:6px;background:var(--surface);overflow:visible}
+.track .cells{position:absolute;inset:0;display:grid;border-radius:6px;overflow:hidden}
+.track .cell{border-right:1px solid var(--line-soft)}
+.track .cell:last-child{border-right:0}
+.track .cell.today{background:var(--use-soft)}
+.track .fill{position:absolute;left:0;top:0;bottom:0;background:var(--use);border-radius:5px 0 0 5px;transition:width .5s ease}
+.track .fill.full{border-radius:5px}
+.track .fill.hot{background:var(--danger)}
+.needle{position:absolute;top:-8px;bottom:-8px;width:3px;margin-left:-1.5px;background:var(--pace);border-radius:2px}
+.needle span{position:absolute;bottom:100%;margin-bottom:3px;white-space:nowrap;font-size:12.5px;font-weight:700;color:var(--pace);transform:translateX(var(--tx,-50%))}
+.warnmark{position:absolute;top:0;bottom:0;width:0;border-left:2px dotted var(--danger);opacity:.7}
+.cell-labels{display:grid;margin-top:6px;font-size:12px;color:var(--muted);text-align:center;line-height:1.3}
+.cell-labels .on{color:var(--ink);font-weight:700}
+.track.thin{height:30px;margin-top:28px}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:22px}
+.stats>div{background:var(--surface);padding:10px 12px}
+.stats span{display:block;font-size:12.5px;color:var(--muted)}
+.stats b{display:block;font-family:var(--num);font-stretch:75%;font-weight:700;font-size:24px;line-height:1.2;font-variant-numeric:tabular-nums}
+.stats small{display:block;font-size:12px;color:var(--muted)}
+.proj{margin:14px 0 0;font-size:15px}
+.setup{margin:14px 0 0;font-size:14.5px;color:var(--muted)}
+.linkbtn{background:none;border:0;padding:0;color:var(--use);text-decoration:underline;cursor:pointer;font-weight:500}
+
+/* blocks */
+.block{margin-top:34px;padding-top:22px;border-top:1px solid var(--line)}
+.block-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.block h2{font-size:18px;font-weight:700}
+.hint{color:var(--muted);font-size:14px;margin:4px 0 14px}
+.session-top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.mid{font-family:var(--num);font-stretch:70%;font-weight:800;font-size:56px;line-height:.95;font-variant-numeric:tabular-nums}
+.mid .pct{font-size:.45em;vertical-align:.8em}
+.session-msg{font-size:15px}
+
+/* form */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.field{margin-bottom:14px}
+.field>label,.field>.lbl{display:block;font-size:14px;font-weight:500;margin-bottom:6px}
+.numrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.numrow input[type=number]{width:96px;font-family:var(--num);font-size:22px;font-weight:700;font-stretch:80%}
+.numrow input.sm{width:72px;font-size:18px}
+.numrow span{color:var(--muted)}
+input[type=range]{width:100%;margin-top:8px;accent-color:var(--use)}
+.field input[type=text]{width:100%}
+details.more{margin:-4px 0 14px;font-size:14px}
+details.more summary{cursor:pointer;color:var(--muted)}
+details.more input{margin-top:8px}
+.lblrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.lblrow label{font-size:14px;font-weight:500}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--bg)}
+.seg button{border:0;background:transparent;padding:3px 12px;font-size:13.5px;cursor:pointer;min-height:30px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--use);color:#fff;font-weight:700}
+.conv{font-size:13.5px;color:var(--muted);min-height:1.4em;margin-top:4px}
+.conv b{color:var(--ink)}
+.check{display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:14.5px;cursor:pointer}
+.check input{width:18px;height:18px;margin-top:3px;accent-color:var(--use);flex:none}
+.autobox{margin-top:10px;padding:12px;border:1px dashed var(--line);border-radius:8px}
+.autobox .hint{margin:8px 0 12px}
+.form-foot{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+
+/* chart */
+.weeknav{display:flex;align-items:center;gap:6px}
+.weeknav .btn{min-height:34px;padding:4px 10px}
+.weeknav .lbl{font-size:14px;color:var(--muted);min-width:7.5em;text-align:center}
+#chart{width:100%;touch-action:pan-y}
+#chart svg{display:block;width:100%;height:auto}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:18px;height:0;border-top:3px solid var(--use);vertical-align:middle;margin-right:6px}
+.legend i.p{border-top:2px dashed var(--pace)}
+.legend i.f{border-top:2px dotted var(--use)}
+.legend i.w{border-top:2px dotted var(--danger)}
+.caption{min-height:1.6em;font-size:14px;margin-top:6px}
+svg text{font-family:var(--txt);fill:var(--muted)}
+svg .g{stroke:var(--line-soft);stroke-width:1}
+svg .g0{stroke:var(--line);stroke-width:1}
+svg .today{fill:var(--use-soft)}
+svg .pace{stroke:var(--pace);stroke-width:2;stroke-dasharray:6 5;fill:none}
+svg .actual{stroke:var(--use);stroke-width:3;fill:none;stroke-linejoin:round;stroke-linecap:round}
+svg .area{fill:var(--use-soft)}
+svg .proj{stroke:var(--use);stroke-width:2;stroke-dasharray:2 5;fill:none;stroke-linecap:round}
+svg .warnl{stroke:var(--danger);stroke-width:1.5;stroke-dasharray:2 4;opacity:.8}
+svg .now{stroke:var(--ink);stroke-width:1;opacity:.45}
+svg .dot{fill:var(--surface);stroke:var(--use);stroke-width:2.5}
+svg .dot.sel{fill:var(--use)}
+svg .hit{fill:transparent;cursor:pointer}
+svg .lastlbl{fill:var(--use);font-weight:700}
+svg .pacelbl{fill:var(--pace);font-weight:700}
+
+/* daily */
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;align-items:end}
+.day{display:flex;flex-direction:column;align-items:center;gap:4px}
+.day .val{font-family:var(--num);font-stretch:78%;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;min-height:1.3em}
+.day .col{position:relative;width:100%;height:120px;background:var(--surface);border:1px solid var(--line-soft);border-radius:5px;overflow:hidden}
+.day .bar{position:absolute;left:0;right:0;bottom:0;background:var(--use);transition:height .4s ease}
+.day .bar.over{background:var(--danger)}
+.day .budget{position:absolute;left:0;right:0;border-top:2px dashed var(--pace)}
+.day .dl{font-size:12px;color:var(--muted);text-align:center;line-height:1.3}
+.day.today .dl{color:var(--ink);font-weight:700}
+.day.future .col{opacity:.45}
+
+/* log */
+.log{list-style:none;margin:0;padding:0}
+.log li{display:grid;grid-template-columns:auto 1fr auto;gap:4px 14px;align-items:center;padding:12px 2px;border-bottom:1px solid var(--line-soft)}
+.log .lt b{display:block;font-size:14px}
+.log .lt span{font-family:var(--num);font-stretch:80%;font-weight:700;font-size:18px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:baseline;gap:5px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);font-size:14px;background:var(--surface)}
+.chip b{font-family:var(--num);font-stretch:80%;font-size:16px}
+.chip em{font-style:normal;font-size:12.5px;color:var(--muted)}
+.chip em.up{color:var(--warn)}
+.chip.w{border-color:var(--use)}
+.lnote{grid-column:2 / 4;font-size:14px;color:var(--muted);margin-top:-2px}
+.del{background:none;border:1px solid transparent;border-radius:6px;color:var(--muted);cursor:pointer;font-size:13.5px;padding:4px 8px;min-height:32px}
+.del:hover{border-color:var(--line)}
+.empty{color:var(--muted);font-size:15px;padding:8px 0}
+
+/* history */
+.hist{list-style:none;margin:0;padding:0}
+.hist li{display:grid;grid-template-columns:8.5em 1fr 4em;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft);cursor:pointer}
+.hist li:hover .hb{background:var(--use)}
+.hist .hd{font-size:14px}
+.hist .hbar{height:10px;background:var(--surface);border:1px solid var(--line-soft);border-radius:5px;overflow:hidden}
+.hist .hb{height:100%;background:var(--muted);opacity:.85}
+.hist .hv{font-family:var(--num);font-stretch:80%;font-weight:700;text-align:right}
+
+.foot{margin-top:36px;font-size:13px;color:var(--muted);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+/* dialog */
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);padding:0;width:min(520px,calc(100vw - 24px));max-height:calc(100% - 40px)}
+dialog::backdrop{background:rgba(10,15,25,.45)}
+.dlg{padding:20px}
+.dlg h2{font-size:20px;margin-bottom:16px}
+.dlg h3{font-size:16px;margin:4px 0 4px}
+.dlg hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+.dlg-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.dlg select{min-width:7em}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--ink);color:var(--bg);
+  padding:10px 16px;border-radius:8px;font-size:15px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:calc(100vw - 32px)}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+
+@media (max-width:560px){
+  .wrap{padding:16px 14px 32px}
+  .stats{grid-template-columns:1fr 1fr}
+  .grid2{gap:10px}
+  .numrow input[type=number]{width:84px}
+  .log li{grid-template-columns:auto 1fr auto}
+  .hist li{grid-template-columns:7.5em 1fr 3.5em}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <div>
+      <h1>額度追蹤</h1>
+      <p class="sub" id="subLine"></p>
+    </div>
+    <div class="top-actions">
+      <select id="trackerSel" aria-label="揀邊個追蹤"></select>
+      <button class="btn ghost" id="openSettings" type="button">設定</button>
+    </div>
+  </header>
+
+  <div id="alert" class="alert" hidden></div>
+
+  <section class="hero" id="hero" aria-live="polite"></section>
+
+  <section class="block" id="sessionBlock"></section>
+
+  <section class="block">
+    <div class="block-head"><h2>更新用量</h2></div>
+    <p class="hint">打開你個 AI 嘅用量頁面，抄低而家嘅百分比，撳「加一條記錄」就會自動記低時間。如果個 App 顯示嘅係「剩低幾多」，揀「剩低」就得，呢度會自動換成已用咗幾多。</p>
+    <div class="panel">
+      <div class="grid2">
+        <div class="field">
+          <div class="lblrow"><label for="inW">每週</label><div class="seg" data-for="W" role="group" aria-label="每週輸入方式"><button type="button" data-mode="used">已用</button><button type="button" data-mode="left">剩低</button></div></div>
+          <div class="numrow"><input type="number" id="inW" min="0" max="100" step="0.1" inputmode="decimal" placeholder="—"><span>%</span></div>
+          <div class="conv" id="convW"></div>
+          <input type="range" id="rgW" min="0" max="100" step="1" value="0" aria-label="每週用量滑桿">
+        </div>
+        <div class="field">
+          <div class="lblrow"><label for="inS" id="lblS">5 小時</label><div class="seg" data-for="S" role="group" aria-label="短期輸入方式"><button type="button" data-mode="used">已用</button><button type="button" data-mode="left">剩低</button></div></div>
+          <div class="numrow"><input type="number" id="inS" min="0" max="100" step="0.1" inputmode="decimal" placeholder="—"><span>%</span></div>
+          <div class="conv" id="convS"></div>
+          <input type="range" id="rgS" min="0" max="100" step="1" value="0" aria-label="短期用量滑桿">
+        </div>
+      </div>
+      <div class="field">
+        <span class="lbl" id="lblR">5 小時窗口仲有幾耐重置（可以唔填）</span>
+        <div class="numrow">
+          <input type="number" class="sm" id="inRh" min="0" max="24" inputmode="numeric" placeholder="0" aria-label="小時"><span>小時</span>
+          <input type="number" class="sm" id="inRm" min="0" max="59" inputmode="numeric" placeholder="0" aria-label="分鐘"><span>分鐘</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="inNote">備註（可以唔填）</label>
+        <input type="text" id="inNote" maxlength="200" placeholder="例如：幫手寫咗份報告">
+      </div>
+      <details class="more" id="moreT">
+        <summary>唔係而家？改記錄時間</summary>
+        <input type="datetime-local" id="inT" aria-label="記錄時間">
+      </details>
+      <div class="form-foot">
+        <button class="btn primary" id="addBtn" type="button">加一條記錄</button>
+        <span class="c-muted" style="font-size:13.5px">記錄時間會自動用而家</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-head">
+      <h2>每週走勢</h2>
+      <div class="weeknav">
+        <button class="btn ghost" id="prevW" type="button" aria-label="上一個星期">‹</button>
+        <span class="lbl" id="weekLbl"></span>
+        <button class="btn ghost" id="nextW" type="button" aria-label="下一個星期">›</button>
+      </div>
+    </div>
+    <div id="chart"></div>
+    <div class="legend">
+      <span><i></i>實際用量</span><span><i class="p"></i>平均進度（每日 14.3%）</span><span><i class="f"></i>照而家速度預計</span><span><i class="w"></i>警戒線</span>
+    </div>
+    <div class="caption" id="caption"></div>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2>每日用咗幾多</h2><span class="c-muted" style="font-size:14px">虛線係每日預算 14.3%</span></div>
+    <div class="days" id="days"></div>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2>更新記錄</h2><span class="c-muted" id="logCount" style="font-size:14px"></span></div>
+    <ul class="log" id="log"></ul>
+  </section>
+
+  <section class="block" id="historyBlock" hidden>
+    <div class="block-head"><h2>之前嘅星期</h2><span class="c-muted" style="font-size:14px">撳一下就睇返嗰個星期</span></div>
+    <ul class="hist" id="hist"></ul>
+  </section>
+
+  <footer class="foot"><span id="syncPill">準備緊…</span><span>所有百分比都係你自己輸入</span></footer>
+</main>
+
+<dialog id="settings" aria-labelledby="setTitle">
+  <div class="dlg">
+    <h2 id="setTitle">設定</h2>
+    <div class="field"><label for="sName">名稱</label><input type="text" id="sName" maxlength="40" style="width:100%"></div>
+    <div class="field">
+      <span class="lbl">每週額度幾時重置</span>
+      <div class="dlg-row">
+        <select id="sDay" aria-label="星期幾"></select>
+        <input type="time" id="sTime" aria-label="時間">
+      </div>
+      <button type="button" class="linkbtn" id="remToggle" style="margin-top:10px;font-size:14.5px">個 App 冇講星期幾重置？填剩餘時間幫你計</button>
+      <div class="autobox" id="remBox" hidden>
+        <span class="lbl" style="font-size:14px;margin-bottom:6px;display:block">個 App 話每週額度仲有幾耐重置</span>
+        <div class="numrow">
+          <input type="number" class="sm" id="remD" min="0" max="7" inputmode="numeric" placeholder="0" aria-label="日"><span>日</span>
+          <input type="number" class="sm" id="remH" min="0" max="23" inputmode="numeric" placeholder="0" aria-label="小時"><span>小時</span>
+          <input type="number" class="sm" id="remM" min="0" max="59" inputmode="numeric" placeholder="0" aria-label="分鐘"><span>分鐘</span>
+        </div>
+        <p class="hint" id="remHint">填好之後，呢度會計出係星期幾、幾點重置。</p>
+        <button type="button" class="btn" id="remApply" disabled>用呢個重置時間</button>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="sHours">短期額度長度（小時）</label><input type="number" id="sHours" min="1" max="24" step="1" style="width:100%"></div>
+      <div class="field"><label for="sWarn">警戒線（%）</label><input type="number" id="sWarn" min="1" max="100" step="1" style="width:100%"></div>
+    </div>
+    <div class="dlg-row">
+      <button type="button" class="btn primary" id="sSave">儲存設定</button>
+      <button type="button" class="btn ghost" id="sClose">取消</button>
+    </div>
+    <hr>
+    <h3>多個追蹤</h3>
+    <p class="hint">例如 Claude、ChatGPT、Gemini 各開一個，喺頂部揀返就得。</p>
+    <div class="dlg-row">
+      <button type="button" class="btn" id="sAdd">新增追蹤</button>
+      <button type="button" class="btn danger-ghost" id="sDel">刪除呢個追蹤</button>
+    </div>
+    <hr>
+    <h3>資料</h3>
+    <p class="hint">匯出備份可以之後匯入返；CSV 可以用 Excel 開。</p>
+    <div class="dlg-row" style="margin-bottom:10px">
+      <button type="button" class="btn" id="sExpJson">匯出備份</button>
+      <button type="button" class="btn" id="sExpCsv">匯出記錄 CSV</button>
+      <label class="btn" for="sImp">匯入備份</label>
+      <input type="file" id="sImp" accept=".json,application/json" hidden>
+    </div>
+    <button type="button" class="btn danger-ghost" id="sClear">清除呢個追蹤嘅所有記錄</button>
+  </div>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+const D=864e5, H=36e5, M=6e4;
+const WD=['日','一','二','三','四','五','六'];
+const LS_KEY='quota-tracker-v1';
+const $=id=>document.getElementById(id);
+let state, viewOffset=0, db=null, meId=null, dl=null, saveTimer=null, saving=false, again=false, selDot=null;
+
+/* ---------- helpers ---------- */
+const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-5);
+const pad=n=>String(n).padStart(2,'0');
+const f1=v=>{const r=Math.round(v*10)/10;return (Object.is(r,-0)?0:r).toString();};
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+function num(v){if(v===null||v===undefined||v==='')return null;const n=Number(v);return isFinite(n)?clamp(n,0,100):null;}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function fmtTime(t){const d=new Date(t);return pad(d.getHours())+':'+pad(d.getMinutes());}
+function fmtDate(t){const d=new Date(t);return (d.getMonth()+1)+'/'+d.getDate();}
+function fmtDay(t){return '週'+WD[new Date(t).getDay()];}
+function fmtDT(t){return fmtDate(t)+'（'+WD[new Date(t).getDay()]+'）'+fmtTime(t);}
+function fmtDur(ms){ms=Math.max(0,ms);const d=Math.floor(ms/D),h=Math.floor(ms%D/H),m=Math.floor(ms%H/M);
+  if(d)return d+'日 '+h+'小時'; if(h)return h+'小時 '+m+'分鐘'; return Math.max(1,m)+'分鐘';}
+function addDays(t,n){const d=new Date(t);d.setDate(d.getDate()+n);return d.getTime();}
+function toLocalInput(t){const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());}
+
+/* ---------- state ---------- */
+function newTracker(name){const d=new Date();return {id:uid(),name:name||'我的 AI',weekDay:d.getDay(),weekTime:'00:00',sessionHours:5,warnAt:80,sessionResetAt:null,modeW:'used',modeS:'used',autoReset:false,logs:[]};}
+function defaultState(){const t=newTracker('Claude');return {version:1,active:t.id,trackers:[t]};}
+function normalize(s){
+  if(!s||!Array.isArray(s.trackers)||!s.trackers.length)return null;
+  s.trackers=s.trackers.filter(Boolean).map(t=>{
+    const base=newTracker();
+    const out={...base,...t};
+    out.name=String(out.name||'我的 AI').slice(0,40);
+    out.weekDay=clamp(parseInt(out.weekDay,10)||0,0,6);
+    out.weekTime=/^\d{1,2}:\d{2}$/.test(out.weekTime)?out.weekTime:'00:00';
+    out.sessionHours=clamp(parseInt(out.sessionHours,10)||5,1,24);
+    out.warnAt=clamp(parseInt(out.warnAt,10)||80,1,100);
+    out.modeW=out.modeW==='left'?'left':'used';out.modeS=out.modeS==='left'?'left':'used';out.autoReset=!!out.autoReset;
+    out.sessionResetAt=typeof out.sessionResetAt==='number'?out.sessionResetAt:null;
+    out.logs=(Array.isArray(t.logs)?t.logs:[]).filter(l=>l&&typeof l.t==='number'&&isFinite(l.t)).map(l=>({
+      id:l.id||uid(),t:l.t,s:num(l.s),w:num(l.w),r:typeof l.r==='number'?l.r:null,note:typeof l.note==='string'?l.note.slice(0,200):''
+    })).filter(l=>l.s!==null||l.w!==null).sort((a,b)=>a.t-b.t);
+    return out;
+  });
+  if(!s.trackers.length)return null;
+  if(!s.trackers.find(t=>t.id===s.active))s.active=s.trackers[0].id;
+  s.version=1;
+  return s;
+}
+const tr=()=>state.trackers.find(t=>t.id===state.active)||state.trackers[0];
+
+function recomputeReset(t){
+  let cur=null;
+  for(const l of t.logs){
+    if(l.r!==null)cur=l.r;
+    else if(l.s!==null&&cur!==null&&l.t>=cur)cur=null;
+  }
+  t.sessionResetAt=cur;
+}
+
+/* ---------- storage ---------- */
+function loadLocal(){try{const s=localStorage.getItem(LS_KEY);return s?JSON.parse(s):null;}catch(e){return null;}}
+function saveLocal(){try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){}}
+function setSync(mode){
+  const el=$('syncPill');
+  el.textContent={cloud:'☁ 已存入你個帳戶，換部機都睇到',local:'記錄存喺呢個瀏覽器入面',error:'暫時同步唔到，先存喺呢個瀏覽器',loading:'連緊你個帳戶…',full:'雲端位滿咗，請匯出備份再清走舊記錄'}[mode]||'';
+}
+function persist(){
+  saveLocal();
+  if(db&&meId){clearTimeout(saveTimer);saveTimer=setTimeout(flush,600);}
+}
+async function flush(){
+  if(!db||!meId)return;
+  if(saving){again=true;return;}
+  saving=true;
+  try{
+    await db.doc('data/users/'+meId+'/tracker').set({json:JSON.stringify(state),updatedAt:Date.now()});
+    setSync('cloud');
+  }catch(e){
+    const c=e&&e.code;
+    if(c==='unavailable'){await new Promise(r=>setTimeout(r,800+Math.random()*800));
+      try{await db.doc('data/users/'+meId+'/tracker').set({json:JSON.stringify(state),updatedAt:Date.now()});setSync('cloud');}catch(e2){setSync('error');}}
+    else if(c==='quota_exceeded'||(c==='invalid_argument'&&JSON.stringify(state).length>240000))setSync('full');
+    else setSync('error');
+  }
+  saving=false;
+  if(again){again=false;flush();}
+}
+async function connect(){
+  if(!window.claude||typeof window.claude.use!=='function'){setSync('local');return;}
+  setSync('loading');
+  try{
+    const [d,u]=await Promise.all([window.claude.use('db'),window.claude.use('user')]);
+    if(!d||!u){setSync('local');return;}
+    const id=await u.id();
+    if(!id){setSync('local');return;}
+    const snap=await d.doc('data/users/'+id+'/tracker').get();
+    db=d;meId=id;
+    if(snap.exists){
+      const body=snap.data()||{};
+      let parsed=null;try{parsed=normalize(JSON.parse(body.json));}catch(e){}
+      if(parsed){state=parsed;saveLocal();viewOffset=0;render();prefill();}
+      setSync('cloud');
+    }else{
+      if(state.trackers.some(t=>t.logs.length))await flush();else setSync('cloud');
+    }
+  }catch(e){db=null;meId=null;setSync('local');}
+}
+async function connectDownloads(){
+  try{if(window.claude&&typeof window.claude.use==='function')dl=await window.claude.use('downloads');}catch(e){dl=null;}
+}
+async function saveFile(name,data){
+  if(dl){
+    try{await dl.save({filename:name,data});toast('已匯出 '+name);}
+    catch(e){if(!e||e.code!=='declined')toast('匯出唔到：'+((e&&e.message)||'請再試'));}
+    return;
+  }
+  try{await navigator.clipboard.writeText(data);toast('呢度下載唔到，已經複製咗內容到剪貼簿');}
+  catch(e){toast('呢度匯出唔到，試下喺 Claude 入面打開');}
+}
+
+/* ---------- toast & two-tap confirm ---------- */
+let toastT=null;
+function toast(msg){const el=$('toast');el.textContent=msg;el.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('on'),2600);}
+function twoTap(btn,label,fn){
+  if(btn.dataset.armed==='1'){btn.dataset.armed='';btn.textContent=btn.dataset.orig;fn();return;}
+  btn.dataset.orig=btn.textContent;btn.dataset.armed='1';btn.textContent=label;
+  setTimeout(()=>{if(btn.dataset.armed==='1'){btn.dataset.armed='';btn.textContent=btn.dataset.orig;}},3500);
+}
+
+/* ---------- calculations ---------- */
+function weekStart(t,at){
+  const parts=(t.weekTime||'00:00').split(':').map(Number);
+  const c=new Date(at);c.setHours(parts[0]||0,parts[1]||0,0,0);
+  const diff=(new Date(at).getDay()-t.weekDay+7)%7;
+  c.setDate(c.getDate()-diff);
+  if(c.getTime()>at)c.setDate(c.getDate()-7);
+  return c.getTime();
+}
+function weekLogs(t,ws,we){return t.logs.filter(l=>l.t>=ws&&l.t<we);}
+function cumAt(logsW,at){let v=0;for(const l of logsW){if(l.t<=at)v=l.w;else break;}return v;}
+
+function snapshot(t,now){
+  const ws=weekStart(t,now),we=addDays(ws,7),span=we-ws,el=now-ws;
+  const logsW=weekLogs(t,ws,we).filter(l=>l.w!==null);
+  const has=logsW.length>0;
+  const cur=has?logsW[logsW.length-1].w:0;
+  const pace=clamp(el/span*100,0,100);
+  const dayN=clamp(Math.floor(el/D)+1,1,7);
+  const todayBudget=dayN*100/7;
+  const left=we-now;
+  let rate=null,proj=null,hitAt=null;
+  if(has&&cur>0&&el>H){rate=cur/el;proj=rate*span;if(proj>100)hitAt=ws+100/rate;}
+  // session
+  const SH=t.sessionHours*H, r=t.sessionResetAt;
+  const sLogs=t.logs.filter(l=>l.s!==null);
+  let sState='unknown',sCur=0,sKnown=false,sPace=null,winStart=null;
+  if(r&&now<r){
+    sState='active';winStart=r-SH;
+    const inWin=sLogs.filter(l=>l.t>=winStart&&l.t<=now);
+    if(inWin.length){sCur=inWin[inWin.length-1].s;sKnown=true;}
+    sPace=clamp((now-winStart)/SH*100,0,100);
+  }else if(r&&now>=r){
+    sState='reset';sCur=0;sKnown=true;
+  }else{
+    const last=sLogs[sLogs.length-1];
+    if(last&&now-last.t<SH){sCur=last.s;sKnown=true;sState='noreset';}
+  }
+  return {ws,we,span,el,logsW,has,cur,pace,dayN,todayBudget,left,rate,proj,hitAt,
+    sState,sCur,sKnown,sPace,r,winStart,SH};
+}
+
+/* ---------- render ---------- */
+function render(){
+  const t=tr(),now=Date.now(),s=snapshot(t,now);
+  renderHeader(t,s);renderAlert(t,s);renderHero(t,s,now);renderSession(t,s,now);
+  renderChart();renderDays();renderLog();renderHistory();
+}
+function renderHeader(t){
+  const sel=$('trackerSel');
+  sel.innerHTML=state.trackers.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===t.id?' selected':'')+'>'+esc(x.name)+'</option>').join('');
+  sel.hidden=state.trackers.length<2;
+  $('subLine').textContent=t.name+'：每週 '+fmtDay(weekStart(t,Date.now()))+' '+t.weekTime+' 重置，短期額度 '+t.sessionHours+' 小時';
+  $('lblS').textContent=t.sessionHours+' 小時';
+  $('lblR').textContent=t.sessionHours+' 小時窗口仲有幾耐重置（可以唔填）';
+}
+function renderAlert(t,s){
+  const msgs=[];
+  if(s.cur>=100)msgs.push('今個星期嘅額度用晒啦，仲要等 '+fmtDur(s.left)+'（'+fmtDT(s.we)+'）先重置。');
+  else if(s.cur>=t.warnAt)msgs.push('每週用量已經去到 '+f1(s.cur)+'%，過咗你設嘅 '+t.warnAt+'% 警戒線，之後用慳啲啦。');
+  if(s.sState==='active'&&s.sKnown){
+    if(s.sCur>=100)msgs.push(t.sessionHours+' 小時額度用爆咗，'+fmtDur(s.r-Date.now())+' 後（'+fmtTime(s.r)+'）先用得返。');
+    else if(s.sCur>=t.warnAt)msgs.push(t.sessionHours+' 小時額度已經用咗 '+f1(s.sCur)+'%，就快到頂。');
+  }
+  const el=$('alert');
+  el.hidden=!msgs.length;
+  el.innerHTML=msgs.map(m=>'<p>'+esc(m)+'</p>').join('');
+}
+function needleLabelShift(p){return p<12?'0%':p>88?'-100%':'-50%';}
+function renderHero(t,s,now){
+  const diff=s.cur-s.pace;
+  let cls='c-muted',status;
+  if(!s.has){status='今個星期仲未有記錄。喺下面填低第一個數字，就可以開始追蹤。';}
+  else if(s.cur>=100){cls='c-danger';status='用晒啦。';}
+  else if(diff<=-5){cls='c-ok';status='用得幾慳，比平均進度少 '+f1(-diff)+'%。';}
+  else if(diff<5){cls='c-ok';status='啱啱好，同平均進度差唔多（'+(diff>=0?'+':'')+f1(diff)+'%）。';}
+  else if(diff<15){cls='c-warn';status='用快咗少少，比平均進度多 '+f1(diff)+'%。';}
+  else{cls='c-danger';status='用得好快，比平均進度多咗 '+f1(diff)+'%，留意下啦。';}
+  const numCls=s.cur>=t.warnAt?'c-danger':(s.has&&diff>=5?'c-warn':'');
+  const dayIdx=s.dayN-1;
+  let cells='',labels='';
+  for(let i=0;i<7;i++){
+    const d=addDays(s.ws,i);
+    cells+='<div class="cell'+(i===dayIdx?' today':'')+'"></div>';
+    labels+='<div class="'+(i===dayIdx?'on':'')+'">'+fmtDay(d).slice(1)+'<br>'+fmtDate(d)+'</div>';
+  }
+  const fillW=clamp(s.cur,0,100);
+  const daysLeft=s.left/D;
+  let perDay;
+  if(s.cur>=100)perDay='<b>0%</b><small>已經用晒</small>';
+  else if(daysLeft<1)perDay='<b>'+f1(100-s.cur)+'%</b><small>最後 '+fmtDur(s.left)+' 可以用</small>';
+  else perDay='<b>'+f1((100-s.cur)/daysLeft)+'%</b><small>平均每日（剩 '+f1(daysLeft)+' 日）</small>';
+  let proj='';
+  if(s.rate){
+    if(s.proj<=100)proj='照而家個速度，到重置前大約會用到 <b>'+f1(s.proj)+'%</b>，應該夠用。';
+    else proj='<span class="c-danger">照而家個速度，大約喺 <b>'+fmtDT(s.hitAt)+'</b> 就會用爆，比重置早咗 '+fmtDur(s.we-s.hitAt)+'。</span>';
+  }else if(s.has&&s.cur===0)proj='今個星期仲未用過，慢慢嚟。';
+  const setup=t.logs.length?'':'<p class="setup">第一次用？先去 <button class="linkbtn" type="button" data-open-settings>設定</button> 確認每週幾時重置；如果個 App 只顯示「仲有幾耐重置」，都可以喺度填剩餘時間幫你計（而家設咗逢'+fmtDay(s.ws)+' '+t.weekTime+'），咁每日進度先計得準。</p>';
+  $('hero').innerHTML=
+    '<div class="hero-top"><div><div class="kicker">今個星期用咗</div>'+
+    '<div class="big '+numCls+'">'+f1(s.cur)+'<span class="pct">%</span></div></div>'+
+    '<div class="hero-day"><b>第 '+s.dayN+' 日</b><span>一個星期 7 日</span></div></div>'+
+    '<p class="status '+cls+'">'+esc(status)+'</p>'+
+    '<div class="track" role="img" aria-label="每週用量 '+f1(s.cur)+'%，平均進度 '+f1(s.pace)+'%">'+
+      '<div class="cells" style="grid-template-columns:repeat(7,1fr)">'+cells+'</div>'+
+      '<div class="fill'+(fillW>=99.5?' full':'')+(s.cur>=t.warnAt?' hot':'')+'" style="width:'+fillW+'%"></div>'+
+      '<div class="warnmark" style="left:'+t.warnAt+'%" title="警戒線 '+t.warnAt+'%"></div>'+
+      '<div class="needle" style="left:'+s.pace+'%;--tx:'+needleLabelShift(s.pace)+'"><span>應到 '+f1(s.pace)+'%</span></div>'+
+    '</div>'+
+    '<div class="cell-labels" style="grid-template-columns:repeat(7,1fr)">'+labels+'</div>'+
+    '<div class="stats">'+
+      '<div><span>依家應該用到</span><b>'+f1(s.pace)+'%</b><small>平均進度</small></div>'+
+      '<div><span>今日完結前上限</span><b>'+f1(s.todayBudget)+'%</b><small>第 '+s.dayN+' 日 × 14.3%</small></div>'+
+      '<div><span>仲可以用</span>'+perDay+'</div>'+
+      '<div><span>重置倒數</span><b>'+fmtDur(s.left)+'</b><small>'+fmtDay(s.we)+' '+fmtDate(s.we)+' '+fmtTime(s.we)+'</small></div>'+
+    '</div>'+
+    (proj?'<p class="proj">'+proj+'</p>':'')+setup;
+}
+function renderSession(t,s,now){
+  const n=t.sessionHours;
+  let body='';
+  if(s.sState==='active'){
+    const diff=s.sCur-s.sPace;
+    let msg,cls;
+    if(!s.sKnown){msg='呢個窗口仲未有記錄。';cls='c-muted';}
+    else if(s.sCur>=100){msg='用爆咗，等 '+fmtDur(s.r-now)+' 先用得返。';cls='c-danger';}
+    else if(diff<=-5){msg='好穩陣，比平均進度少 '+f1(-diff)+'%。';cls='c-ok';}
+    else if(diff<5){msg='跟住進度用緊，啱啱好。';cls='c-ok';}
+    else{msg='用快咗，比平均進度多 '+f1(diff)+'%。';cls=diff<15?'c-warn':'c-danger';}
+    let cells='',labels='';
+    for(let i=0;i<n;i++){
+      const cs=s.winStart+i*H;
+      cells+='<div class="cell'+(now>=cs&&now<cs+H?' today':'')+'"></div>';
+      labels+='<div>'+fmtTime(cs)+'</div>';
+    }
+    const fillW=clamp(s.sCur,0,100);
+    body='<div class="session-top"><div class="mid '+(s.sCur>=t.warnAt?'c-danger':'')+'">'+f1(s.sCur)+'<span class="pct">%</span></div>'+
+      '<div class="session-msg"><div class="'+cls+'" style="font-weight:500">'+esc(msg)+'</div>'+
+      '<div class="c-muted">仲有 '+fmtDur(s.r-now)+' 重置（'+fmtTime(s.r)+'）</div></div></div>'+
+      '<div class="track thin" role="img" aria-label="'+n+' 小時用量 '+f1(s.sCur)+'%">'+
+        '<div class="cells" style="grid-template-columns:repeat('+n+',1fr)">'+(n<=12?cells:'')+'</div>'+
+        '<div class="fill'+(fillW>=99.5?' full':'')+(s.sCur>=t.warnAt?' hot':'')+'" style="width:'+fillW+'%"></div>'+
+        '<div class="needle" style="left:'+s.sPace+'%;--tx:'+needleLabelShift(s.sPace)+'"><span>應到 '+f1(s.sPace)+'%</span></div>'+
+      '</div>'+
+      (n<=12?'<div class="cell-labels" style="grid-template-columns:repeat('+n+',1fr)">'+labels+'</div>':'');
+  }else if(s.sState==='reset'){
+    body='<div class="session-top"><div class="mid c-ok">0<span class="pct">%</span></div>'+
+      '<div class="session-msg"><div class="c-ok" style="font-weight:500">上一個窗口喺 '+fmtDT(s.r)+' 已經重置咗。</div>'+
+      '<div class="c-muted">而家由零開始；下次更新時填埋「仲有幾耐重置」就計到新窗口嘅進度。</div></div></div>';
+  }else{
+    body='<div class="session-top"><div class="mid">'+(s.sKnown?f1(s.sCur):'—')+'<span class="pct">%</span></div>'+
+      '<div class="session-msg c-muted">'+(s.sKnown?'最近一次記錄嘅數字。':'未有記錄。')+
+      '唔知幾時重置，所以計唔到進度。更新時填埋「仲有幾耐重置」就得。</div></div>';
+  }
+  $('sessionBlock').innerHTML='<div class="block-head"><h2>'+n+' 小時額度</h2><span class="c-muted" style="font-size:14px">每粒格 = 1 小時</span></div>'+body;
+}
+
+function viewWeek(){const t=tr();const cws=weekStart(t,Date.now());const ws=addDays(cws,-7*viewOffset);return {t,ws,we:addDays(ws,7)};}
+
+function renderChart(){
+  const {t,ws,we}=viewWeek(),now=Date.now(),isCur=viewOffset===0;
+  $('weekLbl').textContent=isCur?'本星期':(fmtDate(ws)+' – '+fmtDate(addDays(ws,6)));
+  $('nextW').disabled=isCur;
+  const logsW=weekLogs(t,ws,we).filter(l=>l.w!==null);
+  const box=$('chart');
+  const W=Math.max(300,Math.round(box.clientWidth||700));
+  const HH=Math.round(clamp(W*0.5,230,320));
+  const pl=38,pr=12,pt=22,pb=42,iw=W-pl-pr,ih=HH-pt-pb;
+  const X=x=>pl+(x-ws)/(we-ws)*iw, Y=v=>pt+ih-clamp(v,0,100)/100*ih;
+  let s='<svg viewBox="0 0 '+W+' '+HH+'" width="'+W+'" height="'+HH+'" role="img" aria-label="每週用量走勢圖">';
+  s+='<defs><clipPath id="clipP"><rect x="'+pl+'" y="'+(pt-2)+'" width="'+iw+'" height="'+(ih+4)+'"/></clipPath></defs>';
+  if(isCur){
+    const dn=clamp(Math.floor((now-ws)/D),0,6);const a=addDays(ws,dn),b=addDays(ws,dn+1);
+    s+='<rect class="today" x="'+X(a)+'" y="'+pt+'" width="'+(X(b)-X(a))+'" height="'+ih+'"/>';
+  }
+  for(const v of [0,25,50,75,100]){
+    s+='<line class="'+(v===0?'g0':'g')+'" x1="'+pl+'" x2="'+(W-pr)+'" y1="'+Y(v)+'" y2="'+Y(v)+'"/>';
+    s+='<text x="'+(pl-6)+'" y="'+(Y(v)+4)+'" text-anchor="end" font-size="11">'+v+'%</text>';
+  }
+  for(let i=0;i<=7;i++){
+    const x=X(addDays(ws,i));
+    s+='<line class="g" x1="'+x+'" x2="'+x+'" y1="'+pt+'" y2="'+(pt+ih)+'"/>';
+    if(i<7){
+      const d=addDays(ws,i),mx=(x+X(addDays(ws,i+1)))/2;
+      s+='<text x="'+mx+'" y="'+(pt+ih+16)+'" text-anchor="middle" font-size="11.5">'+fmtDay(d)+'</text>';
+      s+='<text x="'+mx+'" y="'+(pt+ih+31)+'" text-anchor="middle" font-size="11">'+fmtDate(d)+'</text>';
+    }
+  }
+  s+='<line class="warnl" x1="'+pl+'" x2="'+(W-pr)+'" y1="'+Y(t.warnAt)+'" y2="'+Y(t.warnAt)+'"/>';
+  s+='<line class="pace" x1="'+X(ws)+'" y1="'+Y(0)+'" x2="'+X(we)+'" y2="'+Y(100)+'"/>';
+  s+='<g clip-path="url(#clipP)">';
+  const pts=[[ws,0]].concat(logsW.map(l=>[l.t,l.w]));
+  if(logsW.length){
+    const line=pts.map(p=>X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)).join(' ');
+    const last=pts[pts.length-1];
+    s+='<polygon class="area" points="'+X(ws)+','+Y(0)+' '+line+' '+X(last[0]).toFixed(1)+','+Y(0)+'"/>';
+    s+='<polyline class="actual" points="'+line+'"/>';
+    if(isCur&&last[1]>0&&now-ws>H){
+      const rate=last[1]/(now-ws);
+      const endT=Math.min(we,ws+100/rate*1.0001);
+      s+='<line class="proj" x1="'+X(last[0])+'" y1="'+Y(last[1])+'" x2="'+X(endT)+'" y2="'+Y(Math.min(100,rate*(endT-ws)))+'"/>';
+    }
+  }
+  s+='</g>';
+  if(isCur){const xn=X(now);s+='<line class="now" x1="'+xn+'" x2="'+xn+'" y1="'+(pt-4)+'" y2="'+(pt+ih)+'"/><text x="'+xn+'" y="'+(pt-8)+'" text-anchor="middle" font-size="11">而家</text>';}
+  logsW.forEach((l,i)=>{
+    const cx=X(l.t),cy=Y(l.w);
+    s+='<circle class="dot'+(selDot===l.id?' sel':'')+'" cx="'+cx+'" cy="'+cy+'" r="4.5"/>';
+    s+='<circle class="hit" data-id="'+esc(l.id)+'" cx="'+cx+'" cy="'+cy+'" r="14"><title>'+fmtDT(l.t)+' 每週 '+f1(l.w)+'%</title></circle>';
+    if(i===logsW.length-1){
+      const lx=clamp(cx,pl+18,W-pr-18);
+      s+='<text class="lastlbl" x="'+lx+'" y="'+(cy-11)+'" text-anchor="middle" font-size="13">'+f1(l.w)+'%</text>';
+    }
+  });
+  s+='</svg>';
+  box.innerHTML=s;
+  if(!logsW.length)$('caption').innerHTML='<span class="c-muted">'+(isCur?'加第一條記錄之後，呢度就會畫出條線。':'呢個星期冇記錄。')+'</span>';
+  else{
+    const sel=logsW.find(l=>l.id===selDot);
+    $('caption').innerHTML=sel?('<b>'+fmtDT(sel.t)+'</b>：每週 '+f1(sel.w)+'%'+(sel.s!==null?'，'+t.sessionHours+' 小時 '+f1(sel.s)+'%':'')+'，當時平均進度應該係 '+f1((sel.t-ws)/(we-ws)*100)+'%'+(sel.note?'。'+esc(sel.note):''))
+      :'<span class="c-muted">撳圖上面嘅點，睇返嗰次記錄嘅詳情。</span>';
+  }
+}
+function renderDays(){
+  const {t,ws}=viewWeek(),now=Date.now(),isCur=viewOffset===0;
+  const we=addDays(ws,7);
+  const logsW=weekLogs(t,ws,we).filter(l=>l.w!==null);
+  const budget=100/7;
+  const vals=[];
+  for(let i=0;i<7;i++){
+    const a=addDays(ws,i),b=addDays(ws,i+1);
+    if(isCur&&a>now){vals.push(null);continue;}
+    const end=isCur?Math.min(b,now):b;
+    vals.push(Math.max(0,cumAt(logsW,end)-cumAt(logsW,a)));
+  }
+  const maxV=Math.max(budget*1.7,...vals.filter(v=>v!==null));
+  const todayIdx=isCur?clamp(Math.floor((now-ws)/D),0,6):-1;
+  let h='';
+  vals.forEach((v,i)=>{
+    const d=addDays(ws,i),fut=v===null;
+    h+='<div class="day'+(i===todayIdx?' today':'')+(fut?' future':'')+'">'+
+      '<div class="val '+(v!==null&&v>budget+0.05?'c-danger':'')+'">'+(fut?'':f1(v)+'%')+'</div>'+
+      '<div class="col"><div class="bar'+(v!==null&&v>budget+0.05?' over':'')+'" style="height:'+(fut?0:v/maxV*100)+'%"></div>'+
+      '<div class="budget" style="bottom:'+(budget/maxV*100)+'%"></div></div>'+
+      '<div class="dl">'+(i===todayIdx?'今日':fmtDay(d))+'<br>'+fmtDate(d)+'</div></div>';
+  });
+  $('days').innerHTML=h;
+}
+function renderLog(){
+  const {t,ws,we}=viewWeek();
+  const list=weekLogs(t,ws,we);
+  $('logCount').textContent=list.length?('呢個星期 '+list.length+' 條，全部 '+t.logs.length+' 條'):'';
+  if(!list.length){$('log').innerHTML='<li class="empty" style="display:block;border:0">'+(viewOffset===0?'呢個星期仲未有記錄。喺上面輸入第一個數字就得。':'呢個星期冇記錄。')+'</li>';return;}
+  let prevW=0;const deltas={};
+  for(const l of list){if(l.w!==null){deltas[l.id]=l.w-prevW;prevW=l.w;}}
+  $('log').innerHTML=list.slice().reverse().map(l=>{
+    let chips='';
+    if(l.w!==null){const d=deltas[l.id];chips+='<span class="chip w">每週 <b>'+f1(l.w)+'%</b><em class="'+(d>0?'up':'')+'">'+(d>=0?'+':'')+f1(d)+'</em></span>';}
+    if(l.s!==null)chips+='<span class="chip">'+t.sessionHours+' 小時 <b>'+f1(l.s)+'%</b></span>';
+    if(l.r!==null)chips+='<span class="chip"><em>'+fmtTime(l.r)+' 重置</em></span>';
+    return '<li><div class="lt"><b>'+fmtDate(l.t)+'（'+WD[new Date(l.t).getDay()]+'）</b><span>'+fmtTime(l.t)+'</span></div>'+
+      '<div class="chips">'+chips+'</div>'+
+      '<button class="del" type="button" data-del="'+esc(l.id)+'" aria-label="刪除呢條記錄">刪除</button>'+
+      (l.note?'<div class="lnote">'+esc(l.note)+'</div>':'')+'</li>';
+  }).join('');
+}
+function renderHistory(){
+  const t=tr(),now=Date.now(),cws=weekStart(t,now);
+  const groups=new Map();
+  for(const l of t.logs){
+    const ws=weekStart(t,l.t);if(ws>=cws)continue;
+    const g=groups.get(ws)||{ws,final:0,peakS:null,n:0};
+    if(l.w!==null)g.final=l.w;
+    if(l.s!==null)g.peakS=Math.max(g.peakS||0,l.s);
+    g.n++;groups.set(ws,g);
+  }
+  const arr=[...groups.values()].sort((a,b)=>b.ws-a.ws).slice(0,20);
+  $('historyBlock').hidden=!arr.length;
+  $('hist').innerHTML=arr.map(g=>{
+    const off=Math.round((cws-g.ws)/(7*D));
+    return '<li data-off="'+off+'" tabindex="0" role="button" aria-label="睇返 '+fmtDate(g.ws)+' 嗰個星期">'+
+      '<span class="hd">'+fmtDate(g.ws)+' – '+fmtDate(addDays(g.ws,6))+'<br><span class="c-muted" style="font-size:12.5px">'+g.n+' 條記錄</span></span>'+
+      '<span class="hbar"><span class="hb" style="display:block;width:'+clamp(g.final,0,100)+'%"></span></span>'+
+      '<span class="hv '+(g.final>=t.warnAt?'c-danger':'')+'">'+f1(g.final)+'%</span></li>';
+  }).join('');
+}
+
+/* ---------- form ---------- */
+function toInput(used,mode){return used===null?null:(mode==='left'?100-used:used);}
+function fromInput(v,mode){if(v===null)return null;return Math.round((mode==='left'?100-v:v)*10)/10;}
+function syncSeg(){
+  const t=tr();
+  document.querySelectorAll('.seg').forEach(g=>{
+    const m=t['mode'+g.dataset.for];
+    g.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===m)));
+  });
+  updateConv();
+}
+function updateConv(){
+  const t=tr();
+  for(const k of ['W','S']){
+    const v=num($('in'+k).value),m=t['mode'+k],el=$('conv'+k);
+    if(v===null){el.innerHTML=m==='left'?'填你個 App 顯示嘅「剩低」百分比':'';continue;}
+    el.innerHTML=m==='left'?('即係已用 <b>'+f1(100-v)+'%</b>，會記低呢個數'):('即係剩低 '+f1(100-v)+'%');
+  }
+}
+document.querySelectorAll('.seg').forEach(g=>g.addEventListener('click',e=>{
+  const b=e.target.closest('button[data-mode]');if(!b)return;
+  const t=tr(),k=g.dataset.for,key='mode'+k;
+  if(t[key]===b.dataset.mode)return;
+  const cur=num($('in'+k).value);
+  t[key]=b.dataset.mode;
+  if(cur!==null){const nv=100-cur;$('in'+k).value=f1(nv);$('rg'+k).value=Math.round(nv);}
+  persist();syncSeg();
+}));
+function recordTime(){const ov=$('inT').value;if(ov&&$('moreT').open){const p=new Date(ov).getTime();if(isFinite(p))return p;}return Date.now();}
+function prefill(){
+  const t=tr(),s=snapshot(t,Date.now());
+  const w=toInput(s.has?s.cur:null,t.modeW), sv=toInput((s.sKnown&&s.sState!=='reset')?s.sCur:null,t.modeS);
+  $('inW').value=w===null?'':f1(w);$('rgW').value=w===null?0:Math.round(w);
+  $('inS').value=sv===null?'':f1(sv);$('rgS').value=sv===null?0:Math.round(sv);
+  syncSeg();
+}
+function linkRange(n,r){
+  $(r).addEventListener('input',()=>{$(n).value=$(r).value;updateConv();});
+  $(n).addEventListener('input',()=>{const v=num($(n).value);if(v!==null)$(r).value=Math.round(v);updateConv();});
+}
+linkRange('inW','rgW');linkRange('inS','rgS');
+function addRecord(){
+  const t=tr();
+  const w=fromInput(num($('inW').value),t.modeW),s=fromInput(num($('inS').value),t.modeS);
+  if(w===null&&s===null){toast('最少要填一個百分比');$('inW').focus();return;}
+  const ts=recordTime();
+  if(ts>Date.now()+M){toast('記錄時間唔可以喺將來');return;}
+  let r=null;
+  {
+    const rh=parseFloat($('inRh').value)||0,rm=parseFloat($('inRm').value)||0;
+    if(rh>0||rm>0)r=ts+clamp(rh,0,48)*H+clamp(rm,0,59)*M;
+  }
+  const ws=weekStart(t,ts);
+  const prior=t.logs.filter(l=>l.w!==null&&l.t>=ws&&l.t<=ts);
+  const prevW=prior.length?prior[prior.length-1].w:null;
+  t.logs.push({id:uid(),t:ts,s,w,r,note:$('inNote').value.trim().slice(0,200)});
+  t.logs.sort((a,b)=>a.t-b.t);
+  recomputeReset(t);
+  $('inRh').value='';$('inRm').value='';$('inNote').value='';$('inT').value='';$('moreT').open=false;
+  viewOffset=0;selDot=null;
+  persist();render();prefill();
+  if(w!==null&&prevW!==null&&w<prevW-0.5)toast('記低咗。每週用量少咗？可能已經重置，記得喺設定檢查重置時間');
+  else toast('記低咗 ✓ '+fmtDT(ts)+(w!==null?'，每週已用 '+f1(w)+'%':''));
+}
+$('addBtn').addEventListener('click',addRecord);
+['inW','inS','inRh','inRm','inNote'].forEach(id=>$(id).addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addRecord();}}));
+$('moreT').addEventListener('toggle',()=>{if($('moreT').open&&!$('inT').value)$('inT').value=toLocalInput(Date.now());});
+
+/* ---------- interactions ---------- */
+$('log').addEventListener('click',e=>{
+  const b=e.target.closest('[data-del]');if(!b)return;
+  twoTap(b,'確認刪除',()=>{
+    const t=tr();t.logs=t.logs.filter(l=>l.id!==b.dataset.del);recomputeReset(t);
+    persist();render();toast('已刪除');
+  });
+});
+$('chart').addEventListener('click',e=>{
+  const c=e.target.closest('[data-id]');if(!c)return;
+  selDot=selDot===c.dataset.id?null:c.dataset.id;renderChart();
+});
+$('prevW').addEventListener('click',()=>{viewOffset++;selDot=null;renderChart();renderDays();renderLog();});
+$('nextW').addEventListener('click',()=>{if(viewOffset>0){viewOffset--;selDot=null;renderChart();renderDays();renderLog();}});
+function openWeek(li){viewOffset=parseInt(li.dataset.off,10)||0;selDot=null;renderChart();renderDays();renderLog();$('chart').scrollIntoView({behavior:'smooth',block:'center'});}
+$('hist').addEventListener('click',e=>{const li=e.target.closest('[data-off]');if(li)openWeek(li);});
+$('hist').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){const li=e.target.closest('[data-off]');if(li){e.preventDefault();openWeek(li);}}});
+$('trackerSel').addEventListener('change',e=>{state.active=e.target.value;viewOffset=0;selDot=null;persist();render();prefill();});
+document.addEventListener('click',e=>{if(e.target.closest('[data-open-settings]'))openSettings();});
+
+/* ---------- settings ---------- */
+const dlg=$('settings');
+$('sDay').innerHTML=WD.map((d,i)=>'<option value="'+i+'">星期'+d+'</option>').join('');
+function fillSettings(){const t=tr();$('sName').value=t.name;$('sDay').value=String(t.weekDay);$('sTime').value=t.weekTime.padStart(5,'0');$('sHours').value=t.sessionHours;$('sWarn').value=t.warnAt;}
+function openSettings(){fillSettings();$('remBox').hidden=true;if(typeof dlg.showModal==='function')dlg.showModal();else dlg.setAttribute('open','');}
+function closeSettings(){if(typeof dlg.close==='function')dlg.close();else dlg.removeAttribute('open');}
+$('openSettings').addEventListener('click',openSettings);
+let remCalc=null;
+function calcRemaining(){
+  const d=parseFloat($('remD').value)||0,hh=parseFloat($('remH').value)||0,mm=parseFloat($('remM').value)||0;
+  const ms=clamp(d,0,7)*D+clamp(hh,0,23)*H+clamp(mm,0,59)*M;
+  if(ms<=0||ms>7*D){remCalc=null;$('remApply').disabled=true;
+    $('remHint').textContent=ms>7*D?'每週額度最多 7 日就會重置，請檢查下個數。':'填好之後，呢度會計出係星期幾、幾點重置。';return;}
+  // no minutes given -> round to nearest hour; otherwise nearest 5 minutes
+  const step=$('remM').value===''?H:5*M;
+  const at=Math.round((Date.now()+ms)/step)*step;
+  remCalc=at;$('remApply').disabled=false;
+  $('remHint').innerHTML='即係大約 <b>'+fmtDay(at)+' '+fmtDate(at)+' '+fmtTime(at)+'</b> 重置，之後每個星期都係'+fmtDay(at)+' '+fmtTime(at)+'。'+(step===H?'（冇填分鐘，所以計到最近嘅整點，有需要可以喺上面再微調）':'');
+}
+['remD','remH','remM'].forEach(id=>$(id).addEventListener('input',calcRemaining));
+$('remToggle').addEventListener('click',()=>{const b=$('remBox');b.hidden=!b.hidden;if(!b.hidden){calcRemaining();$('remD').focus();}});
+$('remApply').addEventListener('click',()=>{
+  if(remCalc===null)return;
+  const d=new Date(remCalc);
+  $('sDay').value=String(d.getDay());$('sTime').value=pad(d.getHours())+':'+pad(d.getMinutes());
+  $('remBox').hidden=true;['remD','remH','remM'].forEach(id=>$(id).value='');
+  toast('已經填好：逢'+fmtDay(remCalc)+' '+fmtTime(remCalc)+'，記得撳「儲存設定」');
+});
+$('sClose').addEventListener('click',closeSettings);
+$('sSave').addEventListener('click',()=>{
+  const t=tr();
+  t.name=$('sName').value.trim().slice(0,40)||t.name;
+  t.weekDay=clamp(parseInt($('sDay').value,10)||0,0,6);
+  t.weekTime=/^\d{1,2}:\d{2}/.test($('sTime').value)?$('sTime').value.slice(0,5):t.weekTime;
+  t.sessionHours=clamp(parseInt($('sHours').value,10)||5,1,24);
+  t.warnAt=clamp(parseInt($('sWarn').value,10)||80,1,100);
+  viewOffset=0;persist();render();closeSettings();toast('設定已儲存');
+});
+$('sAdd').addEventListener('click',()=>{
+  const nt=newTracker('新追蹤 '+(state.trackers.length+1));
+  state.trackers.push(nt);state.active=nt.id;viewOffset=0;persist();render();prefill();fillSettings();
+  toast('開咗新追蹤，記得改個名同重置時間');$('sName').focus();$('sName').select();
+});
+$('sDel').addEventListener('click',e=>{
+  if(state.trackers.length<2){toast('最少要留低一個追蹤');return;}
+  twoTap(e.currentTarget,'再撳一次確認刪除',()=>{
+    state.trackers=state.trackers.filter(x=>x.id!==state.active);state.active=state.trackers[0].id;
+    viewOffset=0;persist();render();prefill();closeSettings();toast('已刪除');
+  });
+});
+$('sClear').addEventListener('click',e=>{
+  twoTap(e.currentTarget,'再撳一次確認清除',()=>{
+    const t=tr();t.logs=[];t.sessionResetAt=null;viewOffset=0;persist();render();prefill();closeSettings();toast('已清除所有記錄');
+  });
+});
+$('sExpJson').addEventListener('click',()=>{
+  const d=new Date();saveFile('額度追蹤備份-'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'.json',JSON.stringify(state,null,2));
+});
+$('sExpCsv').addEventListener('click',()=>{
+  const t=tr();const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
+  const rows=[['時間','每週用量(%)',t.sessionHours+'小時用量(%)',t.sessionHours+'小時重置時間','備註']];
+  for(const l of t.logs){
+    const dt=new Date(l.t);
+    rows.push([dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate())+' '+fmtTime(l.t),l.w===null?'':l.w,l.s===null?'':l.s,l.r===null?'':toLocalInput(l.r).replace('T',' '),l.note]);
+  }
+  saveFile(t.name.replace(/[\\/:*?"<>|]/g,'')+'-記錄.csv','\ufeff'+rows.map(r=>r.map(q).join(',')).join('\r\n'));
+});
+$('sImp').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    let parsed=null;try{parsed=normalize(JSON.parse(rd.result));}catch(err){}
+    e.target.value='';
+    if(!parsed){toast('呢個檔案唔係有效嘅備份');return;}
+    state=parsed;viewOffset=0;selDot=null;persist();render();prefill();closeSettings();
+    toast('已匯入 '+parsed.trackers.length+' 個追蹤');
+  };
+  rd.onerror=()=>toast('讀唔到呢個檔案');
+  rd.readAsText(f);
+});
+
+/* ---------- boot ---------- */
+state=normalize(loadLocal())||defaultState();
+render();prefill();setSync('local');
+connect();connectDownloads();
+setInterval(()=>{if(!document.hidden){render();}},30000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)render();});
+let rz=null;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(renderChart,150);});
+})();
+</script>
+</body>
+</html>
