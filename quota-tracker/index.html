@@ -234,6 +234,7 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
     </div>
     <div class="top-actions">
       <select id="trackerSel" aria-label="揀邊個追蹤"></select>
+      <button class="btn ghost" id="cloudBtn" type="button">登入同步</button>
       <button class="btn ghost" id="openSettings" type="button">設定</button>
     </div>
   </header>
@@ -370,6 +371,9 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
 <script>
 (function(){
 "use strict";
@@ -377,7 +381,16 @@ const D=864e5, H=36e5, M=6e4;
 const WD=['日','一','二','三','四','五','六'];
 const LS_KEY='quota-tracker-v1';
 const $=id=>document.getElementById(id);
+const FIREBASE_CONFIG={
+  apiKey:"AIzaSyC5oYfE0rMpPkibjV4Rcmh6qQbO4cUfw10",
+  authDomain:"dicky-quota-tracker-2026.firebaseapp.com",
+  projectId:"dicky-quota-tracker-2026",
+  storageBucket:"dicky-quota-tracker-2026.firebasestorage.app",
+  messagingSenderId:"842127145324",
+  appId:"1:842127145324:web:9fa42fb22d04a9d9c59b49"
+};
 let state, viewOffset=0, db=null, meId=null, dl=null, saveTimer=null, saving=false, again=false, selDot=null;
+let fbAuth=null,fbDb=null,fbUser=null,fbUnsub=null;
 
 /* ---------- helpers ---------- */
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-5);
@@ -436,49 +449,122 @@ function loadLocal(){try{const s=localStorage.getItem(LS_KEY);return s?JSON.pars
 function saveLocal(){try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){}}
 function setSync(mode){
   const el=$('syncPill');
-  el.textContent={cloud:'☁ 已存入你個帳戶，換部機都睇到',local:'記錄存喺呢個瀏覽器入面',error:'暫時同步唔到，先存喺呢個瀏覽器',loading:'連緊你個帳戶…',full:'雲端位滿咗，請匯出備份再清走舊記錄'}[mode]||'';
+  el.textContent={cloud:'☁ 已同步到 Firebase，換部機登入同一 Google 帳戶就睇到',signin:'登入 Google 就可以跨裝置同步',local:'記錄存喺呢個瀏覽器入面',error:'暫時同步唔到，先存喺呢個瀏覽器',loading:'連緊 Firebase…',full:'雲端位滿咗，請匯出備份再清走舊記錄'}[mode]||'';
 }
 function persist(){
   saveLocal();
-  if(db&&meId){clearTimeout(saveTimer);saveTimer=setTimeout(flush,600);}
+  if((db&&meId)||(fbDb&&fbUser)){clearTimeout(saveTimer);saveTimer=setTimeout(flush,600);}
 }
 async function flush(){
-  if(!db||!meId)return;
+  if(!((db&&meId)||(fbDb&&fbUser)))return;
   if(saving){again=true;return;}
   saving=true;
   try{
-    await db.doc('data/users/'+meId+'/tracker').set({json:JSON.stringify(state),updatedAt:Date.now()});
+    if(fbDb&&fbUser){
+      await fbDb.collection('users').doc(fbUser.uid).collection('apps').doc('quotaTracker')
+        .set({json:JSON.stringify(state),updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+    }else{
+      await db.doc('data/users/'+meId+'/tracker').set({json:JSON.stringify(state),updatedAt:Date.now()});
+    }
     setSync('cloud');
   }catch(e){
     const c=e&&e.code;
     if(c==='unavailable'){await new Promise(r=>setTimeout(r,800+Math.random()*800));
-      try{await db.doc('data/users/'+meId+'/tracker').set({json:JSON.stringify(state),updatedAt:Date.now()});setSync('cloud');}catch(e2){setSync('error');}}
-    else if(c==='quota_exceeded'||(c==='invalid_argument'&&JSON.stringify(state).length>240000))setSync('full');
+      try{
+        if(fbDb&&fbUser)await fbDb.collection('users').doc(fbUser.uid).collection('apps').doc('quotaTracker')
+          .set({json:JSON.stringify(state),updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+        else await db.doc('data/users/'+meId+'/tracker').set({json:JSON.stringify(state),updatedAt:Date.now()});
+        setSync('cloud');
+      }catch(e2){setSync('error');}}
+    else if(c==='resource-exhausted'||c==='quota_exceeded'||(c==='invalid_argument'&&JSON.stringify(state).length>240000))setSync('full');
     else setSync('error');
   }
   saving=false;
   if(again){again=false;flush();}
 }
 async function connect(){
-  if(!window.claude||typeof window.claude.use!=='function'){setSync('local');return;}
-  setSync('loading');
-  try{
-    const [d,u]=await Promise.all([window.claude.use('db'),window.claude.use('user')]);
-    if(!d||!u){setSync('local');return;}
-    const id=await u.id();
-    if(!id){setSync('local');return;}
-    const snap=await d.doc('data/users/'+id+'/tracker').get();
-    db=d;meId=id;
-    if(snap.exists){
-      const body=snap.data()||{};
-      let parsed=null;try{parsed=normalize(JSON.parse(body.json));}catch(e){}
-      if(parsed){state=parsed;saveLocal();viewOffset=0;render();prefill();}
-      setSync('cloud');
-    }else{
-      if(state.trackers.some(t=>t.logs.length))await flush();else setSync('cloud');
-    }
-  }catch(e){db=null;meId=null;setSync('local');}
+  if(window.claude&&typeof window.claude.use==='function'){
+    setSync('loading');
+    try{
+      const [d,u]=await Promise.all([window.claude.use('db'),window.claude.use('user')]);
+      if(!d||!u){return connectFirebase();}
+      const id=await u.id();
+      if(!id){return connectFirebase();}
+      const snap=await d.doc('data/users/'+id+'/tracker').get();
+      db=d;meId=id;
+      $('cloudBtn').hidden=true;
+      if(snap.exists){
+        const body=snap.data()||{};
+        let parsed=null;try{parsed=normalize(JSON.parse(body.json));}catch(e){}
+        if(parsed){state=parsed;saveLocal();viewOffset=0;render();prefill();}
+        setSync('cloud');
+      }else{
+        if(state.trackers.some(t=>t.logs.length))await flush();else setSync('cloud');
+      }
+      return;
+    }catch(e){db=null;meId=null;}
+  }
+  connectFirebase();
 }
+function firebaseDoc(){
+  return fbDb.collection('users').doc(fbUser.uid).collection('apps').doc('quotaTracker');
+}
+async function connectFirebase(){
+  if(!window.firebase){setSync('local');return;}
+  try{
+    if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
+    fbAuth=firebase.auth();fbDb=firebase.firestore();
+    await fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    fbAuth.onAuthStateChanged(async user=>{
+      fbUser=user||null;
+      if(fbUnsub){fbUnsub();fbUnsub=null;}
+      if(!fbUser){
+        $('cloudBtn').hidden=false;$('cloudBtn').textContent='登入同步';
+        setSync('signin');return;
+      }
+      $('cloudBtn').hidden=false;$('cloudBtn').textContent='登出同步';
+      setSync('loading');
+      try{
+        const ref=firebaseDoc();
+        const snap=await ref.get();
+        if(snap.exists){
+          const body=snap.data()||{};
+          let parsed=null;try{parsed=normalize(JSON.parse(body.json));}catch(e){}
+          if(parsed){state=parsed;saveLocal();viewOffset=0;render();prefill();}
+        }else{
+          await ref.set({json:JSON.stringify(state),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+        }
+        setSync('cloud');
+        fbUnsub=ref.onSnapshot(s=>{
+          if(!s.exists)return;
+          const body=s.data()||{};
+          let parsed=null;try{parsed=normalize(JSON.parse(body.json));}catch(e){}
+          if(!parsed)return;
+          if(JSON.stringify(parsed)===JSON.stringify(state))return;
+          state=parsed;saveLocal();viewOffset=0;render();prefill();setSync('cloud');
+        },()=>setSync('error'));
+      }catch(e){setSync('error');}
+    });
+  }catch(e){fbAuth=null;fbDb=null;fbUser=null;setSync('error');}
+}
+async function cloudAction(){
+  if(!fbAuth){await connectFirebase();}
+  if(!fbAuth)return;
+  if(fbAuth.currentUser){
+    try{await fbAuth.signOut();toast('已登出同步');}catch(e){toast('登出失敗，請再試');}
+    return;
+  }
+  try{
+    const provider=new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({prompt:'select_account'});
+    await fbAuth.signInWithPopup(provider);
+  }catch(e){
+    if(e&&['auth/popup-blocked','auth/cancelled-popup-request','auth/popup-closed-by-user'].includes(e.code)){
+      try{await fbAuth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());}catch(e2){toast('登入失敗，請再試');}
+    }else toast('Google 登入失敗：'+((e&&e.message)||'請再試'));
+  }
+}
+$('cloudBtn').addEventListener('click',cloudAction);
 async function connectDownloads(){
   try{if(window.claude&&typeof window.claude.use==='function')dl=await window.claude.use('downloads');}catch(e){dl=null;}
 }
