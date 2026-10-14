@@ -144,3 +144,31 @@ test('雲端合併：雲端為準，加入只在本機的紀錄', async () => {
   assert.equal(s.meals[0].photo, null);
   assert.equal(s.meals[0].hasPhoto, true);
 });
+
+test('讀取舊版 ONTIME 備份：取最新版本、略過已刪除、配對通勤', async () => {
+  const { parseBackup } = await import('../js/actions.js');
+  const rev = (id, type, eid, payload, parents = [], created = 1) => ({ schemaVersion: 1, revisionId: id, entityType: type, entityId: eid, parentIds: parents, payload, createdAtMs: created });
+  const start = at('2026-10-12', '23:29');
+  const end = at('2026-10-13', '10:16');
+  const backup = {
+    format: 'dicky-ontime-backup', schemaVersion: 1,
+    revisions: [
+      rev('j1', 'job', 'job', { id: 'job', name: 'food delivery', payMode: 'none', hourlyRateCents: 2000, commuteOutMinutes: 30, commuteBackMinutes: 45 }),
+      rev('s1', 'session', 'ses', { id: 'ses', jobId: 'job', startMs: start, endMs: start + HOUR, breaks: [], payModeSnapshot: 'none' }),
+      rev('s2', 'session', 'ses', { id: 'ses', jobId: 'job', startMs: start, endMs: end, breaks: [], payModeSnapshot: 'none' }, ['s1'], 2),
+      rev('r1', 'journey', 'jr', { id: 'jr', jobId: 'job', sessionIds: [], leaveHomeMs: at('2026-10-12', '22:45'), arriveHomeMs: at('2026-10-13', '11:03') }),
+      rev('m1', 'meal', 'm', { id: 'm', startMs: at('2026-10-13', '03:46'), food: 'chicken burrito', photo: { dataUrl: 'data:image/jpeg;base64,AA' }, confirmed: true }),
+      rev('z1', 'sleep', 'gone', { id: 'gone', actualStartMs: 5, deletedAtMs: 9 }),
+      rev('z2', 'sleep', 'zz', { id: 'zz', actualStartMs: at('2026-10-13', '12:00'), actualEndMs: at('2026-10-13', '19:00'), note: '很昏沉' })
+    ]
+  };
+  const d = parseBackup('﻿' + JSON.stringify(backup));
+  assert.equal(d.sessions.length, 1);
+  assert.equal(d.sessions[0].end, end);
+  assert.equal(d.journeys[0].sessionId, 'ses');
+  assert.equal(d.meals[0].photo, 'data:image/jpeg;base64,AA');
+  assert.equal(d.meals[0].name, 'chicken burrito');
+  assert.equal(d.sleeps.length, 1);
+  assert.equal(d.settings.commuteOutMin, 30);
+  assert.equal(d.jobs[0].color, 'deliv');
+});

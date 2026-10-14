@@ -89,6 +89,6 @@ export function timelineView(ctx) {
     ${seg('tlMode', '查看方式', [['workday', '工作日'], ['calendar', '日曆日']], mode)}
     ${weekStrip(data, key, now)}
     ${mode === 'workday'
-      ? `${dayNav('tl-shift', `${wdOfKey(key)}工作日 · ${fmtMD(key)}`, '依上班日期')}<div class="grid-2-1 tl-grid">${workdayList(data, key, now)}<div class="stack">${workdaySummary(data, key, now)}${ctx.isDesktop ? `<div class="card">${(() => { const [a, b] = workdaySpan(data, key, now); return ribbon(data, a, b, now, { lanes: true }); })()}${legend()}</div>` : ''}</div></div>`
+      ? `${dayNav('tl-shift', `${wdOfKey(key)}工作日 · ${fmtMD(key)}`, '依上班日期')}${ctx.isDesktop ? `<div class="card">${(() => { const [a, b] = workdaySpan(data, key, now); return ribbon(data, a, b, now, { lanes: true }); })()}${legend()}</div>` : ''}<div class="grid-2-1 tl-grid">${workdayList(data, key, now)}<div class="stack">${workdaySummary(data, key, now)}</div></div>`
       : `${dayNav('tl-shift', `${wdOfKey(key)} ${fmtMD(key)}`, '日曆日')}${calendarView(data, key, now)}`}`;
 }

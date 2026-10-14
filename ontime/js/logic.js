@@ -175,7 +175,7 @@ export function sleepActualMs(sl, now) {
 
 // ---------- 目前的工作日 ----------
 export function currentWorkday(data, now) {
-  const s = activeSession(data);
+  const s = activeSession(data) || data.sessions.find((x) => x.start <= now && x.end != null && x.end > now);
   if (s) return workdayOfSession(s);
   const sleeping = data.sleeps.find((x) => x.start != null && x.end == null);
   if (sleeping) return sleepWorkday(sleeping, data);
