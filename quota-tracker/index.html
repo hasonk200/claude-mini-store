@@ -210,6 +210,46 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
 .dlg-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .dlg select{min-width:7em}
 
+[hidden]{display:none!important}
+.vtabs{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface);margin:0 0 16px}
+.vtabs button{border:0;background:transparent;padding:7px 20px;font-size:15px;cursor:pointer;min-height:38px;color:var(--muted);font-weight:500}
+.vtabs button[aria-pressed="true"]{background:var(--use);color:#fff;font-weight:700}
+.ov-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.ov-sum>div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.ov-sum span{display:block;font-size:12.5px;color:var(--muted)}
+.ov-sum b{display:block;font-family:var(--num);font-stretch:75%;font-weight:700;font-size:22px;line-height:1.25;margin-top:2px;overflow-wrap:anywhere}
+.ov-sum small{display:block;font-size:12.5px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.ov-h{font-size:18px;font-weight:700;margin:28px 0 4px}
+.cmp{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px 16px}
+.cmp-row{display:grid;grid-template-columns:minmax(96px,150px) 1fr 1fr;gap:18px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line-soft);cursor:pointer}
+.cmp-row:last-child{border-bottom:0}
+.cmp-name{min-width:0}
+.cmp-name b{display:block;font-size:15.5px;overflow-wrap:anywhere}
+.cmp-name small{font-size:12px;color:var(--muted)}
+.ov-mbt{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.ov-mbt b{font-family:var(--num);font-stretch:80%;font-size:16px;color:var(--ink)}
+.bar2{position:relative;height:12px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.bar2 .f{position:absolute;left:0;top:0;bottom:0;background:var(--use);border-radius:5px;transition:width .5s ease}
+.bar2 .f.hot{background:var(--danger)}
+.bar2 .wm{position:absolute;top:-3px;bottom:-3px;border-left:2px dotted var(--danger);opacity:.7}
+.bar2 .pk{position:absolute;top:-5px;bottom:-5px;width:3px;margin-left:-1.5px;background:var(--pace);border-radius:2px}
+.ov-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.ocard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;display:flex;flex-direction:column;gap:12px;min-width:0;transition:border-color .15s}
+.ocard:hover{border-color:var(--muted)}
+.ocard-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ocard-top h3{font-size:17px;font-weight:700;overflow-wrap:anywhere}
+.otag{font-size:12.5px;padding:2px 10px;border-radius:999px;border:1px solid currentColor;font-weight:500;white-space:nowrap}
+.ocard-big{font-family:var(--num);font-stretch:68%;font-weight:800;font-size:64px;line-height:.9;font-variant-numeric:tabular-nums}
+.ocard-big .pct{font-size:.45em;font-weight:700;vertical-align:.9em}
+.ov-sub{font-size:12.5px;color:var(--muted);margin-top:-6px}
+.ov-spark svg{display:block;width:100%;height:auto;overflow:visible}
+.stats2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stats2>div{background:var(--bg);border:1px solid var(--line-soft);border-radius:8px;padding:7px 10px;min-width:0}
+.stats2 span{display:block;font-size:12px;color:var(--muted)}
+.stats2 b{display:block;font-family:var(--num);font-stretch:75%;font-size:17px;line-height:1.3;overflow-wrap:anywhere}
+.ocard-line{font-size:13.5px;line-height:1.5}
+.ocard-foot{font-size:12.5px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line-soft);padding-top:9px;margin-top:auto}
+@media (max-width:560px){.ov-sum{grid-template-columns:1fr}.cmp-row{grid-template-columns:1fr;gap:10px}.ocard-big{font-size:56px}}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--ink);color:var(--bg);
   padding:10px 16px;border-radius:8px;font-size:15px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:calc(100vw - 32px)}
 .toast.on{opacity:1;transform:translate(-50%,0)}
@@ -239,6 +279,16 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
     </div>
   </header>
 
+  <nav class="vtabs" id="vtabs" role="group" aria-label="揀畫面">
+    <button type="button" data-view="overview" aria-pressed="true">總覽</button>
+    <button type="button" data-view="detail" aria-pressed="false">詳細</button>
+  </nav>
+
+  <div id="overviewView">
+    <div id="ovBody"></div>
+  </div>
+
+  <div id="detailView" hidden>
   <div id="alert" class="alert" hidden></div>
 
   <section class="hero" id="hero" aria-live="polite"></section>
@@ -330,6 +380,8 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
     <ul class="hist" id="hist"></ul>
   </section>
 
+  </div>
+
   <footer class="foot"><span id="syncPill">準備緊…</span><span>所有百分比都係你自己輸入</span></footer>
 </main>
 
@@ -403,7 +455,7 @@ const FIREBASE_CONFIG={
   messagingSenderId:"842127145324",
   appId:"1:842127145324:web:9fa42fb22d04a9d9c59b49"
 };
-let state, viewOffset=0, db=null, meId=null, dl=null, saveTimer=null, saving=false, again=false, selDot=null;
+let state, viewOffset=0, db=null, meId=null, dl=null, saveTimer=null, saving=false, again=false, selDot=null, view='overview';
 let fbAuth=null,fbDb=null,fbUser=null,fbUnsub=null;
 
 /* ---------- helpers ---------- */
@@ -648,12 +700,13 @@ function render(){
   const t=tr(),now=Date.now(),s=snapshot(t,now);
   renderHeader(t,s);renderAlert(t,s);renderHero(t,s,now);renderSession(t,s,now);
   renderChart();renderDays();renderLog();renderHistory();
+  renderOverview(now);
 }
 function renderHeader(t){
   const sel=$('trackerSel');
   sel.innerHTML=state.trackers.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===t.id?' selected':'')+'>'+esc(x.name)+'</option>').join('');
   sel.hidden=state.trackers.length<2;
-  $('subLine').textContent=t.name+'：每週 '+fmtDay(weekStart(t,Date.now()))+' '+t.weekTime+' 重置，短期額度 '+t.sessionHours+' 小時';
+  if(view==='detail')$('subLine').textContent=t.name+'：每週 '+fmtDay(weekStart(t,Date.now()))+' '+t.weekTime+' 重置，短期額度 '+t.sessionHours+' 小時';
   $('lblS').textContent=t.sessionHours+' 小時';
   $('lblR').textContent=t.sessionHours+' 小時窗口仲有幾耐重置（可以唔填）';
 }
@@ -1016,7 +1069,7 @@ $('nextW').addEventListener('click',()=>{if(viewOffset>0){viewOffset--;selDot=nu
 function openWeek(li){viewOffset=parseInt(li.dataset.off,10)||0;selDot=null;renderChart();renderDays();renderLog();$('chart').scrollIntoView({behavior:'smooth',block:'center'});}
 $('hist').addEventListener('click',e=>{const li=e.target.closest('[data-off]');if(li)openWeek(li);});
 $('hist').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){const li=e.target.closest('[data-off]');if(li){e.preventDefault();openWeek(li);}}});
-$('trackerSel').addEventListener('change',e=>{state.active=e.target.value;viewOffset=0;selDot=null;persist();render();prefill();});
+$('trackerSel').addEventListener('change',e=>{state.active=e.target.value;viewOffset=0;selDot=null;persist();setView('detail');prefill();});
 document.addEventListener('click',e=>{if(e.target.closest('[data-open-settings]'))openSettings();});
 
 /* ---------- settings ---------- */
@@ -1101,9 +1154,122 @@ $('sImp').addEventListener('change',e=>{
   rd.readAsText(f);
 });
 
+/* ---------- overview (總覽) ---------- */
+function readView(){try{const v=localStorage.getItem('quota-tracker-view');if(v==='detail'||v==='overview')return v;}catch(e){}return 'overview';}
+function setView(v){
+  view=v;
+  try{localStorage.setItem('quota-tracker-view',v);}catch(e){}
+  $('overviewView').hidden=v!=='overview';
+  $('detailView').hidden=v!=='detail';
+  document.querySelectorAll('#vtabs button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.view===v)));
+  render();
+}
+function goTo(id){state.active=id;viewOffset=0;selDot=null;persist();setView('detail');prefill();window.scrollTo({top:0});}
+function ovStatus(t,s){
+  const diff=s.cur-s.pace;
+  if(!s.has)return {cls:'c-muted',txt:'未有記錄'};
+  if(s.cur>=100)return {cls:'c-danger',txt:'用晒啦'};
+  if(s.cur>=t.warnAt)return {cls:'c-danger',txt:'過咗警戒線'};
+  if(diff<=-5)return {cls:'c-ok',txt:'用得慳'};
+  if(diff<5)return {cls:'c-ok',txt:'啱啱好'};
+  if(diff<15)return {cls:'c-warn',txt:'快咗少少'};
+  return {cls:'c-danger',txt:'用得快'};
+}
+function ovSession(s,now){
+  if(s.sState==='active')return {val:s.sKnown?s.sCur:null,pace:s.sPace,rem:'仲有 '+fmtDur(s.r-now)+' 重置（'+fmtTime(s.r)+'）'};
+  if(s.sState==='reset')return {val:0,pace:null,rem:'上個窗口已經重置'};
+  if(s.sState==='noreset'&&s.sKnown)return {val:s.sCur,pace:null,rem:'唔知幾時重置'};
+  return {val:null,pace:null,rem:'未有 5 小時記錄'};
+}
+function ovBar(label,v,pace,warn){
+  const hot=v!==null&&v>=warn;
+  return '<div class="ov-mb">'+
+    '<div class="ov-mbt"><span>'+esc(label)+'</span><b class="'+(hot?'c-danger':'')+'">'+(v===null?'—':f1(v)+'%')+'</b></div>'+
+    '<div class="bar2"'+(pace!==null?' title="應到 '+f1(pace)+'%"':'')+'>'+
+      '<div class="f'+(hot?' hot':'')+'" style="width:'+clamp(v||0,0,100)+'%"></div>'+
+      '<div class="wm" style="left:'+warn+'%"></div>'+
+      (pace!==null?'<div class="pk" style="left:'+clamp(pace,0,100)+'%"></div>':'')+
+    '</div></div>';
+}
+function ovSpark(s){
+  const W=260,Hh=40;
+  const X=x=>(x-s.ws)/(s.we-s.ws)*W, Y=v=>Hh-clamp(v,0,100)/100*Hh;
+  const pts=[[s.ws,0]].concat(s.logsW.map(l=>[l.t,l.w]));
+  const last=pts[pts.length-1];
+  const line=pts.map(p=>X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)).join(' ');
+  return '<svg viewBox="0 0 '+W+' '+Hh+'" role="img" aria-label="本週走勢">'+
+    '<line class="pace" x1="0" y1="'+Hh+'" x2="'+W+'" y2="0"/>'+
+    '<polyline class="actual" points="'+line+'"/>'+
+    '<circle class="dot sel" cx="'+X(last[0]).toFixed(1)+'" cy="'+Y(last[1]).toFixed(1)+'" r="3.5"/>'+
+    '</svg>';
+}
+function ovCard(t,now){
+  const s=snapshot(t,now),st=ovStatus(t,s),se=ovSession(s,now);
+  const last=t.logs.length?t.logs[t.logs.length-1]:null;
+  const daysLeft=s.left/D;
+  let line='';
+  if(!s.has)line='';
+  else if(s.cur>=100)line='<span class="c-danger">今個星期已用晒，等 '+fmtDur(s.left)+' 重置。</span>';
+  else if(s.rate){
+    line=s.proj<=100
+      ?'照而家速度，重置前大約用到 <b>'+f1(s.proj)+'%</b>，夠用。'
+      :'<span class="c-danger">照而家速度，大約 <b>'+fmtDT(s.hitAt)+'</b> 會用爆。</span>';
+  }else line='今個星期仲未用過，慢慢嚟。';
+  return '<article class="ocard" tabindex="0" role="button" data-go="'+esc(t.id)+'" aria-label="'+esc(t.name)+'，撳睇詳細">'+
+    '<div class="ocard-top"><h3>'+esc(t.name)+'</h3><span class="otag '+st.cls+'">'+st.txt+'</span></div>'+
+    '<div class="ocard-big'+(s.has&&s.cur>=t.warnAt?' c-danger':'')+'">'+(s.has?f1(s.cur):'—')+'<span class="pct">%</span></div>'+
+    '<div class="ov-sub">每週 · 逢'+fmtDay(s.we)+' '+t.weekTime+' 重置</div>'+
+    ovBar('每週',s.has?s.cur:null,s.pace,t.warnAt)+
+    (s.has?'<div class="ov-spark">'+ovSpark(s)+'</div>':'')+
+    '<div class="stats2">'+
+      '<div><span>應到</span><b>'+f1(s.pace)+'%</b></div>'+
+      '<div><span>今日上限</span><b>'+f1(s.todayBudget)+'%</b></div>'+
+      '<div><span>'+t.sessionHours+' 小時</span><b>'+(se.val===null?'—':f1(se.val)+'%')+'</b></div>'+
+      '<div><span>距離每週重置</span><b>'+fmtDur(s.left)+'</b></div>'+
+    '</div>'+
+    (line?'<div class="ocard-line">'+line+'</div>':'')+
+    '<div class="ocard-foot"><span>'+esc(se.rem)+'</span><span>'+(last?'最後更新 '+fmtDT(last.t):'')+'</span></div>'+
+  '</article>';
+}
+function ovRow(t,now){
+  const s=snapshot(t,now),se=ovSession(s,now);
+  return '<div class="cmp-row" tabindex="0" role="button" data-go="'+esc(t.id)+'">'+
+    '<div class="cmp-name"><b>'+esc(t.name)+'</b><small>逢'+fmtDay(s.we)+' '+t.weekTime+' 重置</small></div>'+
+    ovBar('每週',s.has?s.cur:null,s.pace,t.warnAt)+
+    ovBar(t.sessionHours+' 小時',se.val,se.pace,t.warnAt)+
+  '</div>';
+}
+function renderOverview(now){
+  const list=state.trackers.map(t=>({t,s:snapshot(t,now)}));
+  const withData=list.filter(x=>x.s.has);
+  const top=withData.length?withData.reduce((a,b)=>b.s.cur>a.s.cur?b:a):null;
+  const soon=list.reduce((a,b)=>b.s.left<a.s.left?b:a);
+  const flagged=list.filter(x=>x.s.has&&(x.s.cur>=x.t.warnAt||x.s.cur-x.s.pace>=15));
+  const tiles=
+    '<div><span>最多用咗（每週）</span>'+(top?'<b>'+esc(top.t.name)+'</b><small>已用 '+f1(top.s.cur)+'%</small>':'<b>—</b><small>未有記錄</small>')+'</div>'+
+    '<div><span>最快重置</span><b>'+esc(soon.t.name)+'</b><small>逢'+fmtDay(soon.s.we)+' '+soon.t.weekTime+'，仲有 '+fmtDur(soon.s.left)+'</small></div>'+
+    '<div><span>需要留意</span>'+(flagged.length
+      ?'<b class="c-danger">'+flagged.length+' 個</b><small>'+flagged.map(x=>esc(x.t.name)).join('、')+'</small>'
+      :'<b class="c-ok">一切正常 ✓</b><small>暫時未有超過警戒線</small>')+'</div>';
+  $('ovBody').innerHTML=
+    '<div class="ov-sum">'+tiles+'</div>'+
+    '<h2 class="ov-h">一齊比較</h2>'+
+    '<p class="hint">藍色條係已用；黃色針係「應到」嘅進度；紅色虛線係警戒線。撳一行就去詳細頁。</p>'+
+    '<div class="cmp">'+list.map(x=>ovRow(x.t,now)).join('')+'</div>'+
+    '<h2 class="ov-h">各個追蹤詳情</h2>'+
+    '<div class="ov-cards">'+list.map(x=>ovCard(x.t,now)).join('')+'</div>';
+  if(view==='overview')$('subLine').textContent='全部 '+state.trackers.length+' 個追蹤';
+}
+$('vtabs').addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(b)setView(b.dataset.view);});
+$('ovBody').addEventListener('click',e=>{const el=e.target.closest('[data-go]');if(el)goTo(el.dataset.go);});
+$('ovBody').addEventListener('keydown',e=>{
+  const el=e.target.closest&&e.target.closest('[data-go]');
+  if(el&&(e.key==='Enter'||e.key===' ')){e.preventDefault();goTo(el.dataset.go);}
+});
+
 /* ---------- boot ---------- */
 state=normalize(loadLocal())||defaultState();
-render();prefill();setSync('local');
+view=readView();setView(view);prefill();setSync('local');
 connect();connectDownloads();
 setInterval(()=>{if(!document.hidden){render();}},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)render();});
