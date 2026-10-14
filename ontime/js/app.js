@@ -1,6 +1,6 @@
 import * as store from './store.js';
 import * as act from './actions.js';
-import { icon } from './ui.js';
+import { icon, esc } from './ui.js';
 import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime } from './time.js';
 import { currentWorkday, currentCycle, workdayEvents } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
@@ -11,6 +11,7 @@ import { mealsView } from './views/meals.js';
 import { statsView } from './views/stats.js';
 import { settingsView } from './views/settings.js';
 import { sheetView, defaultStep } from './views/sheet.js';
+import { initSync, onSync, syncState, signIn, signOut } from './sync.js';
 
 const ROUTES = {
   today: { title: '今天', icon: 'clock', view: todayView },
@@ -93,7 +94,13 @@ function render() {
   const sheetHTML = sheetView(c);
   if (sheetHTML !== lastSheet) { $('#sheet-host').innerHTML = sheetHTML; lastSheet = sheetHTML; }
   const st = store.status();
-  $('#sync-card').innerHTML = `<span class="sync-line"><i class="dot ${st.saveError ? 'is-warn' : 'k-ok'}"></i>${st.saveError ? '未能儲存' : '已存在這部裝置'}</span><span class="fine">${st.lastSaved ? `最後儲存 ${fmtTime(st.lastSaved)} · ` : ''}離線也能記錄</span>`;
+  const sy = syncState();
+  const SYNC_TEXT = { cloud: '已同步到雲端', loading: '正在同步…', signin: '未登入雲端', error: '同步失敗', offline: '離線中', full: '雲端空間不足' };
+  const cloudOn = sy.status !== 'off';
+  const line = st.saveError ? '未能儲存' : cloudOn ? SYNC_TEXT[sy.status] || '已存在這部裝置' : '已存在這部裝置';
+  const dot = st.saveError || ['error', 'full'].includes(sy.status) ? 'is-warn' : sy.status === 'cloud' || !cloudOn ? 'k-ok' : 'is-off';
+  const sub = sy.status === 'cloud' && sy.user ? `${esc(sy.user.email)}${sy.lastSync ? ' · ' + fmtTime(sy.lastSync) : ''}` : cloudOn ? esc(sy.message || '離線也能記錄') : `${st.lastSaved ? `最後儲存 ${fmtTime(st.lastSaved)} · ` : ''}<a href="#/settings">登入 Google 同步</a>`;
+  $('#sync-card').innerHTML = `<span class="sync-line"><i class="dot ${dot}"></i>${line}</span><span class="fine">${sub}</span>`;
 }
 
 function toast(msg, actionHTML = '') {
@@ -175,6 +182,8 @@ async function compressPhoto(file) {
 }
 
 const handlers = {
+  'sync-in': () => signIn(),
+  'sync-out': () => { signOut(); toast('已登出，這部裝置上的紀錄仍然保留'); },
   'hero-poke': () => {
     const h = $('.hero');
     if (!h) return;
@@ -395,6 +404,8 @@ async function start() {
   shell();
   await store.load();
   store.subscribe(() => render());
+  onSync(() => { lastView = ''; render(); });
+  initSync();
   bind();
   route();
   // 每 30 秒更新倒數；正在輸入時不重畫，避免打斷。

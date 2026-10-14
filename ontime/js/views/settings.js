@@ -1,6 +1,7 @@
 import { esc, icon } from '../ui.js';
 import { fmtTime, wdOf, fmtMD, dateKey } from '../time.js';
 import { status } from '../store.js';
+import { syncState } from '../sync.js';
 import { pageHead } from './shared.js';
 
 const PAY = { hourly: '時薪', perOrder: '按單（整次實收）', none: '不計薪' };
@@ -25,6 +26,21 @@ function jobsCard(data, ui) {
       <p class="fine">改時薪只影響之後的出勤；舊紀錄保留當時的計薪快照。</p>
       <div class="btn-wrap"><button class="btn btn-ink" type="submit">${editing ? '儲存修改' : '新增工作'}</button>${editing ? '<button class="btn btn-line" type="button" data-action="job-cancel">取消</button>' : ''}</div>
     </form></details></section>`;
+}
+
+function cloudCard() {
+  const sy = syncState();
+  const T = { off: '未開啟', signin: '未登入', loading: '正在連線…', cloud: '已同步', error: '同步失敗', offline: '離線中', full: '雲端空間不足' };
+  const signed = !!sy.user;
+  return `<section class="card" aria-label="雲端同步"><div class="card-head"><h2 class="card-title">雲端同步</h2><span class="chip ${sy.status === 'cloud' ? 'chip-real' : 'chip-plan'}">${T[sy.status] || ''}</span></div>
+    ${signed ? `<div class="status-line"><i class="dot ${sy.status === 'cloud' ? 'k-ok' : 'is-warn'}"></i><div><strong>${esc(sy.user.name || sy.user.email)}</strong><span>${esc(sy.user.email)}${sy.lastSync ? ` · 最後同步 ${fmtTime(sy.lastSync)}` : ''}</span></div></div>` : ''}
+    ${sy.message ? `<p class="fine">${esc(sy.message)}</p>` : ''}
+    <p class="fine">用 Google 帳戶登入後，紀錄會同步到雲端；換手機或電腦登入同一個帳戶就能看到。沒有網絡時照樣記錄，連線後自動上傳。</p>
+    <div class="btn-wrap">${signed
+      ? '<button type="button" class="btn btn-line" data-action="sync-out">登出同步</button>'
+      : `<button type="button" class="btn btn-ink" data-action="sync-in"${sy.status === 'loading' ? ' disabled' : ''}>${icon('user', 18, 2)}用 Google 登入同步</button>`}</div>
+    <p class="fine">第一次登入時，雲端已有的紀錄為準，再加入這部裝置上獨有的紀錄。兩部裝置同時修改同一筆紀錄時，以最後儲存的為準。</p>
+  </section>`;
 }
 
 function dataCard(data) {
@@ -63,6 +79,7 @@ export function settingsView(ctx) {
         ${jobsCard(data, ui)}
       </div>
       <div class="stack">
+        ${cloudCard()}
         ${dataCard(data)}
         <section class="card" aria-label="安裝與示範"><div class="card-head"><h2 class="card-title">安裝與示範</h2></div>
           <p class="fine">在手機瀏覽器選「加到主畫面」，就可以像 App 一樣開啟；首次開啟後可以離線使用。</p>

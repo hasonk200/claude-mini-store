@@ -132,3 +132,15 @@ test('工作日事件包含真實日期與跨日用餐', () => {
   assert.equal(dateKey(meal.t), '2026-10-13');
   assert.ok(ev.some((e) => e.title === '預計下班' && e.plan));
 });
+
+test('雲端合併：雲端為準，加入只在本機的紀錄', async () => {
+  const { mergeData, stripPhotos } = await import('../js/sync.js');
+  const cloud = { ...empty(), meals: [{ id: 'a', name: '雲端', start: 1 }], dayMarks: [{ date: '2026-10-14', kind: 'off' }] };
+  const local = { ...empty(), meals: [{ id: 'a', name: '本機', start: 1 }, { id: 'b', name: '只在本機', start: 2 }], dayMarks: [{ date: '2026-10-14', kind: 'off' }, { date: '2026-10-18', kind: 'off' }] };
+  const m = mergeData(cloud, local);
+  assert.deepEqual(m.meals.map((x) => x.name), ['雲端', '只在本機']);
+  assert.equal(m.dayMarks.length, 2);
+  const s = stripPhotos({ ...empty(), meals: [{ id: 'p', photo: 'data:image/jpeg;base64,xx' }] });
+  assert.equal(s.meals[0].photo, null);
+  assert.equal(s.meals[0].hasPhoto, true);
+});

@@ -43,6 +43,7 @@ ontime/
   js/time.js            日期與時間工具（當地時間、夏令時間）
   js/logic.js           作息規則：工作日、睡眠歸屬、睡前預算、日曆日分配、收入（純函式）
   js/store.js           本機 IndexedDB 儲存
+  js/sync.js            Google 登入與 Firestore 雲端同步
   js/actions.js         使用者動作、匯入匯出、示範資料
   js/app.js             頁面切換、按鈕與表單處理
   js/views/*.js         各頁畫面；hero.js 是頂部動畫場景
@@ -66,6 +67,7 @@ npm test
 
 ## 目前的限制
 
-- 資料只存在這部裝置的瀏覽器裡，還沒有雲端同步；換裝置或清除網站資料前請先匯出 JSON 備份。
+- 雲端同步：到「我的 › 雲端同步」用 Google 登入。資料存在 Firebase 專案 `dicky-quota-tracker-2026` 的 `users/{uid}/apps/ontime`，相片另存為 `ontime-photo-{餐次 id}`。兩部裝置同時改同一筆紀錄時，以最後儲存的為準（還沒有逐筆的版本衝突處理）。
+- App 部署的網址要加入 Firebase Authentication 的「授權網域」，Firestore 規則要允許登入者讀寫自己 `users/{uid}` 底下的文件，否則登入或同步會失敗。
 - 匯入只接受這個新版 App 匯出的 JSON 備份，舊版 ONTIME 的備份格式還未支援。
 - 深色模式還未加入。
