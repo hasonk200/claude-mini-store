@@ -1,5 +1,6 @@
 // 使用者動作：每個函式只改它負責的那一筆資料。
 import { update, get, uid, replaceAll, emptyData, normalize } from './store.js';
+import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
   currentCycle, activeSession, shiftForClockIn, inferSleepWorkday, sessionsOfWorkday, shiftsOfWorkday,
@@ -304,7 +305,8 @@ export function exportJSON() {
 }
 
 export function parseBackup(text) {
-  const obj = JSON.parse(text);
+  const obj = JSON.parse(String(text).replace(/^\uFEFF/, ''));
+  if (isLegacyBackup(obj)) return convertLegacy(obj);
   const raw = obj && obj.app === 'ONTIME' && obj.data ? obj.data : obj;
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sessions) || !Array.isArray(raw.sleeps)) {
     throw new Error('這不是 ONTIME 的備份檔');
