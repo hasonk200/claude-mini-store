@@ -776,3 +776,12 @@ details.more .form { padding: 0 14px 14px; }
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
 @media (min-width: 1024px) { .tl-grid .summary-3 { grid-template-columns: minmax(0, 1fr); } }
+
+.sleep24 { position: relative; display: block; height: 8px; border-radius: 4px; background: var(--surface); margin: 2px 0; overflow: hidden; }
+.sleep24 i { position: absolute; top: 0; bottom: 0; background: var(--sleep); border-radius: 4px; }
+.metric.k-sleep-soft .metric-label, .metric.k-sleep-soft .metric-note { color: var(--sleep-deep); }
+@media (max-width: 1023px) {
+  .hero.is-compact .hero-eyebrow { display: none; }
+  .hero.is-compact .hero-headline { font-size: 17px; max-width: 15em; }
+  .hero.is-compact .hero-text { top: 12px; left: 16px; gap: 6px; }
+}

@@ -88,9 +88,10 @@ export function ribbon(data, a, b, now, { lanes = false } = {}) {
   return `<div class="lanes${items.length ? '' : ' is-empty'}"><div class="lane-head"><span></span><div class="lane-labels">${labels}</div></div>${rows}<div class="lanes-now">${nowMark}${empty}</div></div>`;
 }
 
-export function legend(withPlan = true) {
-  const items = [['work', '工作'], ['commute', '通勤'], ['meal', '用餐'], ['sleep', '睡眠']];
-  return `<div class="legend">${items.map(([k, l]) => `<span><i class="sw k-${k}"></i>${l}</span>`).join('')}${withPlan ? '<span><i class="sw is-plan-sw"></i>預計</span><span><i class="sw is-unknown-sw"></i>未知</span>' : ''}</div>`;
+export function legend(withPlan = true, data = null) {
+  const jobs = data && data.jobs.length ? data.jobs.map((j) => [j.color === 'deliv' ? 'deliv' : 'work', j.name]) : [['work', '工作']];
+  const items = [...jobs, ['commute', '通勤'], ['meal', '用餐'], ['sleep', '睡眠']];
+  return `<div class="legend">${items.map(([k, l]) => `<span><i class="sw k-${k}"></i>${esc(l)}</span>`).join('')}${withPlan ? '<span><i class="sw is-plan-sw"></i>預計</span><span><i class="sw is-unknown-sw"></i>未知</span>' : ''}</div>`;
 }
 
 export function wdLabel(wd) {

@@ -102,7 +102,10 @@ function scheduleSave() {
 }
 
 // mutator 直接修改傳入的草稿；完成後保存並通知畫面。
+let previous = null;
+
 export function update(mutator) {
+  previous = data;
   const draft = structuredClone(data);
   mutator(draft);
   data = draft;
@@ -110,7 +113,18 @@ export function update(mutator) {
   emit();
 }
 
+// 復原上一步（只保留一步）。
+export function undo() {
+  if (!previous) return false;
+  data = previous;
+  previous = null;
+  scheduleSave();
+  emit();
+  return true;
+}
+
 export function replaceAll(next) {
+  previous = null;
   data = normalize(next);
   scheduleSave();
   emit();

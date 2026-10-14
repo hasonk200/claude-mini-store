@@ -130,12 +130,15 @@ function fixLabels() {
   });
 }
 
-function toast(msg, actionHTML = '') {
+const UNDO = '<button type="button" class="btn btn-lime btn-sm" data-action="undo">復原</button>';
+function toastUndo(msg) { toast(msg, UNDO, 6000); }
+
+function toast(msg, actionHTML = '', ms = 3200) {
   const el = $('#toast');
   el.innerHTML = `<span>${msg}</span>${actionHTML}`;
   el.classList.add('is-on');
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => el.classList.remove('is-on'), 3200);
+  toast.t = setTimeout(() => el.classList.remove('is-on'), ms);
 }
 
 function route() {
@@ -223,11 +226,13 @@ const handlers = {
   'step': (el) => {
     const step = el.dataset.step;
     act.recordStep(step, nowFn());
-    toast(`已記錄${el.textContent.replace(' · 現在', '').replace('記錄', '').trim()} ${fmtTime(nowFn())}`);
+    toastUndo(`已記錄${el.textContent.replace(' · 現在', '').replace('記錄', '').trim()} ${fmtTime(nowFn())}`);
   },
-  'break': () => { act.toggleBreak(nowFn()); toast('已更新休息'); },
-  'sleep-start': () => { act.startSleep(nowFn()); toast(`已開始睡眠計時 ${fmtTime(nowFn())}`); },
-  'wake': () => { act.wakeUp(nowFn()); toast(`早安，起床時間 ${fmtTime(nowFn())}`); },
+  'undo': () => { if (store.undo()) toast('已復原'); },
+  'show-templates': () => { ui.showTemplates = true; render(); },
+  'break': () => { act.toggleBreak(nowFn()); toastUndo('已更新休息'); },
+  'sleep-start': () => { act.startSleep(nowFn()); toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`); },
+  'wake': () => { act.wakeUp(nowFn()); toastUndo(`早安，起床時間 ${fmtTime(nowFn())}`); },
   'open-record': (el) => openRecord(el.dataset.wd),
   'close-sheet': closeSheet,
   'close-sheet-nav': () => { ui.sheet = null; },
@@ -293,8 +298,8 @@ const handlers = {
     act.addSleepPlan(start, start + (last.end - last.start));
     toast(`已建立計畫 ${fmtTime(start)} 開始`);
   },
-  'meal-confirm': (el) => { act.confirmMeal(el.dataset.id); toast('已確認這一餐'); },
-  'meal-delete': (el) => { act.deleteMeal(el.dataset.id); if (ui.sheet?.type === 'ref') ui.sheet = null; toast('已刪除'); },
+  'meal-confirm': (el) => { act.confirmMeal(el.dataset.id); toastUndo('已確認這一餐'); },
+  'meal-delete': (el) => { act.deleteMeal(el.dataset.id); if (ui.sheet?.type === 'ref') ui.sheet = null; toastUndo('已刪除'); },
   'meal-edit': (el) => { ui.mealEdit = el.dataset.id; ui.mealPhoto = undefined; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
   'meal-cancel': () => { ui.mealEdit = null; ui.mealPhoto = undefined; render(); },
   'meal-photo-remove': () => { ui.mealPhoto = null; lastView = ''; render(); },
@@ -440,6 +445,14 @@ async function start() {
   initSync();
   bind();
   route();
+  // 主畫面捷徑：?do=out|clockIn|sleep|meal
+  const doAct = params.get('do');
+  if (doAct) {
+    history.replaceState(null, '', location.pathname + (fixedNow ? `?now=${params.get('now')}` : '') + location.hash);
+    if (doAct === 'meal') location.hash = '#/meals';
+    else if (doAct === 'sleep') { act.startSleep(nowFn()); toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`); }
+    else if (doAct === 'out' || doAct === 'clockIn') { act.recordStep(doAct, nowFn()); toastUndo(`已記錄${doAct === 'out' ? '出門' : '上班'} ${fmtTime(nowFn())}`); }
+  }
   // 每 30 秒更新倒數；正在輸入時不重畫，避免打斷。
   setInterval(() => {
     const a = document.activeElement;

@@ -187,3 +187,26 @@ test('讀取舊版 ONTIME 備份：取最新版本、略過已刪除、配對通
   assert.equal(d.settings.commuteOutMin, 30);
   assert.equal(d.jobs[0].color, 'deliv');
 });
+
+test('已清醒時間與過去 24 小時分段睡眠', async () => {
+  const { awakeSince, sleepLast24h } = await import('../js/logic.js');
+  const d = empty();
+  d.sleeps.push({ id: 'a', start: at('2026-10-13', '17:58'), end: at('2026-10-13', '21:15') });
+  d.sleeps.push({ id: 'b', start: at('2026-10-13', '22:40'), end: at('2026-10-14', '02:00') });
+  d.sleeps.push({ id: 'c', start: at('2026-10-14', '07:45'), end: at('2026-10-14', '11:55') });
+  const now = at('2026-10-14', '18:30');
+  assert.equal(awakeSince(d, now).ms, 6 * HOUR + 35 * MIN);
+  const s = sleepLast24h(d, now);
+  assert.equal(s.parts.length, 3);
+  assert.equal(s.ms, 10 * HOUR + 15 * MIN);
+});
+
+test('復原上一步', async () => {
+  const store = await import('../js/store.js');
+  store.replaceAll(empty());
+  store.update((d) => { d.meals.push({ id: 'x', start: 1 }); });
+  assert.equal(store.get().meals.length, 1);
+  assert.equal(store.undo(), true);
+  assert.equal(store.get().meals.length, 0);
+  assert.equal(store.undo(), false);
+});

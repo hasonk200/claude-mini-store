@@ -501,3 +501,15 @@ export function periodStats(data, fromKey, toKey, now) {
   for (const x of intervalsAround(data, a, b, now)) if (x.kind === 'commute' && !x.plan) commuteMs += Math.min(x.b, b) - Math.max(x.a, a);
   return { sessions, workMs, hourlyPay, hourlyKnown, income, incomeKnown, perOrderCount, orders, byDay, commuteMs };
 }
+
+// ---------- 清醒時間與近 24 小時睡眠 ----------
+export function awakeSince(data, now) {
+  const last = data.sleeps.filter((s) => s.end != null && s.end <= now).sort((a, b) => b.end - a.end)[0];
+  return last ? { since: last.end, ms: now - last.end } : null;
+}
+
+export function sleepLast24h(data, now) {
+  const from = now - 24 * HOUR;
+  const parts = mergeIntervals(clip(data.sleeps.filter((s) => s.start != null).map((s) => [s.start, s.end ?? now]), from, now));
+  return { ms: parts.reduce((n, [a, b]) => n + (b - a), 0), parts, from };
+}
