@@ -271,7 +271,7 @@ const handlers = {
   },
   'batch-toggle': () => { ui.batch = !ui.batch; ui.batchDays = []; render(); },
   'batch-clear': () => { ui.batchDays = []; render(); },
-  'batch-off': () => { for (const k of ui.batchDays) act.toggleDayOff(k); ui.batchDays = []; toast('已更新休息日'); },
+  'batch-off': () => { for (const k of ui.batchDays) act.toggleDayOff(k); ui.batchDays = []; toast('已更新休假'); },
   'tpl-apply': (el) => {
     const keys = ui.batch ? ui.batchDays : ui.calDay ? [ui.calDay] : [];
     act.applyTemplate(el.dataset.id, keys);
@@ -280,7 +280,7 @@ const handlers = {
   },
   'tpl-delete': (el) => act.deleteTemplate(el.dataset.id),
   'shift-delete': (el) => act.deleteShift(el.dataset.id),
-  'day-off': (el) => { const on = store.get().dayMarks.some((m) => m.date === el.dataset.key); act.toggleDayOff(el.dataset.key); toast(on ? '已取消休息日' : '已設為休息日'); },
+  'day-off': (el) => act.toggleDayOff(el.dataset.key),
   'sleep-wd-clear': (el) => { act.updateSleep(el.dataset.id, { workdayDate: null }); toast('改為按入睡日期'); },
   'sleep-delete': (el) => act.deleteSleep(el.dataset.id),
   'sleep-reuse': () => {
