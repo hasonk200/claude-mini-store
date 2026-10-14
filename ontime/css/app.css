@@ -252,9 +252,13 @@ button.chip { cursor: pointer; min-height: 30px; }
 .lane-track { position: relative; height: 36px; border-radius: 10px; background: var(--surface-2); }
 .lane-track .seg-bar { top: 0; bottom: 0; }
 .lane-empty { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted); font-weight: 600; }
-.lanes-now { position: absolute; top: 18px; bottom: 0; left: calc(var(--name) + 12px); right: 0; pointer-events: none; }
+.lanes-now { position: absolute; top: 18px; bottom: 26px; left: calc(var(--name) + 12px); right: 0; pointer-events: none; }
 .lanes-now .now-line { bottom: 0; top: 22px; }
-.lanes-now .now-pill { top: -2px; }
+.lanes-now .now-pill { top: auto; bottom: -26px; }
+.lanes { padding-bottom: 26px; }
+.lanes-empty { position: absolute; inset: 22px 0 0; display: flex; align-items: center; justify-content: center; }
+.lanes-empty span { font-size: 13px; font-weight: 700; color: var(--muted); background: var(--surface); padding: 6px 14px; border-radius: 999px; box-shadow: var(--shadow); }
+.lanes.is-empty .lane-track { background: repeating-linear-gradient(135deg, #EEF0EC 0 4px, var(--surface-2) 4px 10px); }
 
 /* 表格與檢視面板 */
 .grid-today, .grid-2, .grid-2-1, .grid-1-2 { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
@@ -353,7 +357,8 @@ details.more .form { padding: 0 14px 14px; }
 .k-sleep-soft { background: var(--sleep-tint); }
 .k-sleep-soft span, .k-sleep-soft small { color: var(--sleep-deep); }
 .k-deliv-soft { background: var(--deliv-tint); }
-.alloc { list-style: none; margin: 0; padding: 0; gap: 0; }
+.alloc { list-style: none; margin: 0; padding: 6px 18px; gap: 0; }
+@media (min-width: 1024px) { .alloc { padding: 8px 22px; } }
 .alloc li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
 .alloc li:last-child { border-bottom: 0; }
 .alloc li div { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -727,3 +732,4 @@ details.more .form { padding: 0 14px 14px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+@media (min-width: 1024px) { .tl-grid .summary-3 { grid-template-columns: minmax(0, 1fr); } }

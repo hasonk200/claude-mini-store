@@ -32,6 +32,33 @@ function ticksFor(a, b, dense = true) {
   return out;
 }
 
+// 估算文字寬度，挑出不會互相重疊的刻度標籤；午夜標籤優先保留。
+function textWidth(str) {
+  let w = 0;
+  for (const ch of str) w += /[\u0000-\u00ff]/.test(ch) ? 6.6 : 11.5;
+  return w;
+}
+
+export function tickLabels(ticks, a, b, trackPx) {
+  const items = ticks.map((t) => {
+    const f = (t.t - a) / (b - a);
+    const w = textWidth(t.label);
+    const x = f * trackPx;
+    let left = x - w / 2;
+    let anchor = '-50%';
+    if (left < 0) { left = Math.max(0, x); anchor = '0'; if (x + w > trackPx) { left = trackPx - w; } }
+    if (left + w > trackPx) { left = x - w; anchor = '-100%'; }
+    return { t, f, left, right: left + w, anchor };
+  });
+  const order = [...items].sort((p, q) => (q.t.mid ? 1 : 0) - (p.t.mid ? 1 : 0));
+  const kept = [];
+  for (const it of order) {
+    if (kept.some((k) => it.left < k.right + 8 && it.right + 8 > k.left)) continue;
+    kept.push(it);
+  }
+  return kept.sort((p, q) => p.f - q.f).map((it) => `<span class="tick-label${it.t.mid ? ' is-mid' : ''}" style="left:${(it.f * 100).toFixed(2)}%;transform:translateX(${it.anchor})">${esc(it.t.label)}</span>`).join('');
+}
+
 function segHTML(x, a, b) {
   const s = Math.max(x.a, a);
   const e = Math.min(x.b, b);
@@ -47,10 +74,7 @@ export function ribbon(data, a, b, now, { lanes = false } = {}) {
   const showNow = now > a && now < b;
   const nowMark = showNow ? `<div class="now-line" style="left:${pct(now, a, b)}"><span class="now-pill">現在 ${fmtTime(now)}</span></div>` : '';
   const grid = ticks.map((t) => `<div class="tick-line${t.mid ? ' is-mid' : ''}" style="left:${pct(t.t, a, b)}"></div>`).join('');
-  const labels = ticks.map((t, i) => {
-    const shift = i === 0 && (t.t - a) / (b - a) < 0.04 ? '0' : (t.t - a) / (b - a) > 0.96 ? '-100%' : '-50%';
-    return `<span class="tick-label${t.mid ? ' is-mid' : ''}" style="left:${pct(t.t, a, b)};transform:translateX(${shift})">${esc(t.label)}</span>`;
-  }).join('');
+  const labels = tickLabels(ticks, a, b, 2000);
   if (!lanes) {
     const order = { sleep: 0, work: 1, deliv: 1, commute: 2, meal: 3 };
     const segs = items.sort((x, y) => (order[x.kind] ?? 9) - (order[y.kind] ?? 9)).map((x) => segHTML({ ...x, label: '' }, a, b)).join('');
@@ -58,10 +82,10 @@ export function ribbon(data, a, b, now, { lanes = false } = {}) {
   }
   const rows = LANES.map(([key, label, kinds]) => {
     const segs = items.filter((x) => kinds.includes(x.kind)).map((x) => segHTML(x, a, b)).join('');
-    const empty = segs ? '' : '<span class="lane-empty">沒有紀錄</span>';
-    return `<div class="lane"><span class="lane-name">${label}</span><div class="lane-track">${grid}${segs}${empty}</div></div>`;
+    return `<div class="lane"><span class="lane-name">${label}</span><div class="lane-track">${grid}${segs}</div></div>`;
   }).join('');
-  return `<div class="lanes"><div class="lane-head"><span></span><div class="lane-labels">${labels}</div></div>${rows}<div class="lanes-now">${nowMark}</div></div>`;
+  const empty = items.length ? '' : '<div class="lanes-empty"><span>這段時間還沒有紀錄</span></div>';
+  return `<div class="lanes${items.length ? '' : ' is-empty'}"><div class="lane-head"><span></span><div class="lane-labels">${labels}</div></div>${rows}<div class="lanes-now">${nowMark}${empty}</div></div>`;
 }
 
 export function legend(withPlan = true) {

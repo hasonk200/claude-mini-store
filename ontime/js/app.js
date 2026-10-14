@@ -87,6 +87,7 @@ function render() {
     view.innerHTML = html;
     lastView = html;
     if (focusedName) view.querySelector(`[name="${CSS.escape(focusedName)}"]`)?.focus();
+    fixLabels();
   }
   document.querySelectorAll('[data-route]').forEach((a) => {
     if (a.dataset.route === ui.route) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
@@ -101,6 +102,23 @@ function render() {
   const dot = st.saveError || ['error', 'full'].includes(sy.status) ? 'is-warn' : sy.status === 'cloud' || !cloudOn ? 'k-ok' : 'is-off';
   const sub = sy.status === 'cloud' && sy.user ? `${esc(sy.user.email)}${sy.lastSync ? ' · ' + fmtTime(sy.lastSync) : ''}` : cloudOn ? esc(sy.message || '離線也能記錄') : `${st.lastSaved ? `最後儲存 ${fmtTime(st.lastSaved)} · ` : ''}<a href="#/settings">登入 Google 同步</a>`;
   $('#sync-card').innerHTML = `<span class="sync-line"><i class="dot ${dot}"></i>${line}</span><span class="fine">${sub}</span>`;
+}
+
+// 按實際寬度隱藏會互相重疊的時間刻度；午夜的刻度優先保留。
+function fixLabels() {
+  document.querySelectorAll('.lane-labels, .ribbon-labels, .wk-track-head').forEach((box) => {
+    const spans = [...box.children];
+    spans.forEach((sp) => { sp.style.visibility = ''; });
+    const boxRect = box.getBoundingClientRect();
+    const order = spans.slice().sort((x, y) => (y.classList.contains('is-mid') ? 1 : 0) - (x.classList.contains('is-mid') ? 1 : 0));
+    const kept = [];
+    for (const sp of order) {
+      const r = sp.getBoundingClientRect();
+      const outside = r.left < boxRect.left - 1 || r.right > boxRect.right + 1;
+      if (outside || kept.some((k) => r.left < k.right + 10 && r.right + 10 > k.left)) { sp.style.visibility = 'hidden'; continue; }
+      kept.push(r);
+    }
+  });
 }
 
 function toast(msg, actionHTML = '') {
@@ -396,6 +414,9 @@ function bind() {
   });
   window.addEventListener('hashchange', route);
   desktopMQ.addEventListener('change', () => { lastView = ''; render(); });
+  let resizeT = null;
+  window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(fixLabels, 120); });
+  document.fonts?.ready.then(fixLabels);
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; ui.canInstall = true; render(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
 }
