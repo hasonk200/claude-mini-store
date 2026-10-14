@@ -188,12 +188,16 @@ export function currentWorkday(data, now) {
     if (sh && sh.start - now < 6 * HOUR) return dateKey(sh.start);
     return dateKey(cyc.journey.out ?? now);
   }
+  // 剛下班的那個工作日，只在「還沒睡醒」而且下班後 16 小時內才繼續算。
+  // 睡醒之後，或隔了太久都沒有新的班，就換成新的工作日（不然沒排班時會一直卡在舊的一天）。
   const done = data.sessions
-    .filter((x) => x.end != null && x.end <= now && now - x.end <= 36 * HOUR)
+    .filter((x) => x.end != null && x.end <= now && now - x.end <= 16 * HOUR)
     .sort((a, b) => b.end - a.end)[0];
   if (done) {
     const started = data.shifts.find((sh) => sh.start > done.end && sh.start <= now);
-    return started ? dateKey(started.start) : workdayOfSession(done);
+    if (started) return dateKey(started.start);
+    const sleptAfter = data.sleeps.some((sl) => sl.start != null && sl.end != null && sl.start >= done.end && sl.end <= now);
+    if (!sleptAfter) return workdayOfSession(done);
   }
   const upcoming = data.shifts
     .filter((sh) => sh.start > now && sh.start - now <= 24 * HOUR)

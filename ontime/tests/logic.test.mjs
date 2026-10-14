@@ -50,6 +50,21 @@ test('下一班開始後切到新的工作日', () => {
   assert.equal(currentWorkday(d, at('2026-10-13', '21:30')), '2026-10-13');
 });
 
+test('夜班下班、睡醒後沒有新班，換成當天工作日（不卡在週一）', () => {
+  const d = empty();
+  d.sessions.push({ id: 's1', jobId: 'j1', start: at('2026-10-12', '21:00'), end: at('2026-10-13', '09:04'), breaks: [], payMode: 'hourly', rate: 20, income: null, orders: null });
+  d.sleeps.push({ id: 'z', start: at('2026-10-13', '12:04'), end: at('2026-10-13', '19:00') });
+  assert.equal(currentWorkday(d, at('2026-10-13', '21:30')), '2026-10-13');
+  assert.equal(currentWorkday(d, at('2026-10-14', '19:49')), '2026-10-14');
+});
+
+test('下班後超過 16 小時沒有新班，也換成日曆日', () => {
+  const d = empty();
+  d.sessions.push({ id: 's1', jobId: 'j1', start: at('2026-10-12', '21:00'), end: at('2026-10-13', '09:04'), breaks: [], payMode: 'hourly', rate: 20, income: null, orders: null });
+  assert.equal(currentWorkday(d, at('2026-10-13', '18:00')), '2026-10-12');
+  assert.equal(currentWorkday(d, at('2026-10-14', '19:49')), '2026-10-14');
+});
+
 test('沒有紀錄時用日曆日', () => {
   assert.equal(currentWorkday(empty(), at('2026-10-14', '10:00')), '2026-10-14');
 });
