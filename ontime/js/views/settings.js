@@ -1,4 +1,4 @@
-import { esc, icon } from '../ui.js';
+import { esc, icon, seg } from '../ui.js';
 import { fmtTime, wdOf, fmtMD, dateKey } from '../time.js';
 import { status } from '../store.js';
 import { syncState } from '../sync.js';
@@ -76,6 +76,10 @@ export function settingsView(ctx) {
           <p class="fine">只用來估算睡前未安排時間；實際通勤以你的打卡為準。</p>
           <button class="btn btn-ink" type="submit">儲存</button>
         </form></section>
+        <section class="card" aria-label="外觀"><div class="card-head"><h2 class="card-title">外觀</h2></div>
+          ${seg('theme', '顏色模式', [['auto', '跟隨系統'], ['light', '淺色'], ['dark', '深色']], st.theme || 'auto')}
+          <p class="fine">深色模式適合夜班和睡前使用；頂部場景仍然跟著當地時間變化。</p>
+        </section>
         ${jobsCard(data, ui)}
       </div>
       <div class="stack">

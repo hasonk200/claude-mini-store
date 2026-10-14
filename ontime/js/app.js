@@ -72,8 +72,17 @@ let lastView = '';
 let lastSheet = '';
 let dirty = false;
 
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (theme === 'light' || theme === 'dark') root.dataset.theme = theme; else delete root.dataset.theme;
+  try { localStorage.setItem('ontime-theme', theme || 'auto'); } catch { /* 忽略 */ }
+  const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0E1116' : '#F4F5F1');
+}
+
 function render() {
   const c = ctx();
+  applyTheme(c.data.settings.theme);
   const r = ROUTES[ui.route] || ROUTES.today;
   document.title = `${r.title} · ONTIME`;
   // 首頁頂部場景只在內容改變時才重畫，動畫不會因定時更新而跳回起點。
@@ -240,6 +249,7 @@ const handlers = {
   },
   'tl-day': (el) => { if (ui.tlMode === 'workday') ui.wd = el.dataset.key; else ui.calKey = el.dataset.key; render(); },
   'seg': (el) => {
+    if (el.dataset.seg === 'theme') { act.saveSettings({ theme: el.dataset.value }); return; }
     ui[el.dataset.seg] = el.dataset.value;
     if (el.dataset.seg === 'statsPeriod') ui.statsOffset = 0;
     render();
@@ -414,6 +424,7 @@ function bind() {
   });
   window.addEventListener('hashchange', route);
   desktopMQ.addEventListener('change', () => { lastView = ''; render(); });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
   let resizeT = null;
   window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(fixLabels, 120); });
   document.fonts?.ready.then(fixLabels);
