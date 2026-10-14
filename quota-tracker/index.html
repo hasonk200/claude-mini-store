@@ -122,9 +122,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 details.more input{margin-top:8px}
 .lblrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
 .lblrow label{font-size:14px;font-weight:500}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--bg)}
-.seg button{border:0;background:transparent;padding:3px 12px;font-size:13.5px;cursor:pointer;min-height:30px;color:var(--muted)}
-.seg button[aria-pressed="true"]{background:var(--use);color:#fff;font-weight:700}
+.modetag{font-size:13px;color:var(--muted);white-space:nowrap}
 .conv{font-size:13.5px;color:var(--muted);min-height:1.4em;margin-top:4px}
 .conv b{color:var(--ink)}
 .check{display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:14.5px;cursor:pointer}
@@ -301,13 +299,13 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
     <div class="panel">
       <div class="grid2">
         <div class="field">
-          <div class="lblrow"><label for="inW">每週</label><div class="seg" data-for="W" role="group" aria-label="每週輸入方式"><button type="button" data-mode="used">已用</button><button type="button" data-mode="left">剩低</button></div></div>
+          <div class="lblrow"><label for="inW">每週</label><span class="modetag" id="modeTagW"></span></div>
           <div class="numrow"><input type="number" id="inW" min="0" max="100" step="0.1" inputmode="decimal" placeholder="—"><span>%</span></div>
           <div class="conv" id="convW"></div>
           <input type="range" id="rgW" min="0" max="100" step="1" value="0" aria-label="每週用量滑桿">
         </div>
         <div class="field">
-          <div class="lblrow"><label for="inS" id="lblS">5 小時</label><div class="seg" data-for="S" role="group" aria-label="短期輸入方式"><button type="button" data-mode="used">已用</button><button type="button" data-mode="left">剩低</button></div></div>
+          <div class="lblrow"><label for="inS" id="lblS">5 小時</label><span class="modetag" id="modeTagS"></span></div>
           <div class="numrow"><input type="number" id="inS" min="0" max="100" step="0.1" inputmode="decimal" placeholder="—"><span>%</span></div>
           <div class="conv" id="convS"></div>
           <input type="range" id="rgS" min="0" max="100" step="1" value="0" aria-label="短期用量滑桿">
@@ -959,10 +957,8 @@ function flipField(k){
 }
 function syncSeg(){
   const t=tr();
-  document.querySelectorAll('.seg').forEach(g=>{
-    const m=t['mode'+g.dataset.for];
-    g.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===m)));
-  });
+  $('modeTagW').textContent='設定：'+(t.modeW==='left'?'剩低':'已用');
+  $('modeTagS').textContent='設定：'+(t.modeS==='left'?'剩低':'已用');
   updateConv();
 }
 function updateConv(){
@@ -973,15 +969,7 @@ function updateConv(){
     el.innerHTML=m==='left'?('即係已用 <b>'+f1(100-v)+'%</b>，會記低呢個數'):('即係剩低 '+f1(100-v)+'%');
   }
 }
-document.querySelectorAll('.seg').forEach(g=>g.addEventListener('click',e=>{
-  const b=e.target.closest('button[data-mode]');if(!b)return;
-  const t=tr(),k=g.dataset.for,key='mode'+k;
-  if(t[key]===b.dataset.mode)return;
-  const cur=num($('in'+k).value);
-  t[key]=b.dataset.mode;
-  if(cur!==null){const nv=100-cur;$('in'+k).value=f1(nv);$('rg'+k).value=Math.round(nv);}
-  persist();syncSeg();
-}));
+
 function recordTime(){const ov=$('inT').value;if(ov&&$('moreT').open){const p=new Date(ov).getTime();if(isFinite(p))return p;}return Date.now();}
 function prefill(){
   const t=tr(),s=snapshot(t,Date.now());
