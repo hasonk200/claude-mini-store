@@ -297,7 +297,7 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
 
   <section class="block">
     <div class="block-head"><h2>更新用量</h2></div>
-    <p class="hint">打開你個 AI 嘅用量頁面，抄低而家嘅百分比，撳「加一條記錄」就會自動記低時間。如果個 App 顯示嘅係「剩低幾多」，揀「剩低」就得，呢度會自動換成已用咗幾多。</p>
+    <p class="hint">打開你個 AI 嘅用量頁面，抄低而家嘅百分比，撳「加一條記錄」就會自動記低時間。如果個 App 顯示嘅係「剩低幾多」，去「設定」將預設改成「剩低」就得，之後每次都唔使再喺度切換。</p>
     <div class="panel">
       <div class="grid2">
         <div class="field">
@@ -411,6 +411,11 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
       <div class="field"><label for="sHours">短期額度長度（小時）</label><input type="number" id="sHours" min="1" max="24" step="1" style="width:100%"></div>
       <div class="field"><label for="sWarn">警戒線（%）</label><input type="number" id="sWarn" min="1" max="100" step="1" style="width:100%"></div>
     </div>
+    <div class="grid2">
+      <div class="field"><label for="sModeW">每週額度 App 顯示</label><select id="sModeW" style="width:100%"><option value="used">已用幾多</option><option value="left">剩低幾多</option></select></div>
+      <div class="field"><label for="sModeS">短期額度 App 顯示</label><select id="sModeS" style="width:100%"><option value="used">已用幾多</option><option value="left">剩低幾多</option></select></div>
+    </div>
+    <p class="hint" style="margin:-4px 0 14px">揀咗之後，以後更新都會預設用呢個方式輸入，唔使每次喺主頁切換。每個追蹤可以各自設定。</p>
     <div class="dlg-row">
       <button type="button" class="btn primary" id="sSave">儲存設定</button>
       <button type="button" class="btn ghost" id="sClose">取消</button>
@@ -947,6 +952,11 @@ function renderHistory(){
 /* ---------- form ---------- */
 function toInput(used,mode){return used===null?null:(mode==='left'?100-used:used);}
 function fromInput(v,mode){if(v===null)return null;return Math.round((mode==='left'?100-v:v)*10)/10;}
+function flipField(k){
+  const el=$('in'+k),v=num(el.value);
+  if(v===null)return;
+  const nv=100-v;el.value=f1(nv);$('rg'+k).value=Math.round(nv);updateConv();
+}
 function syncSeg(){
   const t=tr();
   document.querySelectorAll('.seg').forEach(g=>{
@@ -1075,7 +1085,7 @@ document.addEventListener('click',e=>{if(e.target.closest('[data-open-settings]'
 /* ---------- settings ---------- */
 const dlg=$('settings');
 $('sDay').innerHTML=WD.map((d,i)=>'<option value="'+i+'">星期'+d+'</option>').join('');
-function fillSettings(){const t=tr();$('sName').value=t.name;$('sDay').value=String(t.weekDay);$('sTime').value=t.weekTime.padStart(5,'0');$('sHours').value=t.sessionHours;$('sWarn').value=t.warnAt;}
+function fillSettings(){const t=tr();$('sName').value=t.name;$('sDay').value=String(t.weekDay);$('sTime').value=t.weekTime.padStart(5,'0');$('sHours').value=t.sessionHours;$('sWarn').value=t.warnAt;$('sModeW').value=t.modeW;$('sModeS').value=t.modeS;}
 function openSettings(){fillSettings();$('remBox').hidden=true;if(typeof dlg.showModal==='function')dlg.showModal();else dlg.setAttribute('open','');}
 function closeSettings(){if(typeof dlg.close==='function')dlg.close();else dlg.removeAttribute('open');}
 $('openSettings').addEventListener('click',openSettings);
@@ -1109,7 +1119,12 @@ $('sSave').addEventListener('click',()=>{
   t.weekTime=/^\d{1,2}:\d{2}/.test($('sTime').value)?$('sTime').value.slice(0,5):t.weekTime;
   t.sessionHours=clamp(parseInt($('sHours').value,10)||5,1,24);
   t.warnAt=clamp(parseInt($('sWarn').value,10)||80,1,100);
-  viewOffset=0;persist();render();closeSettings();toast('設定已儲存');
+  const oldW=t.modeW,oldS=t.modeS;
+  t.modeW=$('sModeW').value==='left'?'left':'used';
+  t.modeS=$('sModeS').value==='left'?'left':'used';
+  if(t.modeW!==oldW)flipField('W');
+  if(t.modeS!==oldS)flipField('S');
+  viewOffset=0;persist();render();syncSeg();closeSettings();toast('設定已儲存');
 });
 $('sAdd').addEventListener('click',()=>{
   const nt=newTracker('新追蹤 '+(state.trackers.length+1));
