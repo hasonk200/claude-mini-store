@@ -69,5 +69,5 @@ npm test
 
 - 雲端同步：到「我的 › 雲端同步」用 Google 登入。資料存在 Firebase 專案 `dicky-quota-tracker-2026` 的 `users/{uid}/apps/ontime`，相片另存為 `ontime-photo-{餐次 id}`。兩部裝置同時改同一筆紀錄時，以最後儲存的為準（還沒有逐筆的版本衝突處理）。
 - App 部署的網址要加入 Firebase Authentication 的「授權網域」，Firestore 規則要允許登入者讀寫自己 `users/{uid}` 底下的文件，否則登入或同步會失敗。
-- 匯入只接受這個新版 App 匯出的 JSON 備份，舊版 ONTIME 的備份格式還未支援。
-- 深色模式還未加入。
+- 匯入可以讀新版的 JSON 備份，也可以讀舊版 ONTIME 的備份（`dicky-ontime-backup`）。
+- 設計思路、需求與每一頁的說明見 [DESIGN.md](DESIGN.md)。
