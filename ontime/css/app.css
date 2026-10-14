@@ -776,3 +776,11 @@ details.more .form { padding: 0 14px 14px; }
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
 @media (min-width: 1024px) { .tl-grid .summary-3 { grid-template-columns: minmax(0, 1fr); } }
+
+/* 一週作息：休息日按鈕 */
+.wk-day .off-toggle { align-self: flex-start; margin-top: 4px; display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 10px; border-radius: 999px; border: 1.5px dashed var(--faint); background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; }
+.wk-day .off-toggle:hover { border-style: solid; color: var(--ink); }
+.wk-day .off-toggle.is-on { border: 0; background: var(--commute-tint); color: var(--commute-deep); }
+.wk-row { min-height: 72px; }
+.wk-track { min-height: 48px; }
+.off-label { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; color: var(--commute-deep); background: var(--surface); padding: 4px 12px; border-radius: 999px; box-shadow: var(--shadow); z-index: 2; }
