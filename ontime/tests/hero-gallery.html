@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ONTIME 場景預覽</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="../css/app.css">
+<style>body{padding:16px}.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(var(--min,1100px),1fr))}h2{font-size:13px;margin:8px 0 4px;color:#5B636E}</style>
+</head>
+<body>
+<div class="grid" id="g"></div>
+<script type="module">
+import { heroHTML } from '../js/views/hero.js';
+const p = new URLSearchParams(location.search);
+const compact = p.has('compact');
+if (compact) document.documentElement.style.setProperty('--min', '340px');
+const cases = [
+  ['out', '2026-10-12T20:15', '出門了，路上小心。'],
+  ['ride', '2026-10-12T20:25', '在路上，準時到。'],
+  ['arrive', '2026-10-12T20:50', '到了，準備上班。'],
+  ['work', '2026-10-13T03:18', '工作中，還有 5 小時 42 分。'],
+  ['break', '2026-10-13T03:10', '休息一下，喝口水。'],
+  ['off', '2026-10-13T09:05', '下班了，準備回家。'],
+  ['ride2', '2026-10-13T09:20', '回家路上，慢慢來。'],
+  ['free', '2026-10-13T10:30', '今天，留點時間給自己。'],
+  ['sleep', '2026-10-13T13:00', '好好睡一覺。'],
+  ['free', '2026-10-13T18:10', '今天，留點時間給自己。'],
+  ['free', '2026-10-13T06:10', '今天，留點時間給自己。'],
+  ['free', '2026-10-13T22:30', '晚安，好好休息。']
+];
+document.getElementById('g').innerHTML = cases.map(([s, t, h]) => `<div><h2>${s} · ${t}</h2>${heroHTML({ state: s, now: new Date(t).getTime(), headline: h, line: '睡前還有 2h 00m 未安排', eyebrow: 'ONTIME · 週一工作日', compact })}</div>`).join('');
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "ontime",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "TZ=America/Toronto node --test tests/*.test.mjs"
+  }
+}
