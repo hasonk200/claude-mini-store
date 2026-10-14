@@ -1,9 +1,17 @@
 import { esc, icon } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, toDateInput, toTimeInput, MIN } from '../time.js';
-import { mealWorkday, sessionsOfWorkday } from '../logic.js';
+import { mealWorkday, sessionsOfWorkday, frequentMealValues } from '../logic.js';
+import { lastMealLine } from './today.js';
 import { pageHead, dayNav } from './shared.js';
 
-function mealForm(ui, now, editing) {
+function chips(values, field) {
+  if (!values.length) return '';
+  return `<div class="chips" role="group" aria-label="最近常${field === 'name' ? '吃' : '去'}">${values.map((v) => `<button type="button" class="chip-btn" data-action="meal-fill" data-field="${field}" data-value="${esc(v)}">${esc(v)}</button>`).join('')}</div>`;
+}
+
+function mealForm(ui, now, editing, data) {
+  const favNames = frequentMealValues(data, 'name');
+  const favPlaces = frequentMealValues(data, 'place');
   const m = editing || {};
   const start = m.start ?? now;
   const end = m.end ?? null;
@@ -15,9 +23,9 @@ function mealForm(ui, now, editing) {
       <label class="field"><span>開始</span><input type="time" name="start" value="${toTimeInput(start)}" required></label></div>
       <div class="field-pair"><label class="field"><span>結束（可空白）</span><input type="time" name="end" value="${end ? toTimeInput(end) : ''}"></label>
       <label class="field"><span>狀態</span><select name="confirmed"><option value="1"${m.confirmed !== false ? ' selected' : ''}>已經吃了</option><option value="0"${m.confirmed === false ? ' selected' : ''}>只是安排</option></select></label></div>
-      <details class="more"${m.name || m.place || m.note || photo ? ' open' : ''}><summary>餐點、地點、備註、相片（選填）</summary>
-        <div class="field-pair"><label class="field"><span>餐點</span><input name="name" value="${esc(m.name || '')}" placeholder="例如：便當"></label>
-        <label class="field"><span>地點</span><input name="place" value="${esc(m.place || '')}" placeholder="例如：公司休息室"></label></div>
+      <details class="more"${m.name || m.place || m.note || photo || favNames.length || favPlaces.length ? ' open' : ''}><summary>餐點、地點、備註、相片（選填）</summary>
+        <div class="field-pair"><div class="stack-tight"><label class="field"><span>餐點</span><input name="name" value="${esc(m.name || '')}" placeholder="例如：便當"></label>${chips(favNames, 'name')}</div>
+        <div class="stack-tight"><label class="field"><span>地點</span><input name="place" value="${esc(m.place || '')}" placeholder="例如：公司休息室"></label>${chips(favPlaces, 'place')}</div></div>
         <label class="field"><span>備註</span><textarea name="note" rows="2">${esc(m.note || '')}</textarea></label>
         <div class="photo-field">
           ${photo ? `<img class="photo-preview" src="${esc(photo)}" alt="這一餐的相片">` : `<span class="photo-empty">${icon('camera', 22)}</span>`}
@@ -51,9 +59,9 @@ export function mealsView(ctx) {
     </li>`;
   }).join('');
   const listHTML = `${dayNav('wd-shift', `${wdOfKey(wd)}工作日 · ${fmtMD(wd)}`, `${meals.length} 餐`)}<ul class="meal-list">${list || '<li class="card muted">這個工作日還沒有用餐紀錄。</li>'}</ul>`;
-  const form = mealForm(ui, now, editing);
+  const form = mealForm(ui, now, editing, data);
   const body = ctx.isDesktop
     ? `<div class="grid-2-1"><div class="stack">${pendingHTML}${listHTML}</div><div class="stack">${form}</div></div>`
     : `${pendingHTML}${form}${listHTML}`;
-  return `${pageHead('用餐', '先記時間，其他選填')}${body}`;
+  return `${pageHead('用餐', '先記時間，其他選填')}<section class="card">${lastMealLine(data, now)}</section>${body}`;
 }

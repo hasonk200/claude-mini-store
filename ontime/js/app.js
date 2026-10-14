@@ -58,6 +58,7 @@ function shell() {
       <a class="brand" href="#/today"><span class="brand-mark">${icon('clock', 20, 2.2)}</span><span>ONTIME</span></a>
       <nav class="side-nav" aria-label="主要導覽">${side}</nav>
       <button type="button" class="btn btn-ink side-add" data-action="open-record">${icon('plus', 18, 2.4)}新增記錄 <kbd>N</kbd></button>
+      <p class="kbd-help"><kbd>Space</kbd> 主按鈕 · <kbd>[</kbd><kbd>]</kbd> 切換工作日</p>
       <div class="side-foot"><div class="sync-card" id="sync-card"></div><a href="#/settings" class="side-link" data-route="settings">${icon('user', 20, 1.9)}<span>我的 · 資料</span></a></div>
     </aside>
     <main class="main"><div id="hero-host"></div><div id="view" tabindex="-1"></div></main>
@@ -227,6 +228,13 @@ const handlers = {
     const step = el.dataset.step;
     act.recordStep(step, nowFn());
     toastUndo(`已記錄${el.textContent.replace(' · 現在', '').replace('記錄', '').trim()} ${fmtTime(nowFn())}`);
+  },
+  'meal-fill': (el) => {
+    const input = document.querySelector(`form[data-form=meal] [name="${el.dataset.field}"]`);
+    if (!input) return;
+    input.value = el.dataset.value;
+    dirty = true;
+    input.focus();
   },
   'undo': () => { if (store.undo()) toast('已復原'); },
   'show-templates': () => { ui.showTemplates = true; render(); },
@@ -425,7 +433,24 @@ function bind() {
     if (e.key === 'Escape' && ui.sheet) { closeSheet(); return; }
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
-    if ((e.key === 'n' || e.key === 'N') && !ui.sheet) { e.preventDefault(); openRecord(); }
+    if (ui.sheet || tag === 'BUTTON' || tag === 'A') {
+      if (!ui.sheet && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); openRecord(); }
+      return;
+    }
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openRecord(); return; }
+    const dir = e.key === '[' || e.key === 'ArrowLeft' ? -1 : e.key === ']' || e.key === 'ArrowRight' ? 1 : 0;
+    if (dir && ['today', 'timeline', 'meals'].includes(ui.route)) {
+      e.preventDefault();
+      const c = ctx();
+      if (ui.route === 'timeline' && ui.tlMode === 'calendar') ui.calKey = addDays(ui.calKey || dateKey(c.now), dir);
+      else ui.wd = addDays(c.wd, dir);
+      render();
+      return;
+    }
+    if (e.key === ' ' && ui.route === 'today') {
+      const main = document.querySelector('#view .status-card [data-action=step], #view .status-card [data-action=wake]');
+      if (main) { e.preventDefault(); main.click(); }
+    }
   });
   window.addEventListener('hashchange', route);
   desktopMQ.addEventListener('change', () => { lastView = ''; render(); });

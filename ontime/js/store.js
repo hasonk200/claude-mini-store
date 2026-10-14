@@ -63,19 +63,45 @@ export function normalize(raw) {
   return out;
 }
 
+export const RECORD_KEYS = ['jobs', 'shifts', 'sessions', 'journeys', 'meals', 'sleeps', 'dayMarks', 'templates'];
+export const keyOf = (x) => x.id ?? x.date;
+const TOMBSTONE_DAYS = 30;
+
+// 畫面和計算用的「可見資料」：濾走已刪除（deletedAt）的紀錄。
+export function visible(full) {
+  const out = { ...full };
+  for (const k of RECORD_KEYS) out[k] = (full[k] || []).filter((x) => !x.deletedAt);
+  return out;
+}
+
+let persisted = null;
+
 export async function load() {
   try {
     db = await openDB();
     const saved = await idbGet(KEY);
-    if (saved) data = normalize(saved);
+    if (saved) setRaw(normalize(saved));
   } catch (e) {
     saveError = '這個瀏覽器不能使用本機儲存，關閉頁面後紀錄會消失';
   }
-  return data;
+  // 申請持久化儲存，避免手機空間不足時被瀏覽器自動清除。
+  try {
+    if (navigator.storage?.persist) {
+      persisted = (await navigator.storage.persisted?.()) || (await navigator.storage.persist());
+    }
+  } catch { persisted = null; }
+  return view;
 }
 
-export const get = () => data;
-export const status = () => ({ lastSaved, saveError, persistent: !!db });
+let view = visible(data);
+function setRaw(next) {
+  data = next;
+  view = visible(data);
+}
+
+export const get = () => view;
+export const getRaw = () => data;
+export const status = () => ({ lastSaved, saveError, persistent: !!db, persisted });
 
 export function subscribe(fn) {
   listeners.add(fn);
@@ -83,7 +109,7 @@ export function subscribe(fn) {
 }
 
 function emit() {
-  for (const fn of listeners) fn(data);
+  for (const fn of listeners) fn(view);
 }
 
 function scheduleSave() {
@@ -101,14 +127,47 @@ function scheduleSave() {
   }, 150);
 }
 
-// mutator 直接修改傳入的草稿；完成後保存並通知畫面。
+// 比較修改前後：新增或改過的紀錄蓋上 updatedAt；被移除的紀錄改成刪除標記（deletedAt），方便各裝置逐筆合併。
+export function stamp(prevFull, nextVisible, now = Date.now()) {
+  const out = { ...nextVisible };
+  for (const k of RECORD_KEYS) {
+    const before = new Map((prevFull[k] || []).map((x) => [keyOf(x), x]));
+    const kept = new Set();
+    const list = (nextVisible[k] || []).map((x) => {
+      const key = keyOf(x);
+      kept.add(key);
+      const old = before.get(key);
+      if (old && !old.deletedAt && JSON.stringify({ ...old, updatedAt: 0 }) === JSON.stringify({ ...x, updatedAt: 0 })) return old;
+      return { ...x, updatedAt: now, deletedAt: undefined };
+    });
+    for (const [key, old] of before) {
+      if (kept.has(key)) continue;
+      if (old.deletedAt) list.push(old);
+      else list.push({ ...old, photo: undefined, deletedAt: now, updatedAt: now });
+    }
+    out[k] = list.map((x) => { const y = { ...x }; if (y.deletedAt === undefined) delete y.deletedAt; if (y.photo === undefined && 'photo' in y && y.deletedAt) delete y.photo; return y; });
+  }
+  if (JSON.stringify({ ...prevFull.settings, updatedAt: 0 }) !== JSON.stringify({ ...nextVisible.settings, updatedAt: 0 })) {
+    out.settings = { ...nextVisible.settings, updatedAt: now };
+  }
+  return out;
+}
+
+// 清掉 30 天前的刪除標記。
+export function purge(full, now = Date.now()) {
+  const out = { ...full };
+  for (const k of RECORD_KEYS) out[k] = (full[k] || []).filter((x) => !x.deletedAt || now - x.deletedAt < TOMBSTONE_DAYS * 86400000);
+  return out;
+}
+
+// mutator 修改「可見資料」的草稿；完成後自動蓋時間戳、保存並通知畫面。
 let previous = null;
 
 export function update(mutator) {
   previous = data;
-  const draft = structuredClone(data);
+  const draft = structuredClone(view);
   mutator(draft);
-  data = draft;
+  setRaw(stamp(data, draft));
   scheduleSave();
   emit();
 }
@@ -116,16 +175,17 @@ export function update(mutator) {
 // 復原上一步（只保留一步）。
 export function undo() {
   if (!previous) return false;
-  data = previous;
+  setRaw(previous);
   previous = null;
   scheduleSave();
   emit();
   return true;
 }
 
+// 取代整份資料（匯入、雲端合併後）；傳入的是包含刪除標記的完整資料。
 export function replaceAll(next) {
   previous = null;
-  data = normalize(next);
+  setRaw(normalize(next));
   scheduleSave();
   emit();
 }

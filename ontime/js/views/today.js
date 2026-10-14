@@ -1,7 +1,7 @@
 import { esc, icon, bubble, durHTML, STEP_ICON, STEP_KIND, seg } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtDayMD, wdOfKey, fmtMD, MIN, HOUR, fmtDur, fmtDurLong, toDateInput, toTimeInput } from '../time.js';
 import {
-  STEPS, STEP_LABEL, awakeSince, sleepLast24h, currentCycle, nextStep, statusOf, beforeBedBudget, shiftOf, sessionWorkMs,
+  STEPS, STEP_LABEL, lastMeal, awakeSince, sleepLast24h, currentCycle, nextStep, statusOf, beforeBedBudget, shiftOf, sessionWorkMs,
   workdaySpan, workdayEvents, jobOf, shiftsOfWorkday
 } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
@@ -143,12 +143,21 @@ function budgetCards(data, now) {
   </section>`;
 }
 
+export function lastMealLine(data, now) {
+  const lm = lastMeal(data, now);
+  if (!lm) return '<div class="last-meal">還沒有用餐紀錄</div>';
+  const long = lm.ms >= 6 * HOUR;
+  return `<div class="last-meal${long ? ' is-long' : ''}">${icon('clock', 15, 2)}<span>距離上一餐已過 <b>${fmtDurLong(lm.ms)}</b> · 上一餐 ${esc(lm.meal.name || '用餐')} ${wdOf(lm.at)} ${fmtTime(lm.at)}</span></div>`;
+}
+
 function nextMealCard(data, now) {
   const next = data.meals.filter((m) => !m.confirmed && m.start >= now - 2 * HOUR).sort((a, b) => a.start - b.start)[0];
+  const last = lastMealLine(data, now);
   if (!next) {
-    return `<section class="card row-card"><span class="tile-icon k-meal">${icon('meal', 20)}</span><div class="row-card-text"><strong>下一餐還沒安排</strong><span>工作中用餐也可以記，不會扣休息或薪資</span></div><a class="btn btn-soft" href="#/meals">安排</a></section>`;
+    return `<section class="card row-card"><span class="tile-icon k-meal">${icon('meal', 20)}</span><div class="row-card-text"><strong>下一餐還沒安排</strong><span>工作中用餐也可以記，不會扣休息或薪資</span></div><a class="btn btn-soft" href="#/meals">安排</a></section>`.replace('<section class="card row-card">', '<section class="card meal-card"><div class="row-card">').replace('</a></section>', `</a></div>${last}</section>`);
   }
   return `<section class="card" aria-label="下一餐"><div class="row-card"><span class="tile-icon k-meal">${icon('meal', 20)}</span><div class="row-card-text"><strong>下一餐 · ${esc(next.name || '用餐')} ${fmtTime(next.start)}（預計）</strong><span>${wdOf(next.start)} ${fmtMD(dateKey(next.start))} · 工作中用餐不扣休息，也不影響薪資</span></div></div>
+    ${last}
     <div class="btn-pair"><button type="button" class="btn btn-ink" data-action="meal-confirm" data-id="${next.id}">已經吃了</button><button type="button" class="btn btn-line" data-action="meal-delete" data-id="${next.id}">略過</button></div></section>`;
 }
 

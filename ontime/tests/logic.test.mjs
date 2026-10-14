@@ -210,3 +210,50 @@ test('復原上一步', async () => {
   assert.equal(store.get().meals.length, 0);
   assert.equal(store.undo(), false);
 });
+
+test('距離上一餐：只計已確認、已開始的用餐', async () => {
+  const { lastMeal } = await import('../js/logic.js');
+  const d = empty();
+  d.meals.push({ id: 'a', name: 'chicken burrito', start: at('2026-10-13', '03:46'), end: at('2026-10-13', '04:10'), confirmed: true });
+  d.meals.push({ id: 'b', name: '安排', start: at('2026-10-14', '19:00'), confirmed: false });
+  d.meals.push({ id: 'c', name: '未來', start: at('2026-10-14', '20:00'), confirmed: true });
+  const r = lastMeal(d, at('2026-10-14', '18:30'));
+  assert.equal(r.meal.name, 'chicken burrito');
+  assert.equal(r.ms, at('2026-10-14', '18:30') - at('2026-10-13', '04:10'));
+});
+
+test('最近常吃：按次數排序、忽略空白和大小寫', async () => {
+  const { frequentMealValues } = await import('../js/logic.js');
+  const d = empty();
+  const names = ['Burrito', 'burrito ', '豆漿', '', 'burrito', '豆漿', '飯'];
+  names.forEach((n, i) => d.meals.push({ id: 'm' + i, name: n, place: i % 2 ? 'grillies' : '', start: i }));
+  assert.deepEqual(frequentMealValues(d, 'name', 2), ['burrito', '豆漿']);
+  assert.deepEqual(frequentMealValues(d, 'place'), ['grillies']);
+});
+
+test('逐筆合併：較新的修改勝出，刪除在兩邊都生效', async () => {
+  const { mergeData } = await import('../js/sync.js');
+  const store = await import('../js/store.js');
+  const phone = { ...empty(), meals: [{ id: 'a', name: '手機改過', start: 1, updatedAt: 200 }, { id: 'b', name: '要刪', start: 2, deletedAt: 300, updatedAt: 300 }] };
+  const pc = { ...empty(), meals: [{ id: 'a', name: '舊分頁', start: 1, updatedAt: 100 }, { id: 'b', name: '要刪', start: 2, updatedAt: 50 }, { id: 'c', name: '電腦新增', start: 3, updatedAt: 250 }] };
+  const now = Date.now();
+  phone.meals.forEach((m) => { if (m.deletedAt) { m.deletedAt = now; m.updatedAt = now; } });
+  const m = mergeData(pc, phone);
+  const byId = Object.fromEntries(m.meals.map((x) => [x.id, x]));
+  assert.equal(byId.a.name, '手機改過');
+  assert.ok(byId.b.deletedAt);
+  assert.equal(byId.c.name, '電腦新增');
+  assert.deepEqual(store.visible(m).meals.map((x) => x.id).sort(), ['a', 'c']);
+});
+
+test('修改時自動蓋 updatedAt，刪除改為刪除標記', async () => {
+  const store = await import('../js/store.js');
+  store.replaceAll({ ...empty(), meals: [{ id: 'x', name: '舊', start: 1 }, { id: 'y', name: '不動', start: 2 }] });
+  store.update((d) => { d.meals.find((m) => m.id === 'x').name = '新'; });
+  const raw = store.getRaw().meals;
+  assert.ok(raw.find((m) => m.id === 'x').updatedAt > 0);
+  assert.equal(raw.find((m) => m.id === 'y').updatedAt, undefined);
+  store.update((d) => { d.meals = d.meals.filter((m) => m.id !== 'y'); });
+  assert.ok(store.getRaw().meals.find((m) => m.id === 'y').deletedAt);
+  assert.deepEqual(store.get().meals.map((m) => m.id), ['x']);
+});

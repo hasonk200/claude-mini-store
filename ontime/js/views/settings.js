@@ -48,6 +48,7 @@ function dataCard(data) {
   const counts = `${data.sessions.length} 次出勤 · ${data.sleeps.length} 筆睡眠 · ${data.meals.length} 餐`;
   return `<section class="card" aria-label="資料與備份"><div class="card-head"><h2 class="card-title">資料與備份</h2></div>
     <div class="status-line"><i class="dot ${st.saveError ? 'is-warn' : 'k-ok'}"></i><div><strong>${st.saveError ? esc(st.saveError) : '已儲存在這部裝置'}</strong><span>${counts}${st.lastSaved ? ` · 最後儲存 ${fmtTime(st.lastSaved)}` : ''}</span></div></div>
+    <p class="fine">${st.persisted === true ? '已受保護：瀏覽器不會在空間不足時自動清除這些紀錄。' : '瀏覽器可能在空間不足時清除本機紀錄，請定期匯出備份或登入雲端同步。'}</p>
     <p class="fine">紀錄先存在這個瀏覽器，沒有網絡也能用。清除網站資料或換裝置前，請先匯出備份。</p>
     <div class="data-actions">
       <button type="button" class="btn btn-ink" data-action="export-json">${icon('download', 18, 2)}匯出 JSON 備份</button>

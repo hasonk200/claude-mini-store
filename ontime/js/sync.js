@@ -13,7 +13,6 @@ const FIREBASE_CONFIG = {
 };
 const SDK = '12.19.0';
 const FLAG = 'ontime-sync-on';
-const KEYS = ['jobs', 'shifts', 'sessions', 'journeys', 'meals', 'sleeps', 'templates'];
 
 let fb = null;
 let auth = null;
@@ -33,16 +32,25 @@ export const syncState = () => state;
 export function onSync(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 function set(patch) { Object.assign(state, patch); for (const fn of listeners) fn(state); }
 
-// 合併兩份資料：同一個 id 以 primary 為準，其他只在一邊有的紀錄都保留。
+// 逐筆合併兩份資料：同一筆紀錄取 updatedAt 較新的一份（一樣新時以 primary 為準）；
+// 只在一邊有的紀錄都保留；刪除標記也會合併，所以刪除在各裝置都生效。
 export function mergeData(primary, secondary) {
   const out = structuredClone(primary);
-  for (const k of KEYS) {
-    const ids = new Set((out[k] || []).map((x) => x.id));
-    for (const x of secondary[k] || []) if (!ids.has(x.id)) (out[k] = out[k] || []).push(x);
+  for (const k of store.RECORD_KEYS) {
+    const map = new Map((out[k] || []).map((x) => [store.keyOf(x), x]));
+    for (const x of secondary[k] || []) {
+      const key = store.keyOf(x);
+      const cur = map.get(key);
+      if (!cur || (x.updatedAt || 0) > (cur.updatedAt || 0)) {
+        // 保留本機已有的相片，避免雲端版本（沒有相片）把它清走
+        const keep = cur && cur.photo && !x.photo && !x.deletedAt ? { ...x, photo: cur.photo } : x;
+        map.set(key, structuredClone(keep));
+      }
+    }
+    out[k] = [...map.values()];
   }
-  const marks = new Set((out.dayMarks || []).map((m) => m.date));
-  for (const m of secondary.dayMarks || []) if (!marks.has(m.date)) (out.dayMarks = out.dayMarks || []).push(m);
-  return out;
+  if ((secondary.settings?.updatedAt || 0) > (out.settings?.updatedAt || 0)) out.settings = { ...secondary.settings };
+  return store.purge(out);
 }
 
 // 上傳前移除相片，只留下「有相片」的標記。
@@ -95,8 +103,8 @@ function parseRemote(snap) {
 }
 
 function applyRemote(remote) {
-  const local = store.get();
-  const next = withLocalPhotos(remote, local);
+  const local = store.getRaw();
+  const next = withLocalPhotos(mergeData(local, remote), local);
   if (JSON.stringify(stripPhotos(next)) === JSON.stringify(stripPhotos(local))) return;
   applyingRemote = true;
   store.replaceAll(next);
@@ -113,7 +121,7 @@ async function fetchMissingPhotos(data) {
       if (!photo) continue;
       uploadedPhotos.set(m.id, photo.length);
       applyingRemote = true;
-      store.update((d) => { const x = d.meals.find((y) => y.id === m.id); if (x && !x.photo) x.photo = photo; });
+      store.replaceAll({ ...store.getRaw(), meals: store.getRaw().meals.map((y) => (y.id === m.id && !y.photo ? { ...y, photo } : y)) });
       applyingRemote = false;
     } catch { /* 相片讀不到時，保留其他資料 */ }
   }
@@ -134,8 +142,7 @@ async function onUser(u) {
       const remote = parseRemote(snap);
       if (remote) {
         // 第一次在這部裝置登入：雲端為準，再加入只存在本機的紀錄。
-        const merged = mergeData(remote, store.get());
-        applyRemote(merged);
+        applyRemote(remote);
       }
     }
     await push(true);
@@ -144,7 +151,12 @@ async function onUser(u) {
       const body = s.data() || {};
       if (body.json === lastPushed) return;
       const remote = parseRemote(s);
-      if (remote) { applyRemote(remote); set({ status: 'cloud', lastSync: Date.now() }); }
+      if (remote) {
+        applyRemote(remote);
+        set({ status: 'cloud', lastSync: Date.now() });
+        // 雲端少了本機較新的紀錄時，把合併結果寫回去
+        if (JSON.stringify(stripPhotos(store.getRaw())) !== JSON.stringify(stripPhotos(remote))) push();
+      }
     }, () => set({ status: 'error', message: '暫時連不上雲端' }));
   } catch (e) {
     set({ status: 'error', message: e?.code === 'permission-denied' ? '雲端拒絕存取，請確認 Firestore 規則' : '暫時連不上雲端' });
@@ -165,18 +177,28 @@ async function uploadPhotos(data) {
 async function push(force = false) {
   if (!user || !db) return;
   if (pushing) { pushAgain = true; return; }
-  const data = store.get();
-  const json = JSON.stringify(stripPhotos(data));
-  if (!force && json === lastPushed) return;
-  if (json.length > 950000) { set({ status: 'full', message: '雲端空間不足：請匯出備份，再刪除舊紀錄' }); return; }
+  const data = store.getRaw();
+  if (!force && JSON.stringify(stripPhotos(data)) === lastPushed) return;
   pushing = true;
   try {
-    lastPushed = json;
-    await mainDoc().set({ json, app: 'ONTIME', updatedAt: fb.firestore.FieldValue.serverTimestamp() });
+    // 交易：先讀雲端最新版本，逐筆合併後才寫回，另一部裝置剛寫入的紀錄不會被蓋掉。
+    const ref = mainDoc();
+    let merged = data;
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const remote = snap.exists ? parseRemote(snap) : null;
+      merged = remote ? mergeData(store.getRaw(), remote) : store.purge(store.getRaw());
+      const json = JSON.stringify(stripPhotos(merged));
+      if (json.length > 950000) throw Object.assign(new Error('full'), { code: 'full' });
+      lastPushed = json;
+      tx.set(ref, { json, app: 'ONTIME', updatedAt: fb.firestore.FieldValue.serverTimestamp() });
+    });
+    if (JSON.stringify(stripPhotos(merged)) !== JSON.stringify(stripPhotos(store.getRaw()))) applyRemote(merged);
     set({ status: 'cloud', lastSync: Date.now(), message: '' });
     uploadPhotos(data);
   } catch (e) {
     lastPushed = '';
+    if (e?.code === 'full') { set({ status: 'full', message: '雲端空間不足：請匯出備份，再刪除舊紀錄' }); return; }
     set({ status: navigator.onLine ? 'error' : 'offline', message: navigator.onLine ? '同步失敗，稍後會再試' : '離線中，連線後會自動上傳' });
   } finally {
     pushing = false;

@@ -1,5 +1,6 @@
 // 使用者動作：每個函式只改它負責的那一筆資料。
-import { update, get, uid, replaceAll, emptyData, normalize } from './store.js';
+import { update, get, getRaw, uid, replaceAll, emptyData, normalize } from './store.js';
+import { mergeData } from './sync.js';
 import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
@@ -301,7 +302,7 @@ export function saveSettings(patch) {
 
 // ---------- 匯入與匯出 ----------
 export function exportJSON() {
-  return JSON.stringify({ app: 'ONTIME', exportedAt: new Date().toISOString(), data: get() }, null, 2);
+  return JSON.stringify({ app: 'ONTIME', exportedAt: new Date().toISOString(), data: getRaw() }, null, 2);
 }
 
 export function parseBackup(text) {
@@ -317,14 +318,8 @@ export function parseBackup(text) {
 export function importJSON(text, mode = 'replace') {
   const incoming = parseBackup(text);
   if (mode === 'replace') { replaceAll(incoming); return; }
-  update((d) => {
-    for (const k of ['jobs', 'shifts', 'sessions', 'journeys', 'meals', 'sleeps', 'templates']) {
-      const ids = new Set(d[k].map((x) => x.id));
-      for (const x of incoming[k]) if (!ids.has(x.id)) d[k].push(x);
-    }
-    const marks = new Set(d.dayMarks.map((m) => m.date));
-    for (const m of incoming.dayMarks) if (!marks.has(m.date)) d.dayMarks.push(m);
-  });
+  // 合併：逐筆比較，較新的版本勝出；只在一邊有的紀錄都保留。
+  replaceAll(mergeData(getRaw(), incoming));
 }
 
 const csvCell = (v) => {

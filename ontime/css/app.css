@@ -785,3 +785,16 @@ details.more .form { padding: 0 14px 14px; }
   .hero.is-compact .hero-headline { font-size: 17px; max-width: 15em; }
   .hero.is-compact .hero-text { top: 12px; left: 16px; gap: 6px; }
 }
+
+/* 距離上一餐、常吃標籤 */
+.last-meal { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.last-meal b { color: var(--ink); }
+.last-meal.is-long { color: var(--meal-deep); }
+.last-meal.is-long b { color: var(--meal-deep); }
+.meal-card { gap: 12px; }
+.stack-tight { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-btn { min-height: 32px; max-width: 100%; padding: 0 12px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 700; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-btn:hover { border-color: var(--meal); background: var(--meal-tint); }
+.kbd-help { margin: -12px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
+.kbd-help kbd { margin: 0 1px; }

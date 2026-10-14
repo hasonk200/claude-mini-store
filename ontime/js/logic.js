@@ -513,3 +513,27 @@ export function sleepLast24h(data, now) {
   const parts = mergeIntervals(clip(data.sleeps.filter((s) => s.start != null).map((s) => [s.start, s.end ?? now]), from, now));
   return { ms: parts.reduce((n, [a, b]) => n + (b - a), 0), parts, from };
 }
+
+// ---------- 用餐 ----------
+// 上一餐：已確認、已經開始的最近一餐；以結束時間計（沒有結束時間就用開始時間）。
+export function lastMeal(data, now) {
+  const done = data.meals.filter((m) => m.confirmed !== false && m.start <= now)
+    .map((m) => ({ meal: m, at: Math.min(m.end ?? m.start, now) }))
+    .sort((a, b) => b.at - a.at)[0];
+  return done ? { ...done, ms: now - done.at } : null;
+}
+
+// 最近常吃：最近 recent 筆用餐裡，某個欄位最常出現的前 n 個（忽略空白和大小寫差異）。
+export function frequentMealValues(data, field, n = 5, recent = 30) {
+  const counts = new Map();
+  for (const m of [...data.meals].sort((a, b) => b.start - a.start).slice(0, recent)) {
+    const v = String(m[field] || '').trim();
+    if (!v) continue;
+    const key = v.toLowerCase();
+    const c = counts.get(key) || { value: v, count: 0, last: 0 };
+    c.count++;
+    c.last = Math.max(c.last, m.start);
+    counts.set(key, c);
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count || b.last - a.last).slice(0, n).map((c) => c.value);
+}
