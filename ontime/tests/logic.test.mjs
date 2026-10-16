@@ -257,3 +257,45 @@ test('修改時自動蓋 updatedAt，刪除改為刪除標記', async () => {
   assert.ok(store.getRaw().meals.find((m) => m.id === 'y').deletedAt);
   assert.deepEqual(store.get().meals.map((m) => m.id), ['x']);
 });
+
+// 用戶的實際情境：週三起床 → 夜班 → 週四早餐 → 週四白天睡覺 → 週四晚上起床後的一餐
+function wakeDays() {
+  const d = empty();
+  d.sleeps.push({ id: 's0', start: at('2026-10-14', '06:00'), end: at('2026-10-14', '14:10') });
+  d.sessions.push({ id: 'w', jobId: 'j1', start: at('2026-10-14', '23:20'), end: at('2026-10-15', '07:40'), breaks: [] });
+  d.meals.push({ id: 'bf', name: '熱香餅+豆漿+吐司', start: at('2026-10-15', '08:32'), confirmed: true });
+  d.sleeps.push({ id: 's1', start: at('2026-10-15', '12:59'), end: at('2026-10-15', '21:22') });
+  d.meals.push({ id: 'dn', name: '用餐', start: at('2026-10-15', '21:40'), confirmed: true });
+  return d;
+}
+
+test('工作日由起床到下一次起床：下班後的早餐和睡眠屬前一天', async () => {
+  const L = await import('../js/logic.js');
+  const d = wakeDays();
+  const now = at('2026-10-15', '21:51');
+  assert.equal(L.workdayOfSession(d.sessions[0], d), '2026-10-14');
+  assert.equal(L.mealWorkday(d.meals[0], d, now), '2026-10-14');
+  assert.equal(L.sleepWorkday(d.sleeps[1], d), '2026-10-14');
+  assert.equal(L.mealWorkday(d.meals[1], d, now), '2026-10-15');
+  assert.equal(L.currentWorkday(d, now), '2026-10-15');
+  const ev = L.workdayEvents(d, '2026-10-14', now);
+  assert.ok(ev.some((e) => e.title === '起床 · 週四工作日開始'));
+  const [a, b] = L.workdaySpan(d, '2026-10-14', now);
+  assert.ok(a <= at('2026-10-14', '14:10') && b >= at('2026-10-15', '21:22'));
+});
+
+test('少於 4 小時的小睡不切開一天；凌晨 4 點前起床用前一天日期', async () => {
+  const L = await import('../js/logic.js');
+  const d = wakeDays();
+  d.sleeps.push({ id: 'nap', start: at('2026-10-14', '19:00'), end: at('2026-10-14', '21:00') });
+  assert.equal(L.dayOf(d, at('2026-10-14', '22:00')), '2026-10-14');
+  d.sleeps.push({ id: 'late', start: at('2026-10-16', '20:00'), end: at('2026-10-17', '02:00') });
+  assert.equal(L.dayOf(d, at('2026-10-17', '03:00')), '2026-10-16');
+});
+
+test('手動指定的所屬工作日仍然優先', async () => {
+  const L = await import('../js/logic.js');
+  const d = wakeDays();
+  d.sleeps[1].workdayDate = '2026-10-15';
+  assert.equal(L.sleepWorkday(d.sleeps[1], d), '2026-10-15');
+});

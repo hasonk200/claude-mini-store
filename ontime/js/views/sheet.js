@@ -77,7 +77,7 @@ function recordSheet(ctx) {
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2 id="sheet-title">補登一個時間</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button></div>
     <div class="sheet-body">
-      <label class="field wd-field"><span>所屬工作日（依上班日期）</span><input type="date" value="${wd}" data-action="rec-wd"></label>
+      <label class="field wd-field"><span>所屬工作日（由起床到下一次起床）</span><input type="date" value="${wd}" data-action="rec-wd"></label>
       <div class="sheet-step-title"><span class="step-no">1</span>先選要補哪一個</div>
       ${groups}
       ${form}

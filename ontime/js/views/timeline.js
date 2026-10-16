@@ -2,7 +2,7 @@ import { esc, icon, bubble, seg } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, weekStartKey, dayStart, dayEnd, HOUR } from '../time.js';
 import {
   workdayEvents, workdaySpan, sessionsOfWorkday, splitWorkByDay, sessionWorkMs, calendarAllocation,
-  intervalsAround, totalOf, clip, sleepWorkday, shiftsOfWorkday
+  intervalsAround, totalOf, clip, sleepWorkday, shiftsOfWorkday, wakeSpan
 } from '../logic.js';
 import { ribbon, legend, crossBadge, pageHead, dayNav } from './shared.js';
 import { refKey } from './today.js';
@@ -80,6 +80,12 @@ function calendarView(data, key, now) {
   <p class="fine">跨日班次的工時按實際日期分開；收入只歸在開始上班那天，不會算兩次。</p>`;
 }
 
+function spanText(data, key) {
+  const ws = wakeSpan(data, key);
+  if (!ws) return '沒有主睡眠紀錄時，按上班日期';
+  return `由${wdOf(ws.start)} ${fmtTime(ws.start)} 起床${ws.end ? ` 到${wdOf(ws.end)} ${fmtTime(ws.end)} 起床` : ' 開始'}`;
+}
+
 export function timelineView(ctx) {
   const { data, now, ui } = ctx;
   const mode = ui.tlMode;
@@ -89,6 +95,6 @@ export function timelineView(ctx) {
     ${seg('tlMode', '查看方式', [['workday', '工作日'], ['calendar', '日曆日']], mode)}
     ${weekStrip(data, key, now)}
     ${mode === 'workday'
-      ? `${dayNav('tl-shift', `${wdOfKey(key)}工作日 · ${fmtMD(key)}`, '依上班日期')}${ctx.isDesktop ? `<div class="card">${(() => { const [a, b] = workdaySpan(data, key, now); return ribbon(data, a, b, now, { lanes: true }); })()}${legend(true, data)}</div>` : ''}<div class="grid-2-1 tl-grid">${workdayList(data, key, now)}<div class="stack">${workdaySummary(data, key, now)}</div></div>`
+      ? `${dayNav('tl-shift', `${wdOfKey(key)}工作日 · ${fmtMD(key)}`, spanText(data, key))}${ctx.isDesktop ? `<div class="card">${(() => { const [a, b] = workdaySpan(data, key, now); return ribbon(data, a, b, now, { lanes: true }); })()}${legend(true, data)}</div>` : ''}<div class="grid-2-1 tl-grid">${workdayList(data, key, now)}<div class="stack">${workdaySummary(data, key, now)}</div></div>`
       : `${dayNav('tl-shift', `${wdOfKey(key)} ${fmtMD(key)}`, '日曆日')}${calendarView(data, key, now)}`}`;
 }
