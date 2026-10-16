@@ -252,11 +252,11 @@ const handlers = {
     f.date.value = dateKey(t); f.time.value = fmtTime(t);
   },
   'ride-mode': (el) => {
-    const f = $('#record-form');
+    const f = el.closest('form');
     f.mode.value = f.mode.value === el.dataset.v ? '' : el.dataset.v;
-    document.querySelectorAll('[data-action="ride-mode"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === f.mode.value)));
+    f.querySelectorAll('[data-action="ride-mode"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === f.mode.value)));
   },
-  'ride-place': (el) => { $('#record-form').from.value = el.dataset.v; },
+  'ride-place': (el) => { el.closest('form').from.value = el.dataset.v; },
   'rec-plan': (el) => { const t = Number(el.dataset.t); const f = $('#record-form'); f.date.value = dateKey(t); f.time.value = fmtTime(t); },
   'wd-shift': (el) => { const c = ctx(); ui.wd = addDays(c.wd, Number(el.dataset.dir)); render(); },
   'wd-auto': () => { ui.wd = null; render(); },
@@ -344,7 +344,8 @@ const forms = {
   },
   'ref-time': (f) => {
     const t = fromInputs(f.date.value, f.time.value);
-    act.setRefTime({ type: f.type.value, id: f.id.value, field: f.field.value || undefined }, t);
+    const extra = f.mode ? { mode: f.mode.value.trim(), from: f.from.value.trim() } : {};
+    act.setRefTime({ type: f.type.value, id: f.id.value, field: f.field.value || undefined }, t, extra);
     ui.selRef = `${f.type.value}:${f.id.value}:${f.field.value}`;
     ui.sheet = null;
     toast('已更新時間');

@@ -42,6 +42,17 @@ export function defaultStep(data, wd) {
   return 'clockOut';
 }
 
+// 搭車的交通工具與上車地點，補登和時間線修改共用。
+export function rideFieldsHtml(data, mode, from) {
+  const places = recentPlaces(data);
+  return `<div class="ride-fields">
+      <span class="chip-group-name">交通工具</span><input type="hidden" name="mode" value="${esc(mode || '')}">
+      <div class="btn-wrap">${RIDE_MODES.map((m) => `<button type="button" class="btn btn-soft btn-sm" data-action="ride-mode" data-v="${m}" aria-pressed="${m === mode}">${m}</button>`).join('')}</div>
+      <label class="field"><span>哪裡搭車（可空白）</span><input type="text" name="from" value="${esc(from || '')}" placeholder="例如：Dundas Station" maxlength="60" autocomplete="off"></label>
+      ${places.length ? `<div class="btn-wrap">${places.map((p) => `<button type="button" class="btn btn-line btn-sm" data-action="ride-place" data-v="${esc(p)}">${esc(p)}</button>`).join('')}</div>` : ''}
+    </div>`;
+}
+
 function recordSheet(ctx) {
   const { data, now, ui } = ctx;
   const sh = ui.sheet;
@@ -61,15 +72,7 @@ function recordSheet(ctx) {
   const breakEnd = isBreak ? (session?.breaks?.find((b) => b.end == null) ? now : t + 30 * MIN) : null;
   const isRide = step === 'ride' || step === 'ride2';
   const jr = findWorkdayTargets(data, wd).journey;
-  const curMode = jr?.[`${step}Mode`] || '';
-  const curFrom = jr?.[`${step}From`] || '';
-  const places = isRide ? recentPlaces(data) : [];
-  const rideFields = isRide ? `<div class="ride-fields">
-      <span class="chip-group-name">交通工具</span><input type="hidden" name="mode" value="${esc(curMode)}">
-      <div class="btn-wrap">${RIDE_MODES.map((m) => `<button type="button" class="btn btn-soft btn-sm" data-action="ride-mode" data-v="${m}" aria-pressed="${m === curMode}">${m}</button>`).join('')}</div>
-      <label class="field"><span>哪裡搭車（可空白）</span><input type="text" name="from" value="${esc(curFrom)}" placeholder="例如：Dundas Station" maxlength="60" autocomplete="off"></label>
-      ${places.length ? `<div class="btn-wrap">${places.map((p) => `<button type="button" class="btn btn-line btn-sm" data-action="ride-place" data-v="${esc(p)}">${esc(p)}</button>`).join('')}</div>` : ''}
-    </div>` : '';
+  const rideFields = isRide ? rideFieldsHtml(data, jr?.[`${step}Mode`], jr?.[`${step}From`]) : '';
   const form = step === 'meal'
     ? `<div class="sheet-note">用餐有自己的表單，可以加餐點和相片。<a class="btn btn-ink" href="#/meals" data-action="close-sheet-nav">前往記一餐</a></div>`
     : `<form class="form" data-form="record" id="record-form"><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="step" value="${step}">
@@ -98,8 +101,11 @@ function recordSheet(ctx) {
 }
 
 function refSheet(ctx) {
-  const { ui } = ctx;
+  const { ui, data } = ctx;
   const { ref, t, title } = ui.sheet;
+  const isRideRef = ref.type === 'journey' && (ref.field === 'ride' || ref.field === 'ride2');
+  const jr = isRideRef ? data.journeys.find((x) => x.id === ref.id) : null;
+  const rideRef = isRideRef ? { mode: jr?.[`${ref.field}Mode`], from: jr?.[`${ref.field}From`] } : null;
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>
   <section class="sheet sheet-small" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="sheet-handle"></div>
@@ -108,7 +114,8 @@ function refSheet(ctx) {
       <input type="hidden" name="type" value="${esc(ref.type)}"><input type="hidden" name="id" value="${esc(ref.id)}"><input type="hidden" name="field" value="${esc(ref.field || '')}">
       <div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
       <label class="field field-strong"><span>時間</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
-      <p class="fine">只會改這一個時間；其他紀錄保持不變。</p>
+      ${rideRef ? rideFieldsHtml(ctx.data, rideRef.mode, rideRef.from) : ''}
+      <p class="fine">只會改這一個時間${rideRef ? '和交通工具、上車地點' : ''}；其他紀錄保持不變。</p>
       <button class="btn btn-ink btn-block btn-lg" type="submit">儲存</button>
       ${ref.type === 'meal' ? `<button type="button" class="btn btn-line btn-block" data-action="meal-delete" data-id="${esc(ref.id)}">刪除這一餐</button>` : ''}
     </form></div>

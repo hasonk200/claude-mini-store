@@ -133,11 +133,16 @@ export function clearStepTime(wd, step) {
 }
 
 // 直接改某一筆事件（桌面檢視面板用）。
-export function setRefTime(ref, t) {
+export function setRefTime(ref, t, extra = {}) {
   update((d) => {
     if (ref.type === 'journey') {
       const j = d.journeys.find((x) => x.id === ref.id);
-      if (j) j[ref.field] = t;
+      if (!j) return;
+      j[ref.field] = t;
+      if (ref.field === 'ride' || ref.field === 'ride2') {
+        if (extra.mode !== undefined) j[`${ref.field}Mode`] = extra.mode || null;
+        if (extra.from !== undefined) j[`${ref.field}From`] = extra.from || null;
+      }
     } else if (ref.type === 'session') {
       const s = d.sessions.find((x) => x.id === ref.id);
       if (s && (ref.field === 'start' || ref.field === 'end')) s[ref.field] = t;
