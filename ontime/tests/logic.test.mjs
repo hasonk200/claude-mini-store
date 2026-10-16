@@ -299,3 +299,15 @@ test('手動指定的所屬工作日仍然優先', async () => {
   d.sleeps[1].workdayDate = '2026-10-15';
   assert.equal(L.sleepWorkday(d.sleeps[1], d), '2026-10-15');
 });
+
+test('搭車：事件顯示交通工具與上車地點，最近地點依次數排序', async () => {
+  const L = await import('../js/logic.js');
+  const d = wakeDays();
+  d.journeys = [
+    { id: 'a', sessionId: null, ride: 1, rideMode: '巴士', rideFrom: 'Dundas', ride2: 2, ride2Mode: '地鐵', ride2From: 'Dundas' },
+    { id: 'b', sessionId: null, ride: 3, rideFrom: 'King' }
+  ];
+  assert.equal(L.rideDetail(d.journeys[0], 'ride'), '巴士 · Dundas');
+  assert.equal(L.rideDetail(d.journeys[1], 'ride2'), '');
+  assert.deepEqual(L.recentPlaces(d), ['Dundas', 'King']);
+});

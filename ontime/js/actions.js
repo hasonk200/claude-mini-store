@@ -115,6 +115,10 @@ export function setStepTime(wd, step, t, extra = {}) {
       d.journeys.push(j);
     }
     j[step] = t;
+    if (step === 'ride' || step === 'ride2') {
+      if (extra.from !== undefined) j[`${step}From`] = extra.from || null;
+      if (extra.mode !== undefined) j[`${step}Mode`] = extra.mode || null;
+    }
   });
 }
 
@@ -329,7 +333,7 @@ const csvCell = (v) => {
 
 export function exportCSV(now = Date.now()) {
   const d = get();
-  const rows = [['上班日', '工作', '上班', '下班', '工時(小時)', '各日曆日工時', '休息(分鐘)', '去程(分鐘)', '回程(分鐘)', '計算方式', '時薪', '計薪', '實收', '訂單數', '備註']];
+  const rows = [['上班日', '工作', '上班', '下班', '工時(小時)', '各日曆日工時', '休息(分鐘)', '去程(分鐘)', '回程(分鐘)', '計算方式', '時薪', '計薪', '實收', '訂單數', '備註', '去程交通', '去程上車處', '回程交通', '回程上車處']];
   for (const s of [...d.sessions].sort((a, b) => a.start - b.start)) {
     const job = jobOf(d, s.jobId);
     const j = journeyOfSession(d, s);
@@ -343,7 +347,8 @@ export function exportCSV(now = Date.now()) {
       dateKey(s.start), job?.name ?? '', `${dateKey(s.start)} ${fmtTime(s.start)}`, s.end ? `${dateKey(s.end)} ${fmtTime(s.end)}` : '',
       (work / HOUR).toFixed(2), split, Math.round(brk / MIN), go === '' ? '' : Math.round(go), back === '' ? '' : Math.round(back),
       { hourly: '時薪', perOrder: '按單', none: '不計薪' }[s.payMode] ?? '', s.rate ?? '', pay,
-      s.payMode === 'perOrder' ? (s.income ?? '未填') : '', s.payMode === 'perOrder' ? (s.orders ?? '未填') : '', s.note ?? ''
+      s.payMode === 'perOrder' ? (s.income ?? '未填') : '', s.payMode === 'perOrder' ? (s.orders ?? '未填') : '', s.note ?? '',
+      j?.rideMode ?? '', j?.rideFrom ?? '', j?.ride2Mode ?? '', j?.ride2From ?? ''
     ]);
   }
   return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\n');

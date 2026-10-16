@@ -1,6 +1,6 @@
 import { esc, icon, bubble, STEP_ICON, STEP_KIND } from '../ui.js';
 import { dateKey, fmtTime, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN } from '../time.js';
-import { STEP_LABEL, shiftOf, sleepWorkday } from '../logic.js';
+import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
 
 const GROUPS = [
@@ -59,6 +59,17 @@ function recordSheet(ctx) {
   const t = val[step] ?? plan[step] ?? now;
   const isBreak = step === 'break';
   const breakEnd = isBreak ? (session?.breaks?.find((b) => b.end == null) ? now : t + 30 * MIN) : null;
+  const isRide = step === 'ride' || step === 'ride2';
+  const jr = findWorkdayTargets(data, wd).journey;
+  const curMode = jr?.[`${step}Mode`] || '';
+  const curFrom = jr?.[`${step}From`] || '';
+  const places = isRide ? recentPlaces(data) : [];
+  const rideFields = isRide ? `<div class="ride-fields">
+      <span class="chip-group-name">交通工具</span><input type="hidden" name="mode" value="${esc(curMode)}">
+      <div class="btn-wrap">${RIDE_MODES.map((m) => `<button type="button" class="btn btn-soft btn-sm" data-action="ride-mode" data-v="${m}" aria-pressed="${m === curMode}">${m}</button>`).join('')}</div>
+      <label class="field"><span>哪裡搭車（可空白）</span><input type="text" name="from" value="${esc(curFrom)}" placeholder="例如：Dundas Station" maxlength="60" autocomplete="off"></label>
+      ${places.length ? `<div class="btn-wrap">${places.map((p) => `<button type="button" class="btn btn-line btn-sm" data-action="ride-place" data-v="${esc(p)}">${esc(p)}</button>`).join('')}</div>` : ''}
+    </div>` : '';
   const form = step === 'meal'
     ? `<div class="sheet-note">用餐有自己的表單，可以加餐點和相片。<a class="btn btn-ink" href="#/meals" data-action="close-sheet-nav">前往記一餐</a></div>`
     : `<form class="form" data-form="record" id="record-form"><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="step" value="${step}">
@@ -66,6 +77,7 @@ function recordSheet(ctx) {
       <div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
       <label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
       ${isBreak ? `<div class="field-pair"><label class="field"><span>結束日期</span><input type="date" name="endDate" value="${toDateInput(breakEnd)}"></label><label class="field"><span>結束時間（可空白）</span><input type="time" name="endTime" value="${toTimeInput(breakEnd)}"></label></div>` : ''}
+      ${rideFields}
       ${dateKey(t) !== wd ? `<div class="cross-note"><span class="badge-cross">隔日</span>仍屬${wdOfKey(wd)}工作日，實際發生在${wdOfKey(dateKey(t))}</div>` : ''}
       <div class="btn-wrap"><button type="button" class="btn btn-soft btn-sm" data-action="rec-now">現在</button><button type="button" class="btn btn-soft btn-sm" data-action="rec-minus">−15 分</button>${plan[step] ? `<button type="button" class="btn btn-line btn-sm" data-action="rec-plan" data-t="${plan[step]}">用預計 ${fmtTime(plan[step])}</button>` : ''}</div>
       <p class="fine">只會修改「${LABEL[step]}」這一個時間；其他打卡、收入、休息、備註都保持不變。</p>

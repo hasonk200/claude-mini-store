@@ -798,3 +798,6 @@ details.more .form { padding: 0 14px 14px; }
 .chip-btn:hover { border-color: var(--meal); background: var(--meal-tint); }
 .kbd-help { margin: -12px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
 .kbd-help kbd { margin: 0 1px; }
+
+.ride-fields { display: flex; flex-direction: column; gap: 8px; }
+.ride-fields .btn[aria-pressed="true"] { background: var(--solid); color: var(--on-solid); }

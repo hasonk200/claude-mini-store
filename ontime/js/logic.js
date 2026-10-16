@@ -342,7 +342,7 @@ export function workdayEvents(data, wd, now) {
     const j = journeyOfSession(data, s);
     if (j) {
       for (const k of ['out', 'ride', 'arrive']) {
-        if (j[k] != null) ev.push({ t: j[k], step: k, kind: KIND_OF[k], icon: ICON_OF[k], title: k === 'ride' ? '去程搭車' : STEP_LABEL[k], ref: { type: 'journey', id: j.id, field: k } });
+        if (j[k] != null) ev.push({ t: j[k], step: k, kind: KIND_OF[k], icon: ICON_OF[k], title: k === 'ride' ? '去程搭車' : STEP_LABEL[k], detail: k === 'ride' ? rideDetail(j, 'ride') : undefined, ref: { type: 'journey', id: j.id, field: k } });
       }
     }
     ev.push({ t: s.start, step: 'clockIn', kind: 'work', icon: 'bag', title: `上班 · ${job?.name ?? '工作'}`, ref: { type: 'session', id: s.id, field: 'start' } });
@@ -356,7 +356,7 @@ export function workdayEvents(data, wd, now) {
     }
     if (j) {
       for (const k of ['leave', 'ride2', 'home']) {
-        if (j[k] != null) ev.push({ t: j[k], step: k, kind: KIND_OF[k], icon: ICON_OF[k], title: k === 'ride2' ? '回程搭車' : STEP_LABEL[k], ref: { type: 'journey', id: j.id, field: k } });
+        if (j[k] != null) ev.push({ t: j[k], step: k, kind: KIND_OF[k], icon: ICON_OF[k], title: k === 'ride2' ? '回程搭車' : STEP_LABEL[k], detail: k === 'ride2' ? rideDetail(j, 'ride2') : undefined, ref: { type: 'journey', id: j.id, field: k } });
       }
     }
   }
@@ -605,6 +605,23 @@ export function lastMeal(data, now) {
 }
 
 // 最近常吃：最近 recent 筆用餐裡，某個欄位最常出現的前 n 個（忽略空白和大小寫差異）。
+// 搭車的交通工具選項，以及最近用過的上車地點。
+export const RIDE_MODES = ['巴士', '地鐵', '電車', '步行', '單車', '開車', '其他'];
+export function recentPlaces(data, n = 5) {
+  const counts = new Map();
+  for (const j of [...data.journeys].reverse()) {
+    for (const v of [j.rideFrom, j.ride2From]) {
+      const t = String(v || '').trim();
+      if (!t) continue;
+      const c = counts.get(t.toLowerCase()) || { value: t, count: 0 };
+      c.count++;
+      counts.set(t.toLowerCase(), c);
+    }
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, n).map((c) => c.value);
+}
+export const rideDetail = (j, k) => [j?.[`${k}Mode`], j?.[`${k}From`]].filter(Boolean).join(' · ');
+
 export function frequentMealValues(data, field, n = 5, recent = 30) {
   const counts = new Map();
   for (const m of [...data.meals].sort((a, b) => b.start - a.start).slice(0, recent)) {

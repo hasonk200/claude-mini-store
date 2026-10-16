@@ -251,6 +251,12 @@ const handlers = {
     const t = fromInputs(f.date.value, f.time.value) - 15 * MIN;
     f.date.value = dateKey(t); f.time.value = fmtTime(t);
   },
+  'ride-mode': (el) => {
+    const f = $('#record-form');
+    f.mode.value = f.mode.value === el.dataset.v ? '' : el.dataset.v;
+    document.querySelectorAll('[data-action="ride-mode"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === f.mode.value)));
+  },
+  'ride-place': (el) => { $('#record-form').from.value = el.dataset.v; },
   'rec-plan': (el) => { const t = Number(el.dataset.t); const f = $('#record-form'); f.date.value = dateKey(t); f.time.value = fmtTime(t); },
   'wd-shift': (el) => { const c = ctx(); ui.wd = addDays(c.wd, Number(el.dataset.dir)); render(); },
   'wd-auto': () => { ui.wd = null; render(); },
@@ -331,6 +337,7 @@ const forms = {
     if (t == null) return;
     const extra = {};
     if (f.endTime && f.endTime.value) extra.end = fromInputs(f.endDate.value || f.date.value, f.endTime.value);
+    if (f.mode) { extra.mode = f.mode.value.trim(); extra.from = f.from.value.trim(); }
     act.setStepTime(f.wd.value, f.step.value, t, extra);
     ui.sheet = null;
     toast(`已儲存 ${fmtTime(t)}`);
