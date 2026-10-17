@@ -1,6 +1,6 @@
 // 作息規則：純函式，不碰畫面和儲存，方便測試。
 // data = { jobs, shifts, sessions, journeys, meals, sleeps, dayMarks, settings }
-import { MIN, HOUR, dateKey, dayStart, dayEnd, addDays } from './time.js';
+import { MIN, HOUR, dateKey, dayStart, dayEnd, addDays, wdOfKey } from './time.js';
 
 export const STEPS = ['out', 'ride', 'arrive', 'clockIn', 'clockOut', 'ride2', 'home'];
 export const OPTIONAL_STEPS = new Set(['ride', 'ride2']);
@@ -29,7 +29,49 @@ export function clip(intervals, a, b) {
 export const totalOf = (intervals) => mergeIntervals(intervals).reduce((n, [s, e]) => n + (e - s), 0);
 
 // ---------- 出勤 ----------
-export const workdayOfSession = (s) => dateKey(s.start);
+// ---------- 工作日：由主睡眠起床開始，到下一次主睡眠起床為止 ----------
+export const MAIN_SLEEP_MS = 4 * HOUR;
+const DAY_REACH_MS = 36 * HOUR;
+
+// 起床的日期就是新一天的名字；凌晨 4 點前起床，仍用前一天的日期。
+export function dayKeyOfWake(t) {
+  return new Date(t).getHours() < 4 ? addDays(dateKey(t), -1) : dateKey(t);
+}
+
+const boundaryCache = new WeakMap();
+// 主睡眠的起床時間（排序）；間隔少於 30 分鐘的睡眠先合併，再看是否滿 4 小時。
+export function dayBoundaries(data) {
+  const sleeps = data.sleeps;
+  const sig = sleeps.reduce((n, x) => n + (x.start || 0) + (x.end || 0), sleeps.length);
+  const hit = boundaryCache.get(sleeps);
+  if (hit && hit.sig === sig) return hit.out;
+  const done = sleeps.filter((x) => x.start != null && x.end != null && x.end > x.start).map((x) => [x.start, x.end]).sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [a, b] of done) {
+    const last = merged[merged.length - 1];
+    if (last && a - last[1] < 30 * MIN) last[1] = Math.max(last[1], b);
+    else merged.push([a, b]);
+  }
+  const out = merged.filter(([a, b]) => b - a >= MAIN_SLEEP_MS).map(([, b]) => b);
+  boundaryCache.set(sleeps, { sig, out });
+  return out;
+}
+
+// 某一刻屬於哪個工作日；附近沒有主睡眠紀錄時回傳 null，由呼叫者用舊規則。
+export function dayOf(data, t) {
+  const bs = dayBoundaries(data);
+  let lo = 0;
+  let hi = bs.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (bs[mid] <= t) { found = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  if (found < 0 || t - bs[found] > DAY_REACH_MS) return null;
+  return dayKeyOfWake(bs[found]);
+}
+
+export const workdayOfSession = (s, data) => (data && dayOf(data, s.start)) || dateKey(s.start);
 export const activeSession = (data) => data.sessions.find((s) => s.end == null) || null;
 
 export function breakIntervals(s, now) {
@@ -165,7 +207,7 @@ export function sleepWorkday(sl, data) {
   const t = sl.start ?? sl.planStart;
   if (sl.workdayDate === null) return dateKey(t);
   if (sl.workdayDate) return sl.workdayDate;
-  return inferSleepWorkday(t, data);
+  return dayOf(data, t) || inferSleepWorkday(t, data);
 }
 
 export function sleepActualMs(sl, now) {
@@ -174,13 +216,29 @@ export function sleepActualMs(sl, now) {
 }
 
 // ---------- 目前的工作日 ----------
+// 16 小時例外：最後一次起床（或下班）之後超過 16 小時，又沒有新的班或睡眠，就視為新的一天，
+// 避免沒有排班、沒有記錄時一直卡在舊的工作日。睡著或上班中時不套用。
+const WAKE_GAP = 16 * HOUR;
 export function currentWorkday(data, now) {
+  const byWake = dayOf(data, now);
+  const awakeIdle = !data.sleeps.some((x) => x.start != null && x.end == null)
+    && !data.sessions.some((x) => x.start <= now && (x.end == null || x.end > now));
+  if (awakeIdle) {
+    const lastEnd = Math.max(
+      0,
+      ...dayBoundaries(data).filter((t) => t <= now),
+      ...data.sessions.filter((x) => x.end != null && x.end <= now).map((x) => x.end)
+    );
+    const newShift = data.shifts.some((sh) => sh.start > lastEnd && sh.start <= now);
+    if (now - lastEnd > WAKE_GAP && !newShift) return dateKey(now);
+  }
+  if (byWake) return byWake;
   const s = activeSession(data) || data.sessions.find((x) => x.start <= now && x.end != null && x.end > now);
-  if (s) return workdayOfSession(s);
+  if (s) return workdayOfSession(s, data);
   const sleeping = data.sleeps.find((x) => x.start != null && x.end == null);
   if (sleeping) return sleepWorkday(sleeping, data);
   const cyc = currentCycle(data, now);
-  if (cyc.session) return workdayOfSession(cyc.session);
+  if (cyc.session) return workdayOfSession(cyc.session, data);
   if (cyc.journey) {
     const sh = data.shifts
       .filter((x) => x.start >= (cyc.journey.out ?? now) - HOUR)
@@ -188,16 +246,12 @@ export function currentWorkday(data, now) {
     if (sh && sh.start - now < 6 * HOUR) return dateKey(sh.start);
     return dateKey(cyc.journey.out ?? now);
   }
-  // 剛下班的那個工作日，只在「還沒睡醒」而且下班後 16 小時內才繼續算。
-  // 睡醒之後，或隔了太久都沒有新的班，就換成新的工作日（不然沒排班時會一直卡在舊的一天）。
   const done = data.sessions
-    .filter((x) => x.end != null && x.end <= now && now - x.end <= 16 * HOUR)
+    .filter((x) => x.end != null && x.end <= now && now - x.end <= 36 * HOUR)
     .sort((a, b) => b.end - a.end)[0];
   if (done) {
     const started = data.shifts.find((sh) => sh.start > done.end && sh.start <= now);
-    if (started) return dateKey(started.start);
-    const sleptAfter = data.sleeps.some((sl) => sl.start != null && sl.end != null && sl.start >= done.end && sl.end <= now);
-    if (!sleptAfter) return workdayOfSession(done);
+    return started ? dateKey(started.start) : workdayOfSession(done, data);
   }
   const upcoming = data.shifts
     .filter((sh) => sh.start > now && sh.start - now <= 24 * HOUR)
@@ -208,14 +262,35 @@ export function currentWorkday(data, now) {
 
 // ---------- 工作日範圍與事件 ----------
 export function sessionsOfWorkday(data, wd) {
-  return data.sessions.filter((s) => workdayOfSession(s) === wd).sort((a, b) => a.start - b.start);
+  return data.sessions.filter((s) => workdayOfSession(s, data) === wd).sort((a, b) => a.start - b.start);
 }
 
 export function shiftsOfWorkday(data, wd) {
   return data.shifts.filter((sh) => dateKey(sh.start) === wd).sort((a, b) => a.start - b.start);
 }
 
+// 這個工作日由哪次起床開始、到哪次起床結束（沒有主睡眠紀錄時回傳 null）。
+export function wakeSpan(data, wd) {
+  const bs = dayBoundaries(data);
+  const i = bs.findIndex((b) => dayKeyOfWake(b) === wd);
+  if (i < 0) return null;
+  let j = i + 1;
+  while (j < bs.length && dayKeyOfWake(bs[j]) === wd) j++;
+  return { start: bs[i], end: j < bs.length ? bs[j] : null };
+}
+
 export function workdaySpan(data, wd, now) {
+  const ws = wakeSpan(data, wd);
+  if (ws) {
+    let end = ws.end;
+    if (end == null) {
+      const open = data.sleeps.find((x) => x.start != null && x.end == null && x.start >= ws.start);
+      end = Math.max(now, open?.planEnd ?? 0, ws.start + 16 * HOUR);
+    }
+    const first = new Date(ws.start - 30 * MIN);
+    first.setMinutes(0, 0, 0);
+    return [first.getTime(), end + 30 * MIN];
+  }
   const times = [];
   for (const s of sessionsOfWorkday(data, wd)) {
     times.push(s.start, s.end ?? now);
@@ -240,6 +315,8 @@ export function workdaySpan(data, wd, now) {
 }
 
 export function mealWorkday(meal, data, now) {
+  const byWake = dayOf(data, meal.start);
+  if (byWake) return byWake;
   const wd = dateKey(meal.start);
   const prev = addDays(wd, -1);
   // 前一個工作日的班次可能跨過午夜，要先看它有沒有包住這一餐。
@@ -265,7 +342,7 @@ export function workdayEvents(data, wd, now) {
     const j = journeyOfSession(data, s);
     if (j) {
       for (const k of ['out', 'ride', 'arrive']) {
-        if (j[k] != null) ev.push({ t: j[k], step: k, kind: KIND_OF[k], icon: ICON_OF[k], title: k === 'ride' ? '去程搭車' : STEP_LABEL[k], ref: { type: 'journey', id: j.id, field: k } });
+        if (j[k] != null) ev.push({ t: j[k], step: k, kind: KIND_OF[k], icon: ICON_OF[k], title: k === 'ride' ? '去程搭車' : STEP_LABEL[k], detail: k === 'ride' ? rideDetail(j, 'ride') : undefined, ref: { type: 'journey', id: j.id, field: k } });
       }
     }
     ev.push({ t: s.start, step: 'clockIn', kind: 'work', icon: 'bag', title: `上班 · ${job?.name ?? '工作'}`, ref: { type: 'session', id: s.id, field: 'start' } });
@@ -279,7 +356,7 @@ export function workdayEvents(data, wd, now) {
     }
     if (j) {
       for (const k of ['leave', 'ride2', 'home']) {
-        if (j[k] != null) ev.push({ t: j[k], step: k, kind: KIND_OF[k], icon: ICON_OF[k], title: k === 'ride2' ? '回程搭車' : STEP_LABEL[k], ref: { type: 'journey', id: j.id, field: k } });
+        if (j[k] != null) ev.push({ t: j[k], step: k, kind: KIND_OF[k], icon: ICON_OF[k], title: k === 'ride2' ? '回程搭車' : STEP_LABEL[k], detail: k === 'ride2' ? rideDetail(j, 'ride2') : undefined, ref: { type: 'journey', id: j.id, field: k } });
       }
     }
   }
@@ -294,7 +371,11 @@ export function workdayEvents(data, wd, now) {
     if (sleepWorkday(sl, data) !== wd) continue;
     if (sl.start != null) {
       ev.push({ t: sl.start, kind: 'sleep', icon: 'moon', title: '入睡', detail: sl.end ? `睡了 ${fmtShort(sl.end - sl.start)}` : '睡眠中', ref: { type: 'sleep', id: sl.id, field: 'start' } });
-      if (sl.end != null) ev.push({ t: sl.end, kind: 'sleep', icon: 'sun', title: '起床', ref: { type: 'sleep', id: sl.id, field: 'end' } });
+      if (sl.end != null) {
+        const next = dayBoundaries(data).includes(sl.end) ? dayKeyOfWake(sl.end) : null;
+        const title = next && next !== wd ? `起床 · ${wdOfKey(next)}工作日開始` : '起床';
+        ev.push({ t: sl.end, kind: 'sleep', icon: 'sun', title, ref: { type: 'sleep', id: sl.id, field: 'end' } });
+      }
       else if (sl.planEnd != null) ev.push({ t: sl.planEnd, kind: 'sleep', icon: 'sun', title: '預計起床', detail: '計畫時間，發生前不計入睡眠時數', plan: true, ref: { type: 'sleep', id: sl.id, field: 'end' } });
     } else if (sl.planStart != null) {
       ev.push({ t: sl.planStart, kind: 'sleep', icon: 'moon', title: '預計入睡', plan: true, ref: { type: 'sleep', id: sl.id, field: 'start' } });
@@ -500,4 +581,57 @@ export function periodStats(data, fromKey, toKey, now) {
   let commuteMs = 0;
   for (const x of intervalsAround(data, a, b, now)) if (x.kind === 'commute' && !x.plan) commuteMs += Math.min(x.b, b) - Math.max(x.a, a);
   return { sessions, workMs, hourlyPay, hourlyKnown, income, incomeKnown, perOrderCount, orders, byDay, commuteMs };
+}
+
+// ---------- 清醒時間與近 24 小時睡眠 ----------
+export function awakeSince(data, now) {
+  const last = data.sleeps.filter((s) => s.end != null && s.end <= now).sort((a, b) => b.end - a.end)[0];
+  return last ? { since: last.end, ms: now - last.end } : null;
+}
+
+export function sleepLast24h(data, now) {
+  const from = now - 24 * HOUR;
+  const parts = mergeIntervals(clip(data.sleeps.filter((s) => s.start != null).map((s) => [s.start, s.end ?? now]), from, now));
+  return { ms: parts.reduce((n, [a, b]) => n + (b - a), 0), parts, from };
+}
+
+// ---------- 用餐 ----------
+// 上一餐：已確認、已經開始的最近一餐；以結束時間計（沒有結束時間就用開始時間）。
+export function lastMeal(data, now) {
+  const done = data.meals.filter((m) => m.confirmed !== false && m.start <= now)
+    .map((m) => ({ meal: m, at: Math.min(m.end ?? m.start, now) }))
+    .sort((a, b) => b.at - a.at)[0];
+  return done ? { ...done, ms: now - done.at } : null;
+}
+
+// 最近常吃：最近 recent 筆用餐裡，某個欄位最常出現的前 n 個（忽略空白和大小寫差異）。
+// 搭車的交通工具選項，以及最近用過的上車地點。
+export const RIDE_MODES = ['巴士', '地鐵', '電車', '步行', '單車', '開車', '其他'];
+export function recentPlaces(data, n = 5) {
+  const counts = new Map();
+  for (const j of [...data.journeys].reverse()) {
+    for (const v of [j.rideFrom, j.ride2From]) {
+      const t = String(v || '').trim();
+      if (!t) continue;
+      const c = counts.get(t.toLowerCase()) || { value: t, count: 0 };
+      c.count++;
+      counts.set(t.toLowerCase(), c);
+    }
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, n).map((c) => c.value);
+}
+export const rideDetail = (j, k) => [j?.[`${k}Mode`], j?.[`${k}From`]].filter(Boolean).join(' · ');
+
+export function frequentMealValues(data, field, n = 5, recent = 30) {
+  const counts = new Map();
+  for (const m of [...data.meals].sort((a, b) => b.start - a.start).slice(0, recent)) {
+    const v = String(m[field] || '').trim();
+    if (!v) continue;
+    const key = v.toLowerCase();
+    const c = counts.get(key) || { value: v, count: 0, last: 0 };
+    c.count++;
+    c.last = Math.max(c.last, m.start);
+    counts.set(key, c);
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count || b.last - a.last).slice(0, n).map((c) => c.value);
 }

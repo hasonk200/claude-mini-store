@@ -38,9 +38,9 @@ function attribution(data, now) {
     || data.sleeps.filter((s) => s.start != null).sort((a, b) => b.start - a.start)[0];
   if (!target) return '';
   const wd = sleepWorkday(target, data);
-  const how = target.workdayDate === null ? '按入睡日期' : target.workdayDate ? '已指定' : '自動配對';
+  const how = target.workdayDate === null ? '按入睡日期' : target.workdayDate ? '已指定' : '按入睡前一次起床計算';
   return `<section class="card" aria-label="所屬工作日"><form class="form" data-form="sleep-workday"><input type="hidden" name="id" value="${target.id}">
-    <div class="row-card"><div class="row-card-text"><span class="eyebrow">所屬工作日（依上班日期）· ${how}</span><strong>${wdOfKey(wd)} ${fmtMD(wd)}</strong><span>修改歸屬不會改動入睡或起床時間</span></div></div>
+    <div class="row-card"><div class="row-card-text"><span class="eyebrow">所屬工作日（由起床到下一次起床）· ${how}</span><strong>${wdOfKey(wd)} ${fmtMD(wd)}</strong><span>修改歸屬不會改動入睡或起床時間</span></div></div>
     <div class="form-inline"><label class="field"><span>改成</span><input type="date" name="wd" value="${wd}"></label><button class="btn btn-ink" type="submit">更改</button><button class="btn btn-line" type="button" data-action="sleep-wd-clear" data-id="${target.id}">按入睡日期</button></div>
   </form></section>`;
 }

@@ -58,6 +58,7 @@ function shell() {
       <a class="brand" href="#/today"><span class="brand-mark">${icon('clock', 20, 2.2)}</span><span>ONTIME</span></a>
       <nav class="side-nav" aria-label="主要導覽">${side}</nav>
       <button type="button" class="btn btn-ink side-add" data-action="open-record">${icon('plus', 18, 2.4)}新增記錄 <kbd>N</kbd></button>
+      <p class="kbd-help"><kbd>Space</kbd> 主按鈕 · <kbd>[</kbd><kbd>]</kbd> 切換工作日</p>
       <div class="side-foot"><div class="sync-card" id="sync-card"></div><a href="#/settings" class="side-link" data-route="settings">${icon('user', 20, 1.9)}<span>我的 · 資料</span></a></div>
     </aside>
     <main class="main"><div id="hero-host"></div><div id="view" tabindex="-1"></div></main>
@@ -130,12 +131,15 @@ function fixLabels() {
   });
 }
 
-function toast(msg, actionHTML = '') {
+const UNDO = '<button type="button" class="btn btn-lime btn-sm" data-action="undo">復原</button>';
+function toastUndo(msg) { toast(msg, UNDO, 6000); }
+
+function toast(msg, actionHTML = '', ms = 3200) {
   const el = $('#toast');
   el.innerHTML = `<span>${msg}</span>${actionHTML}`;
   el.classList.add('is-on');
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => el.classList.remove('is-on'), 3200);
+  toast.t = setTimeout(() => el.classList.remove('is-on'), ms);
 }
 
 function route() {
@@ -223,11 +227,20 @@ const handlers = {
   'step': (el) => {
     const step = el.dataset.step;
     act.recordStep(step, nowFn());
-    toast(`已記錄${el.textContent.replace(' · 現在', '').replace('記錄', '').trim()} ${fmtTime(nowFn())}`);
+    toastUndo(`已記錄${el.textContent.replace(' · 現在', '').replace('記錄', '').trim()} ${fmtTime(nowFn())}`);
   },
-  'break': () => { act.toggleBreak(nowFn()); toast('已更新休息'); },
-  'sleep-start': () => { act.startSleep(nowFn()); toast(`已開始睡眠計時 ${fmtTime(nowFn())}`); },
-  'wake': () => { act.wakeUp(nowFn()); toast(`早安，起床時間 ${fmtTime(nowFn())}`); },
+  'meal-fill': (el) => {
+    const input = document.querySelector(`form[data-form=meal] [name="${el.dataset.field}"]`);
+    if (!input) return;
+    input.value = el.dataset.value;
+    dirty = true;
+    input.focus();
+  },
+  'undo': () => { if (store.undo()) toast('已復原'); },
+  'show-templates': () => { ui.showTemplates = true; render(); },
+  'break': () => { act.toggleBreak(nowFn()); toastUndo('已更新休息'); },
+  'sleep-start': () => { act.startSleep(nowFn()); toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`); },
+  'wake': () => { act.wakeUp(nowFn()); toastUndo(`早安，起床時間 ${fmtTime(nowFn())}`); },
   'open-record': (el) => openRecord(el.dataset.wd),
   'close-sheet': closeSheet,
   'close-sheet-nav': () => { ui.sheet = null; },
@@ -238,6 +251,12 @@ const handlers = {
     const t = fromInputs(f.date.value, f.time.value) - 15 * MIN;
     f.date.value = dateKey(t); f.time.value = fmtTime(t);
   },
+  'ride-mode': (el) => {
+    const f = el.closest('form');
+    f.mode.value = f.mode.value === el.dataset.v ? '' : el.dataset.v;
+    f.querySelectorAll('[data-action="ride-mode"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === f.mode.value)));
+  },
+  'ride-place': (el) => { el.closest('form').from.value = el.dataset.v; },
   'rec-plan': (el) => { const t = Number(el.dataset.t); const f = $('#record-form'); f.date.value = dateKey(t); f.time.value = fmtTime(t); },
   'wd-shift': (el) => { const c = ctx(); ui.wd = addDays(c.wd, Number(el.dataset.dir)); render(); },
   'wd-auto': () => { ui.wd = null; render(); },
@@ -293,8 +312,8 @@ const handlers = {
     act.addSleepPlan(start, start + (last.end - last.start));
     toast(`已建立計畫 ${fmtTime(start)} 開始`);
   },
-  'meal-confirm': (el) => { act.confirmMeal(el.dataset.id); toast('已確認這一餐'); },
-  'meal-delete': (el) => { act.deleteMeal(el.dataset.id); if (ui.sheet?.type === 'ref') ui.sheet = null; toast('已刪除'); },
+  'meal-confirm': (el) => { act.confirmMeal(el.dataset.id); toastUndo('已確認這一餐'); },
+  'meal-delete': (el) => { act.deleteMeal(el.dataset.id); if (ui.sheet?.type === 'ref') ui.sheet = null; toastUndo('已刪除'); },
   'meal-edit': (el) => { ui.mealEdit = el.dataset.id; ui.mealPhoto = undefined; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
   'meal-cancel': () => { ui.mealEdit = null; ui.mealPhoto = undefined; render(); },
   'meal-photo-remove': () => { ui.mealPhoto = null; lastView = ''; render(); },
@@ -318,13 +337,15 @@ const forms = {
     if (t == null) return;
     const extra = {};
     if (f.endTime && f.endTime.value) extra.end = fromInputs(f.endDate.value || f.date.value, f.endTime.value);
+    if (f.mode) { extra.mode = f.mode.value.trim(); extra.from = f.from.value.trim(); }
     act.setStepTime(f.wd.value, f.step.value, t, extra);
     ui.sheet = null;
     toast(`已儲存 ${fmtTime(t)}`);
   },
   'ref-time': (f) => {
     const t = fromInputs(f.date.value, f.time.value);
-    act.setRefTime({ type: f.type.value, id: f.id.value, field: f.field.value || undefined }, t);
+    const extra = f.mode ? { mode: f.mode.value.trim(), from: f.from.value.trim() } : {};
+    act.setRefTime({ type: f.type.value, id: f.id.value, field: f.field.value || undefined }, t, extra);
     ui.selRef = `${f.type.value}:${f.id.value}:${f.field.value}`;
     ui.sheet = null;
     toast('已更新時間');
@@ -420,7 +441,24 @@ function bind() {
     if (e.key === 'Escape' && ui.sheet) { closeSheet(); return; }
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
-    if ((e.key === 'n' || e.key === 'N') && !ui.sheet) { e.preventDefault(); openRecord(); }
+    if (ui.sheet || tag === 'BUTTON' || tag === 'A') {
+      if (!ui.sheet && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); openRecord(); }
+      return;
+    }
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openRecord(); return; }
+    const dir = e.key === '[' || e.key === 'ArrowLeft' ? -1 : e.key === ']' || e.key === 'ArrowRight' ? 1 : 0;
+    if (dir && ['today', 'timeline', 'meals'].includes(ui.route)) {
+      e.preventDefault();
+      const c = ctx();
+      if (ui.route === 'timeline' && ui.tlMode === 'calendar') ui.calKey = addDays(ui.calKey || dateKey(c.now), dir);
+      else ui.wd = addDays(c.wd, dir);
+      render();
+      return;
+    }
+    if (e.key === ' ' && ui.route === 'today') {
+      const main = document.querySelector('#view .status-card [data-action=step], #view .status-card [data-action=wake]');
+      if (main) { e.preventDefault(); main.click(); }
+    }
   });
   window.addEventListener('hashchange', route);
   desktopMQ.addEventListener('change', () => { lastView = ''; render(); });
@@ -440,6 +478,14 @@ async function start() {
   initSync();
   bind();
   route();
+  // 主畫面捷徑：?do=out|clockIn|sleep|meal
+  const doAct = params.get('do');
+  if (doAct) {
+    history.replaceState(null, '', location.pathname + (fixedNow ? `?now=${params.get('now')}` : '') + location.hash);
+    if (doAct === 'meal') location.hash = '#/meals';
+    else if (doAct === 'sleep') { act.startSleep(nowFn()); toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`); }
+    else if (doAct === 'out' || doAct === 'clockIn') { act.recordStep(doAct, nowFn()); toastUndo(`已記錄${doAct === 'out' ? '出門' : '上班'} ${fmtTime(nowFn())}`); }
+  }
   // 每 30 秒更新倒數；正在輸入時不重畫，避免打斷。
   setInterval(() => {
     const a = document.activeElement;

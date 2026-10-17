@@ -137,7 +137,7 @@ const STARS = [[60, 30], [140, 70], [210, 22], [300, 52], [380, 16], [460, 78], 
 
 export function heroHTML({ state, now, headline, line, eyebrow, compact = false }) {
   const W = compact ? 640 : 1200;
-  const H = compact ? 400 : 300;
+  const H = compact ? 300 : 300;
   const dy = H - 240;
   const hx = compact ? -100 : 0;
   const wx = compact ? W - 1200 + 50 : 0;
