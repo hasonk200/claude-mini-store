@@ -6,7 +6,7 @@ import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js'
 import {
   currentCycle, activeSession, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
   journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget,
-  sleepWorkdayChanges
+  sleepWorkdayChanges, activeRest
 } from './logic.js';
 
 function ensureJob(d) {
@@ -68,6 +68,20 @@ export function toggleBreak(t = Date.now()) {
     if (open) open.end = t;
     else s.breaks.push({ start: t, end: null });
   });
+}
+
+// 獨立休息：不屬於任何班別，不影響工時。
+export function toggleRest(t = Date.now()) {
+  let opened = false;
+  update((d) => {
+    const r = activeRest(d);
+    if (r) { if (t > r.start) r.end = t; }
+    else {
+      d.rests.push({ id: uid('rst'), start: t, end: null, note: '' });
+      opened = true;
+    }
+  });
+  return { ok: true, opened };
 }
 
 // ---------- 補登：只改一個欄位 ----------
@@ -187,6 +201,9 @@ export function setRefTime(ref, t, extra = {}) {
     } else if (ref.type === 'session') {
       const s = d.sessions.find((x) => x.id === ref.id);
       if (s && (ref.field === 'start' || ref.field === 'end')) s[ref.field] = t;
+    } else if (ref.type === 'rest') {
+      const r = d.rests.find((x) => x.id === ref.id);
+      if (r) r[ref.field] = t;
     } else if (ref.type === 'sleep') {
       const s = d.sleeps.find((x) => x.id === ref.id);
       if (!s) return;
@@ -270,6 +287,10 @@ export function resetSleepWorkdays() {
 
 export function deleteSleep(id) {
   update((d) => { d.sleeps = d.sleeps.filter((x) => x.id !== id); });
+}
+
+export function deleteRest(id) {
+  update((d) => { d.rests = d.rests.filter((x) => x.id !== id); });
 }
 
 // ---------- 用餐 ----------
@@ -372,8 +393,42 @@ export function setSessionIncome(id, patch) {
 export function deleteSession(id) {
   update((d) => {
     d.sessions = d.sessions.filter((s) => s.id !== id);
-    for (const j of d.journeys) if (j.sessionId === id) j.sessionId = null;
+    // 同一次出勤的行程一起刪，避免留下看不見的孤兒紀錄。
+    d.journeys = d.journeys.filter((j) => j.sessionId !== id);
   });
+}
+
+// 時間線／面板的「刪除這一筆」。t 只用來定位班內某一段休息。
+export function deleteRef(ref, t) {
+  if (!ref || !ref.id) return { ok: false, reason: 'missing' };
+  if (ref.type === 'sleep') { deleteSleep(ref.id); return { ok: true }; }
+  if (ref.type === 'meal') { deleteMeal(ref.id); return { ok: true }; }
+  if (ref.type === 'shift') { deleteShift(ref.id); return { ok: true }; }
+  if (ref.type === 'rest') { deleteRest(ref.id); return { ok: true }; }
+  if (ref.type === 'session') {
+    if (ref.field === 'break') {
+      update((d) => {
+        const s = d.sessions.find((x) => x.id === ref.id);
+        if (!s) return;
+        const i = (s.breaks || []).findIndex((b) => b.start === t);
+        if (i >= 0) s.breaks.splice(i, 1);
+      });
+      return { ok: true };
+    }
+    deleteSession(ref.id);
+    return { ok: true };
+  }
+  if (ref.type === 'journey') {
+    update((d) => {
+      const j = d.journeys.find((x) => x.id === ref.id);
+      if (!j) return;
+      j[ref.field] = null;
+      const left = ['out', 'ride', 'arrive', 'leave', 'ride2', 'home'].some((k) => j[k] != null);
+      if (!left) d.journeys = d.journeys.filter((x) => x.id !== j.id);
+    });
+    return { ok: true };
+  }
+  return { ok: false, reason: 'unknown' };
 }
 
 // ---------- 設定 ----------

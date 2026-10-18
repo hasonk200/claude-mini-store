@@ -12,6 +12,7 @@ export function emptyData() {
     journeys: [],
     meals: [],
     sleeps: [],
+    rests: [],
     dayMarks: [],
     templates: [],
     settings: { name: '', commuteOutMin: 45, commuteBackMin: 45, theme: 'auto' }
@@ -56,14 +57,14 @@ function idbPut(key, value) {
 export function normalize(raw) {
   const base = emptyData();
   const out = { ...base, ...(raw || {}) };
-  for (const k of ['jobs', 'shifts', 'sessions', 'journeys', 'meals', 'sleeps', 'dayMarks', 'templates']) {
+  for (const k of ['jobs', 'shifts', 'sessions', 'journeys', 'meals', 'sleeps', 'rests', 'dayMarks', 'templates']) {
     out[k] = Array.isArray(out[k]) ? out[k] : [];
   }
   out.settings = { ...base.settings, ...(raw?.settings || {}) };
   return out;
 }
 
-export const RECORD_KEYS = ['jobs', 'shifts', 'sessions', 'journeys', 'meals', 'sleeps', 'dayMarks', 'templates'];
+export const RECORD_KEYS = ['jobs', 'shifts', 'sessions', 'journeys', 'meals', 'sleeps', 'rests', 'dayMarks', 'templates'];
 export const keyOf = (x) => x.id ?? x.date;
 const TOMBSTONE_DAYS = 30;
 
