@@ -168,6 +168,7 @@ button.chip { cursor: pointer; min-height: 30px; }
 .chip-money { background: var(--deliv-tint); color: var(--deliv-deep); }
 .pill-lime { align-self: flex-start; font-size: 12px; font-weight: 800; color: #111418; background: var(--lime); padding: 5px 11px; border-radius: 999px; }
 .badge-cross { display: inline-block; font-size: 11px; font-weight: 800; color: var(--sleep-deep); background: var(--sleep-tint-2); padding: 2px 8px; border-radius: 999px; white-space: nowrap; vertical-align: middle; }
+.badge-cross.is-warn { color: var(--danger); background: var(--danger-tint); }
 
 .seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 4px; background: var(--seg-bg); border-radius: 16px; }
 .seg button { min-height: 38px; padding: 0 16px; border: 0; border-radius: 12px; background: transparent; font-size: 14px; font-weight: 800; cursor: pointer; }
