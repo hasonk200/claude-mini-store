@@ -201,9 +201,9 @@ const DELETE_TEXT = {
 
 function deleteBody(ref) {
   if (ref.type === 'session') {
-    return ref.field === 'break'
-      ? '只會刪除這一段休息，工時會跟著調整。'
-      : '這班的收入、休息和行程都會一起刪除，班表不會受影響。';
+    if (ref.field === 'break') return '只會刪除這一段休息，工時會跟著調整。';
+    if (ref.field === 'end') return '只會清掉下班時間，這班回到「工作中」；收入不會刪除。';
+    return '整班都會刪除：上班時間、收入、休息、去程和回程一起消失，班表不會受影響。';
   }
   if (ref.type === 'journey') return '只會清掉這一個時間，其他行程欄位保留。';
   return DELETE_TEXT[ref.type] || '這一筆紀錄會刪除。';
@@ -384,7 +384,8 @@ const handlers = {
     ui.sheet = null;
     if (!p) { render(); return; }
     const r = act.deleteRef(p.ref, p.t);
-    toast(r.ok ? '已刪除' : '找不到這一筆，可能已經刪除');
+    const msg = r.ok ? '已刪除' : r.reason === 'no-end' ? '這班還沒有下班時間' : '找不到這一筆，可能已經刪除';
+    toast(msg);
     render();
   },
   'meal-edit': (el) => { ui.mealEdit = el.dataset.id; ui.mealPhoto = undefined; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); },

@@ -76,3 +76,21 @@ test('找不到的紀錄回報失敗，不會假裝成功', () => {
   assert.equal(deleteRef(null).ok, false);
   assert.equal(deleteRef({ type: 'nope', id: 'x' }).ok, false);
 });
+
+test('刪「下班」只清掉下班時間，整班與行程都留著', () => {
+  replaceAll({
+    ...emptyData(),
+    sessions: [{ id: 'se1', jobId: 'j1', start: 1, end: 2, breaks: [] }],
+    journeys: [{ id: 'jr1', sessionId: 'se1', out: 1 }]
+  });
+  assert.equal(deleteRef({ type: 'session', id: 'se1', field: 'end' }).ok, true);
+  const d = visible(getRaw());
+  assert.equal(d.sessions.length, 1, '整班要留著');
+  assert.equal(d.sessions[0].end, null, '要變回進行中');
+  assert.equal(d.journeys.length, 1, '行程不能跟著消失');
+});
+
+test('這班本來就沒有下班時間，刪「下班」要回報失敗', () => {
+  replaceAll({ ...emptyData(), sessions: [{ id: 'se2', jobId: 'j1', start: 1, end: null, breaks: [] }] });
+  assert.deepEqual(deleteRef({ type: 'session', id: 'se2', field: 'end' }), { ok: false, reason: 'no-end' });
+});

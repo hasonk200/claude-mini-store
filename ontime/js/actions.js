@@ -30,12 +30,18 @@ function newSession(d, t, wdHint) {
 const RECENT_STEPS = new Map();
 const STEP_GAP_MS = 1500;
 
+// 上班或入睡時，把還開著的獨立休息自動結束，避免時間軸一直顯示「進行中」。
+function closeOpenRest(d, t) {
+  for (const r of d.rests || []) if (r.start != null && r.end == null && t > r.start) r.end = t;
+}
+
 // 首頁主按鈕：記錄下一個環節。
 export function recordStep(step, t = Date.now()) {
   const now = Date.now();
   if (now - (RECENT_STEPS.get(step) || 0) < STEP_GAP_MS) return { ok: false, reason: 'too-fast' };
   RECENT_STEPS.set(step, now);
   update((d) => {
+    if (step === 'clockIn') closeOpenRest(d, t);
     const cyc = currentCycle(d, t);
     let j = cyc.journey ? d.journeys.find((x) => x.id === cyc.journey.id) : null;
     let s = cyc.session ? d.sessions.find((x) => x.id === cyc.session.id) : null;
@@ -223,6 +229,7 @@ export function setRefTime(ref, t, extra = {}) {
 export function startSleep(t = Date.now()) {
   if (latestOpenSleep(get())) return { ok: false, reason: 'sleeping' };
   update((d) => {
+    closeOpenRest(d, t);
     const plan = d.sleeps
       .filter((s) => s.start == null && s.planStart != null && Math.abs(s.planStart - t) < 6 * HOUR)
       .sort((a, b) => Math.abs(a.planStart - t) - Math.abs(b.planStart - t))[0];
@@ -414,6 +421,17 @@ export function deleteRef(ref, t) {
         if (i >= 0) s.breaks.splice(i, 1);
       });
       return { ok: true };
+    }
+    // 刪「下班」只清掉下班時間，這班回到進行中；要刪整班請刪「上班」。
+    if (ref.field === 'end') {
+      let cleared = false;
+      update((d) => {
+        const s = d.sessions.find((x) => x.id === ref.id);
+        if (!s || s.end == null) return;
+        s.end = null;
+        cleared = true;
+      });
+      return cleared ? { ok: true } : { ok: false, reason: 'no-end' };
     }
     deleteSession(ref.id);
     return { ok: true };

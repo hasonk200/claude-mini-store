@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { replaceAll, getRaw, visible, emptyData } from '../js/store.js';
-import { toggleRest } from '../js/actions.js';
+import { toggleRest, recordStep, startSleep } from '../js/actions.js';
 import { activeRest, statusOf, workdayEvents } from '../js/logic.js';
 
 const at = (s) => Date.parse(s);
@@ -51,4 +51,22 @@ test('休息會出現在所屬工作日的時間軸', () => {
   assert.equal(rest.length, 1);
   assert.equal(rest[0].title, '休息');
   assert.equal(rest[0].detail, '進行中');
+});
+
+test('上班會自動結束進行中的休息', () => {
+  replaceAll({ ...emptyData() });
+  const t1 = at('2026-10-18T11:00:00-04:00');
+  const t2 = at('2026-10-18T11:30:00-04:00');
+  toggleRest(t1);
+  recordStep('clockIn', t2);
+  assert.equal(visible(getRaw()).rests[0].end, t2);
+});
+
+test('入睡會自動結束進行中的休息', () => {
+  replaceAll({ ...emptyData() });
+  const t1 = at('2026-10-18T11:00:00-04:00');
+  const t2 = at('2026-10-18T23:30:00-04:00');
+  toggleRest(t1);
+  startSleep(t2);
+  assert.equal(visible(getRaw()).rests[0].end, t2);
 });
