@@ -297,6 +297,7 @@ test('手動指定的所屬工作日仍然優先', async () => {
   const L = await import('../js/logic.js');
   const d = wakeDays();
   d.sleeps[1].workdayDate = '2026-10-15';
+  d.sleeps[1].workdayManual = true;
   assert.equal(L.sleepWorkday(d.sleeps[1], d), '2026-10-15');
 });
 
