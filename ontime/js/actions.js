@@ -5,7 +5,8 @@ import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
   currentCycle, activeSession, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
-  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget
+  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget,
+  sleepWorkdayChanges
 } from './logic.js';
 
 function ensureJob(d) {
@@ -246,16 +247,17 @@ export function setSleepWorkday(id, wd) {
 }
 
 // 清掉舊資料被自動寫死的歸屬，之後全部即時推算；手動指定的不動。
+// 回傳「歸屬真的改變」的筆數，與設定頁的預覽一致。
 export function resetSleepWorkdays() {
-  let n = 0;
+  const changed = sleepWorkdayChanges(get()).length;
   update((d) => {
     for (const s of d.sleeps) {
       if (s.workdayManual) continue;
       // workdayDate === null 是使用者明確選的「按入睡日期」，保留。
-      if (s.workdayDate != null) { delete s.workdayDate; n++; }
+      if (s.workdayDate != null) delete s.workdayDate;
     }
   });
-  return n;
+  return changed;
 }
 
 export function deleteSleep(id) {

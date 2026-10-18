@@ -263,6 +263,13 @@ const handlers = {
     ui.pendingRecord = null;
     if (p) applyRecord(p);
   },
+  'record-cancel': () => {
+    // 取消後回到補登面板，保留剛才填的時間。
+    const p = ui.pendingRecord;
+    ui.pendingRecord = null;
+    ui.sheet = p ? { type: 'record', wd: p.wd, step: p.step, t: p.t } : null;
+    render();
+  },
   'rec-step': (el) => { ui.sheet.step = el.dataset.step; render(); },
   'rec-now': () => { const t = nowFn(); $('#record-form [name=date]').value = dateKey(t); $('#record-form [name=time]').value = fmtTime(t); },
   'rec-minus': () => {
@@ -405,7 +412,7 @@ const forms = {
         ui.sheet = {
           type: 'confirm', title: '所屬工作日不同',
           body: `這筆會歸到 ${wdOfKey(autoWk)} ${fmtMD(autoWk)}，不是 ${wdOfKey(p.wd)} ${fmtMD(p.wd)}。儲存後可在睡眠頁改成你要的工作日。`,
-          confirm: '照樣儲存', action: 'record-force'
+          confirm: '照樣儲存', action: 'record-force', tone: 'ink', cancel: 'record-cancel'
         };
         render();
         return;

@@ -218,12 +218,13 @@ export function latestOpenSleep(data) {
   return data.sleeps.filter((s) => s.start != null && s.end == null).sort((a, b) => b.start - a.start)[0] || null;
 }
 
-// 補登「起床」要找哪一筆：先看所屬工作日，找不到就關掉任何進行中的睡眠。
+// 補登「起床」要找哪一筆：這天進行中 → 任何進行中 → 這天最後一筆完成的。
+// 進行中的紀錄一律優先，避免改到已完成的小睡。
 export function sleepEndTarget(data, wd) {
   const inWd = data.sleeps
     .filter((s) => s.start != null && sleepWorkday(s, data) === wd)
     .sort((a, b) => b.start - a.start);
-  return inWd.find((s) => s.end == null) || inWd[0] || latestOpenSleep(data);
+  return inWd.find((s) => s.end == null) || latestOpenSleep(data) || inWd[0] || null;
 }
 
 // 舊資料裡被自動寫死的歸屬，列出重算後會改變的紀錄（給「重新計算」預覽用）。

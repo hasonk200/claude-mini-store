@@ -67,7 +67,7 @@ function recordSheet(ctx) {
       ${bubble(ICON[k], KINDS[k], { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${LABEL[k]}</strong><small>${k === 'meal' ? '另開表單' : needSession ? '先記上班' : v != null ? fmtTime(v) : '未記錄'}</small></span></button>`;
   }).join('')}</div></div>`).join('');
 
-  const t = val[step] ?? plan[step] ?? now;
+  const t = sh.t ?? val[step] ?? plan[step] ?? now;
   const isBreak = step === 'break';
   const breakEnd = isBreak ? (session?.breaks?.find((b) => b.end == null) ? now : t + 30 * MIN) : null;
   const isRide = step === 'ride' || step === 'ride2';
@@ -126,11 +126,12 @@ function refSheet(ctx) {
 }
 
 function confirmSheet(ctx) {
-  const { title, body, confirm, action } = ctx.ui.sheet;
+  const { title, body, confirm, action, tone, cancel } = ctx.ui.sheet;
+  const okClass = tone === 'ink' ? 'btn-ink' : 'btn-danger';
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>
   <section class="sheet sheet-small" role="alertdialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="sheet-head"><h2 id="sheet-title">${esc(title)}</h2></div>
-    <div class="sheet-body"><p>${esc(body)}</p><div class="btn-pair"><button type="button" class="btn btn-danger" data-action="${esc(action)}" data-confirmed="1">${esc(confirm)}</button><button type="button" class="btn btn-line" data-action="close-sheet">取消</button></div></div>
+    <div class="sheet-body"><p>${esc(body)}</p><div class="btn-pair"><button type="button" class="btn ${okClass}" data-action="${esc(action)}" data-confirmed="1">${esc(confirm)}</button><button type="button" class="btn btn-line" data-action="${esc(cancel || 'close-sheet')}">取消</button></div></div>
   </section>`;
 }
 

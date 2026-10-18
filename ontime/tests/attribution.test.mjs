@@ -77,6 +77,23 @@ test('完全沒有睡眠時，補登起床要回報找不到（不能假裝成�
   assert.equal(sleepEndTarget(base(), '2026-10-16'), null);
 });
 
+// 回報的優先順序漏洞：這天有完成的小睡，進行中的在別天，不能改到小睡。
+test('補登起床：進行中的睡眠優先於這天已完成的小睡', () => {
+  const d = withThursdayWake();
+  d.sleeps.push({ id: 'nap', start: at('2026-10-16', '12:00'), end: at('2026-10-16', '12:30'), workdayDate: '2026-10-16', workdayManual: true });
+  d.sleeps.push({ id: 'open', start: at('2026-10-16', '09:17'), end: null });
+  const target = sleepEndTarget(d, '2026-10-16');
+  assert.equal(target.id, 'open');
+  assert.equal(d.sleeps.find((s) => s.id === 'nap').end, at('2026-10-16', '12:30')); // 小睡沒有被動到
+});
+
+test('補登起床：沒有任何進行中的睡眠，才改這天最後一筆完成的', () => {
+  const d = withThursdayWake();
+  d.sleeps.push({ id: 'nap1', start: at('2026-10-16', '12:00'), end: at('2026-10-16', '12:30'), workdayDate: '2026-10-16', workdayManual: true });
+  d.sleeps.push({ id: 'nap2', start: at('2026-10-16', '13:00'), end: at('2026-10-16', '13:30'), workdayDate: '2026-10-16', workdayManual: true });
+  assert.equal(sleepEndTarget(d, '2026-10-16').id, 'nap2');
+});
+
 test('36 小時上限：11h55m 仍算回上一個工作日，超過 36h 才改用後備規則', () => {
   const d = withThursdayWake();
   assert.equal(dayOf(d, at('2026-10-16', '09:17')), '2026-10-15');
