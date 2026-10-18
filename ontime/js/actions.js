@@ -26,8 +26,15 @@ function newSession(d, t, wdHint) {
   return s;
 }
 
+// 防連點／長按快捷鍵：同一個步驟 1.5 秒內只記一次。
+const RECENT_STEPS = new Map();
+const STEP_GAP_MS = 1500;
+
 // 首頁主按鈕：記錄下一個環節。
 export function recordStep(step, t = Date.now()) {
+  const now = Date.now();
+  if (now - (RECENT_STEPS.get(step) || 0) < STEP_GAP_MS) return { ok: false, reason: 'too-fast' };
+  RECENT_STEPS.set(step, now);
   update((d) => {
     const cyc = currentCycle(d, t);
     let j = cyc.journey ? d.journeys.find((x) => x.id === cyc.journey.id) : null;
@@ -50,6 +57,7 @@ export function recordStep(step, t = Date.now()) {
     }
     j[step] = t;
   });
+  return { ok: true };
 }
 
 export function toggleBreak(t = Date.now()) {

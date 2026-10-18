@@ -107,7 +107,7 @@ function applyRemote(remote) {
   const next = withLocalPhotos(mergeData(local, remote), local);
   if (JSON.stringify(stripPhotos(next)) === JSON.stringify(stripPhotos(local))) return;
   applyingRemote = true;
-  store.replaceAll(next);
+  store.replaceAll(next, { tombstone: false });
   applyingRemote = false;
   fetchMissingPhotos(next);
 }
@@ -121,7 +121,7 @@ async function fetchMissingPhotos(data) {
       if (!photo) continue;
       uploadedPhotos.set(m.id, photo.length);
       applyingRemote = true;
-      store.replaceAll({ ...store.getRaw(), meals: store.getRaw().meals.map((y) => (y.id === m.id && !y.photo ? { ...y, photo } : y)) });
+      store.replaceAll({ ...store.getRaw(), meals: store.getRaw().meals.map((y) => (y.id === m.id && !y.photo ? { ...y, photo } : y)) }, { tombstone: false });
       applyingRemote = false;
     } catch { /* 相片讀不到時，保留其他資料 */ }
   }

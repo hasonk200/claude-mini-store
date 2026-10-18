@@ -183,9 +183,12 @@ export function undo() {
 }
 
 // 取代整份資料（匯入、雲端合併後）；傳入的是包含刪除標記的完整資料。
-export function replaceAll(next) {
+// 整份取代。預設會替「被移除的紀錄」留下刪除標記，
+// 否則雲端同步時會把它們從雲端再合併回來（取代等於沒發生）。
+export function replaceAll(next, { tombstone = true } = {}) {
   previous = null;
-  setRaw(normalize(next));
+  const clean = normalize(next);
+  setRaw(tombstone ? stamp(data, clean) : clean);
   scheduleSave();
   emit();
 }
