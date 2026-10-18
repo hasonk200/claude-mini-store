@@ -87,7 +87,8 @@ function recordSheet(ctx) {
       ${dateKey(t) !== wd ? `<div class="cross-note"><span class="badge-cross">隔日</span>仍屬${wdOfKey(wd)}工作日，實際發生在${wdOfKey(dateKey(t))}</div>` : ''}
       <div class="btn-wrap"><button type="button" class="btn btn-soft btn-sm" data-action="rec-now">現在</button><button type="button" class="btn btn-soft btn-sm" data-action="rec-minus">−15 分</button>${plan[step] ? `<button type="button" class="btn btn-line btn-sm" data-action="rec-plan" data-t="${plan[step]}">用預計 ${fmtTime(plan[step])}</button>` : ''}</div>
       <p class="fine">只會修改「${LABEL[step]}」這一個時間；其他打卡、收入、休息、備註都保持不變。</p>
-      <div class="sheet-foot"><button class="btn btn-ink btn-block btn-lg" type="submit">儲存「${LABEL[step]}」時間</button></div>
+      <div class="sheet-foot btn-pair"><button class="btn btn-line btn-lg" type="submit" name="after" value="stay">儲存</button><button class="btn btn-ink btn-lg" type="submit" name="after" value="close">完成</button></div>
+      <p class="fine">「儲存」會留在這一頁繼續補；「完成」儲存後關閉。</p>
     </form>`;
 
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>

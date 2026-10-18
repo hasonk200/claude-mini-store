@@ -379,6 +379,8 @@ function applyRecord(p) {
   const r = act.setStepTime(p.wd, p.step, p.t, p.extra);
   if (!r.ok) {
     toast(RECORD_ERROR[r.reason] || '沒有可更新的紀錄');
+    // 「儲存」模式失敗時留在面板，保留剛填的時間。
+    ui.sheet = p.stay ? { type: 'record', wd: p.wd, step: p.step, t: p.t } : null;
     render();
     return;
   }
@@ -392,18 +394,21 @@ function applyRecord(p) {
     }
   }
   toast(`已儲存 ${fmtTime(p.t)}${note}`);
+  // 「儲存」只存不關，讓同一頁可以接著補下一個步驟。
+  if (p.stay) ui.sheet = { type: 'record', wd: p.wd, step: p.step };
   render();
 }
 
 const forms = {
-  'record': (f) => {
+  'record': (f, e) => {
+    const stay = e?.submitter?.value === 'stay';
     const t = fromInputs(f.date.value, f.time.value);
     if (t == null) return;
     const extra = {};
     if (f.endTime && f.endTime.value) extra.end = fromInputs(f.endDate.value || f.date.value, f.endTime.value);
     if (f.mode) { extra.mode = f.mode.value.trim(); extra.from = f.from.value.trim(); }
     if (f.replace && f.replace.checked) extra.replace = true;
-    const p = { wd: f.wd.value, step: f.step.value, t, extra };
+    const p = { wd: f.wd.value, step: f.step.value, t, extra, stay };
     // 只能補登「入睡」時先預告歸屬；起床的歸屬由該筆入睡時間決定。
     if (p.step === 'sleepStart') {
       const data = store.get();
@@ -486,7 +491,7 @@ function bind() {
     if (!f) return;
     e.preventDefault();
     dirty = false;
-    forms[f.dataset.form]?.(f);
+    forms[f.dataset.form]?.(f, e);
   });
   document.addEventListener('change', async (e) => {
     const el = e.target;
