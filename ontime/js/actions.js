@@ -5,7 +5,7 @@ import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
   currentCycle, activeSession, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
-  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep
+  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget
 } from './logic.js';
 
 function ensureJob(d) {
@@ -75,6 +75,7 @@ export function findWorkdayTargets(d, wd) {
 }
 
 export function setStepTime(wd, step, t, extra = {}) {
+  let result = { ok: true };
   update((d) => {
     const tg = findWorkdayTargets(d, wd);
     const s = tg.session ? d.sessions.find((x) => x.id === tg.session.id) : null;
@@ -99,27 +100,45 @@ export function setStepTime(wd, step, t, extra = {}) {
     }
     if (step === 'sleepStart' || step === 'sleepEnd') {
       let sl = tg.sleep ? d.sleeps.find((x) => x.id === tg.sleep.id) : null;
+      let touched = null;
       if (step === 'sleepStart') {
+        // 同時只能有一筆進行中的睡眠。
+        const open = latestOpenSleep(d);
+        if (open && (!sl || open.id !== sl.id)) { result = { ok: false, reason: 'sleeping' }; return; }
         if (sl && sl.start == null) {
           // 計畫轉為實際：保留原本的計畫時間，歸屬交給自動推算。
           sl.start = t;
           if (!sl.workdayManual) delete sl.workdayDate;
+          touched = sl.id;
         } else if (sl && sl.end == null) {
           // 更正進行中的入睡時間。
           sl.start = t;
+          touched = sl.id;
         } else if (sl && extra.replace) {
           // 使用者明確選擇「取代這天最後一筆」。
           sl.start = t;
           if (sl.end != null && sl.end <= t) sl.end = null;
           if (!sl.workdayManual) delete sl.workdayDate;
+          touched = sl.id;
         } else {
           // 這天可以有多段睡眠（小睡＋主睡眠），預設新增一筆。
-          d.sleeps.push({ id: uid('slp'), start: t, end: null, planStart: null, planEnd: null, note: '' });
+          const rec = { id: uid('slp'), start: t, end: null, planStart: null, planEnd: null, note: '' };
+          d.sleeps.push(rec);
+          touched = rec.id;
         }
-      } else if (sl) {
-        if (sl.start == null) sl.start = sl.planStart;
-        sl.end = t;
+      } else {
+        // 起床：先看所屬工作日，找不到就關掉進行中的那一筆（它可能被算到別的日期）。
+        const target = sleepEndTarget(d, wd) || sl;
+        if (!target) { result = { ok: false, reason: 'missing' }; return; }
+        const x = d.sleeps.find((y) => y.id === target.id);
+        if (!x) { result = { ok: false, reason: 'missing' }; return; }
+        if (x.start == null) x.start = x.planStart;
+        if (x.start == null) { result = { ok: false, reason: 'missing-start' }; return; }
+        if (t <= x.start) { result = { ok: false, reason: 'before-start' }; return; }
+        x.end = t;
+        touched = x.id;
       }
+      result = { ok: true, sleepId: touched };
       return;
     }
     if (!j) {
@@ -132,6 +151,7 @@ export function setStepTime(wd, step, t, extra = {}) {
       if (extra.mode !== undefined) j[`${step}Mode`] = extra.mode || null;
     }
   });
+  return result;
 }
 
 export function clearStepTime(wd, step) {
@@ -192,10 +212,14 @@ export function startSleep(t = Date.now()) {
 }
 
 export function wakeUp(t = Date.now()) {
+  const s = latestOpenSleep(get());
+  if (!s) return { ok: false, reason: 'missing' };
+  if (t <= s.start) return { ok: false, reason: 'before-start' };
   update((d) => {
-    const s = latestOpenSleep(d);
-    if (s && t > s.start) s.end = t;
+    const x = d.sleeps.find((y) => y.id === s.id);
+    if (x && t > x.start) x.end = t;
   });
+  return { ok: true };
 }
 
 export function addSleepPlan(start, end, wd) {

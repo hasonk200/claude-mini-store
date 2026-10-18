@@ -1,8 +1,8 @@
 import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
-import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime } from './time.js';
-import { currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges } from './logic.js';
+import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD } from './time.js';
+import { currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { timelineView } from './views/timeline.js';
 import { weekView } from './views/week.js';
@@ -28,7 +28,8 @@ const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'],
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
-  selRef: null, sheet: null, mealEdit: null, mealPhoto: undefined, incomeEdit: null, jobEdit: null, canInstall: false
+  selRef: null, sheet: null, mealEdit: null, mealPhoto: undefined, incomeEdit: null, jobEdit: null, canInstall: false,
+  pendingRecord: null
 };
 
 // 測試可以用 ?now=2026-10-13T03:18 固定時間。
@@ -246,10 +247,22 @@ const handlers = {
     if (!r.ok) { toast('已經有一筆進行中的睡眠，先按「現在起床」'); return; }
     toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`);
   },
-  'wake': () => { act.wakeUp(nowFn()); toastUndo(`早安，起床時間 ${fmtTime(nowFn())}`); },
+  'wake': () => {
+    const r = act.wakeUp(nowFn());
+    if (!r.ok) {
+      toast(r.reason === 'before-start' ? '起床時間不能早於入睡時間' : '現在沒有進行中的睡眠');
+      return;
+    }
+    toastUndo(`早安，起床時間 ${fmtTime(nowFn())}`);
+  },
   'open-record': (el) => openRecord(el.dataset.wd, el.dataset.step),
   'close-sheet': closeSheet,
   'close-sheet-nav': () => { ui.sheet = null; },
+  'record-force': () => {
+    const p = ui.pendingRecord;
+    ui.pendingRecord = null;
+    if (p) applyRecord(p);
+  },
   'rec-step': (el) => { ui.sheet.step = el.dataset.step; render(); },
   'rec-now': () => { const t = nowFn(); $('#record-form [name=date]').value = dateKey(t); $('#record-form [name=time]').value = fmtTime(t); },
   'rec-minus': () => {
@@ -345,6 +358,35 @@ const handlers = {
   'install': async () => { if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; ui.canInstall = false; render(); } }
 };
 
+const RECORD_ERROR = {
+  sleeping: '已經有一筆進行中的睡眠，先記「起床」',
+  missing: '找不到可以更新的睡眠，請先補登入睡',
+  'missing-start': '這筆睡眠沒有入睡時間，請先補登入睡',
+  'before-start': '起床時間不能早於入睡時間'
+};
+
+// 實際寫入補登，並把「這筆歸到哪個工作日」講清楚。
+function applyRecord(p) {
+  ui.sheet = null;
+  const r = act.setStepTime(p.wd, p.step, p.t, p.extra);
+  if (!r.ok) {
+    toast(RECORD_ERROR[r.reason] || '沒有可更新的紀錄');
+    render();
+    return;
+  }
+  let note = '';
+  if (r.sleepId) {
+    const data = store.get();
+    const rec = data.sleeps.find((x) => x.id === r.sleepId);
+    if (rec) {
+      const wk = sleepWorkday(rec, data);
+      if (wk !== p.wd) note = `，歸屬 ${wdOfKey(wk)} ${fmtMD(wk)}`;
+    }
+  }
+  toast(`已儲存 ${fmtTime(p.t)}${note}`);
+  render();
+}
+
 const forms = {
   'record': (f) => {
     const t = fromInputs(f.date.value, f.time.value);
@@ -353,9 +395,23 @@ const forms = {
     if (f.endTime && f.endTime.value) extra.end = fromInputs(f.endDate.value || f.date.value, f.endTime.value);
     if (f.mode) { extra.mode = f.mode.value.trim(); extra.from = f.from.value.trim(); }
     if (f.replace && f.replace.checked) extra.replace = true;
-    act.setStepTime(f.wd.value, f.step.value, t, extra);
-    ui.sheet = null;
-    toast(`已儲存 ${fmtTime(t)}`);
+    const p = { wd: f.wd.value, step: f.step.value, t, extra };
+    // 只能補登「入睡」時先預告歸屬；起床的歸屬由該筆入睡時間決定。
+    if (p.step === 'sleepStart') {
+      const data = store.get();
+      const autoWk = dayOf(data, t) || inferSleepWorkday(t, data);
+      if (autoWk !== p.wd) {
+        ui.pendingRecord = p;
+        ui.sheet = {
+          type: 'confirm', title: '所屬工作日不同',
+          body: `這筆會歸到 ${wdOfKey(autoWk)} ${fmtMD(autoWk)}，不是 ${wdOfKey(p.wd)} ${fmtMD(p.wd)}。儲存後可在睡眠頁改成你要的工作日。`,
+          confirm: '照樣儲存', action: 'record-force'
+        };
+        render();
+        return;
+      }
+    }
+    applyRecord(p);
   },
   'ref-time': (f) => {
     const t = fromInputs(f.date.value, f.time.value);

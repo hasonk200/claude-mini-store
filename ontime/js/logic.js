@@ -204,17 +204,26 @@ export function inferSleepWorkday(t, data) {
 }
 
 // 只有使用者手動指定（workdayManual）才採用寫下來的日期；
-// 其他一律依入睡時間即時推算，避免紀錄被建立當下的值永久寫死。
+// 舊資料沒有標記，先照舊保留，等使用者在設定頁按「重新計算」才改成自動。
 export function sleepWorkday(sl, data) {
   const t = sl.start ?? sl.planStart;
   if (sl.workdayManual) return sl.workdayDate || dateKey(t);
   if (sl.workdayDate === null) return dateKey(t);
+  if (sl.workdayDate) return sl.workdayDate;
   return dayOf(data, t) || inferSleepWorkday(t, data);
 }
 
 // 進行中的睡眠取「最晚開始」那一筆；wakeUp 與畫面都靠它，避免關到舊紀錄。
 export function latestOpenSleep(data) {
   return data.sleeps.filter((s) => s.start != null && s.end == null).sort((a, b) => b.start - a.start)[0] || null;
+}
+
+// 補登「起床」要找哪一筆：先看所屬工作日，找不到就關掉任何進行中的睡眠。
+export function sleepEndTarget(data, wd) {
+  const inWd = data.sleeps
+    .filter((s) => s.start != null && sleepWorkday(s, data) === wd)
+    .sort((a, b) => b.start - a.start);
+  return inWd.find((s) => s.end == null) || inWd[0] || latestOpenSleep(data);
 }
 
 // 舊資料裡被自動寫死的歸屬，列出重算後會改變的紀錄（給「重新計算」預覽用）。
