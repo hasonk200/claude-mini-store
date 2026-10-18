@@ -2,7 +2,7 @@ import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
 import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime } from './time.js';
-import { currentWorkday, currentCycle, workdayEvents } from './logic.js';
+import { currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { timelineView } from './views/timeline.js';
 import { weekView } from './views/week.js';
@@ -241,7 +241,11 @@ const handlers = {
   'undo': () => { if (store.undo()) toast('已復原'); },
   'show-templates': () => { ui.showTemplates = true; render(); },
   'break': () => { act.toggleBreak(nowFn()); toastUndo('已更新休息'); },
-  'sleep-start': () => { act.startSleep(nowFn()); toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`); },
+  'sleep-start': () => {
+    const r = act.startSleep(nowFn());
+    if (!r.ok) { toast('已經有一筆進行中的睡眠，先按「現在起床」'); return; }
+    toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`);
+  },
   'wake': () => { act.wakeUp(nowFn()); toastUndo(`早安，起床時間 ${fmtTime(nowFn())}`); },
   'open-record': (el) => openRecord(el.dataset.wd, el.dataset.step),
   'close-sheet': closeSheet,
@@ -302,7 +306,15 @@ const handlers = {
   'tpl-delete': (el) => act.deleteTemplate(el.dataset.id),
   'shift-delete': (el) => act.deleteShift(el.dataset.id),
   'day-off': (el) => act.toggleDayOff(el.dataset.key),
-  'sleep-wd-clear': (el) => { act.updateSleep(el.dataset.id, { workdayDate: null }); toast('改為按入睡日期'); },
+  'sleep-wd-clear': (el) => { act.setSleepWorkday(el.dataset.id, null); toast('改為按入睡日期'); },
+  'sleep-wd-reset': (el) => {
+    const n = sleepWorkdayChanges(store.get()).length;
+    if (!n) { toast('全部已是最新'); return; }
+    if (confirmFirst(el, '重新計算所屬工作日？', `${n} 筆睡眠會依入睡時間重新歸屬；你手動指定過的不受影響。`, '重新計算')) {
+      const done = act.resetSleepWorkdays();
+      toast(`已重新計算 ${done} 筆睡眠歸屬`);
+    }
+  },
   'sleep-delete': (el) => act.deleteSleep(el.dataset.id),
   'sleep-reuse': () => {
     const d = store.get();
@@ -340,6 +352,7 @@ const forms = {
     const extra = {};
     if (f.endTime && f.endTime.value) extra.end = fromInputs(f.endDate.value || f.date.value, f.endTime.value);
     if (f.mode) { extra.mode = f.mode.value.trim(); extra.from = f.from.value.trim(); }
+    if (f.replace && f.replace.checked) extra.replace = true;
     act.setStepTime(f.wd.value, f.step.value, t, extra);
     ui.sheet = null;
     toast(`已儲存 ${fmtTime(t)}`);
@@ -373,7 +386,7 @@ const forms = {
     act.addSleepPlan(s, e);
     toast('已儲存睡眠計畫');
   },
-  'sleep-workday': (f) => { act.updateSleep(f.id.value, { workdayDate: f.wd.value || null }); toast('已更改所屬工作日'); },
+  'sleep-workday': (f) => { act.setSleepWorkday(f.id.value, f.wd.value || null); toast('已更改所屬工作日'); },
   'tpl-add': (f) => { act.saveTemplate({ name: f.name.value.trim(), jobId: f.jobId.value, start: f.start.value, end: f.end.value }); toast('已新增範本'); },
   'shift-add': (f) => { act.addShift(f.jobId.value, f.key.value, f.start.value, f.end.value); toast('已加入班次'); },
   'income': (f) => {
@@ -485,7 +498,11 @@ async function start() {
   if (doAct) {
     history.replaceState(null, '', location.pathname + (fixedNow ? `?now=${params.get('now')}` : '') + location.hash);
     if (doAct === 'meal') location.hash = '#/meals';
-    else if (doAct === 'sleep') { act.startSleep(nowFn()); toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`); }
+    else if (doAct === 'sleep') {
+      const r = act.startSleep(nowFn());
+      if (r.ok) toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`);
+      else toast('已經有一筆進行中的睡眠，先按「現在起床」');
+    }
     else if (doAct === 'out' || doAct === 'clockIn') { act.recordStep(doAct, nowFn()); toastUndo(`已記錄${doAct === 'out' ? '出門' : '上班'} ${fmtTime(nowFn())}`); }
   }
   // 每 30 秒更新倒數；正在輸入時不重畫，避免打斷。
