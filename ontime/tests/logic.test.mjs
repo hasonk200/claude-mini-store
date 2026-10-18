@@ -249,10 +249,12 @@ test('逐筆合併：較新的修改勝出，刪除在兩邊都生效', async ()
 test('修改時自動蓋 updatedAt，刪除改為刪除標記', async () => {
   const store = await import('../js/store.js');
   store.replaceAll({ ...empty(), meals: [{ id: 'x', name: '舊', start: 1 }, { id: 'y', name: '不動', start: 2 }] });
+  const imported = store.getRaw().meals.find((m) => m.id === 'y').updatedAt;
   store.update((d) => { d.meals.find((m) => m.id === 'x').name = '新'; });
   const raw = store.getRaw().meals;
   assert.ok(raw.find((m) => m.id === 'x').updatedAt > 0);
-  assert.equal(raw.find((m) => m.id === 'y').updatedAt, undefined);
+  // 匯入時會蓋一次 updatedAt，但沒被改動的紀錄不會再變。
+  assert.equal(raw.find((m) => m.id === 'y').updatedAt, imported);
   store.update((d) => { d.meals = d.meals.filter((m) => m.id !== 'y'); });
   assert.ok(store.getRaw().meals.find((m) => m.id === 'y').deletedAt);
   assert.deepEqual(store.get().meals.map((m) => m.id), ['x']);
