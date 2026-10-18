@@ -165,7 +165,7 @@ export function nextStep(cycle) {
 }
 
 export function statusOf(cycle, data, now) {
-  const sleeping = data.sleeps.find((s) => s.start != null && s.end == null);
+  const sleeping = latestOpenSleep(data);
   if (sleeping) return { key: 'sleep', title: '睡眠中', since: sleeping.start };
   const s = cycle.session;
   if (s && s.end == null) {
@@ -203,11 +203,40 @@ export function inferSleepWorkday(t, data) {
   return best ? dateKey(best.start) : dateKey(t);
 }
 
+// 只有使用者手動指定（workdayManual）才採用寫下來的日期；
+// 舊資料沒有標記，先照舊保留，等使用者在設定頁按「重新計算」才改成自動。
 export function sleepWorkday(sl, data) {
   const t = sl.start ?? sl.planStart;
+  if (sl.workdayManual) return sl.workdayDate || dateKey(t);
   if (sl.workdayDate === null) return dateKey(t);
   if (sl.workdayDate) return sl.workdayDate;
   return dayOf(data, t) || inferSleepWorkday(t, data);
+}
+
+// 進行中的睡眠取「最晚開始」那一筆；wakeUp 與畫面都靠它，避免關到舊紀錄。
+export function latestOpenSleep(data) {
+  return data.sleeps.filter((s) => s.start != null && s.end == null).sort((a, b) => b.start - a.start)[0] || null;
+}
+
+// 補登「起床」要找哪一筆：這天進行中 → 任何進行中 → 這天最後一筆完成的。
+// 進行中的紀錄一律優先，避免改到已完成的小睡。
+export function sleepEndTarget(data, wd) {
+  const inWd = data.sleeps
+    .filter((s) => s.start != null && sleepWorkday(s, data) === wd)
+    .sort((a, b) => b.start - a.start);
+  return inWd.find((s) => s.end == null) || latestOpenSleep(data) || inWd[0] || null;
+}
+
+// 舊資料裡被自動寫死的歸屬，列出重算後會改變的紀錄（給「重新計算」預覽用）。
+export function sleepWorkdayChanges(data) {
+  const out = [];
+  for (const sl of data.sleeps) {
+    if (sl.workdayManual || sl.workdayDate == null) continue;
+    const t = sl.start ?? sl.planStart;
+    const to = dayOf(data, t) || inferSleepWorkday(t, data);
+    if (to !== sl.workdayDate) out.push({ id: sl.id, from: sl.workdayDate, to, start: t });
+  }
+  return out;
 }
 
 export function sleepActualMs(sl, now) {
@@ -235,7 +264,7 @@ export function currentWorkday(data, now) {
   if (byWake) return byWake;
   const s = activeSession(data) || data.sessions.find((x) => x.start <= now && x.end != null && x.end > now);
   if (s) return workdayOfSession(s, data);
-  const sleeping = data.sleeps.find((x) => x.start != null && x.end == null);
+  const sleeping = latestOpenSleep(data);
   if (sleeping) return sleepWorkday(sleeping, data);
   const cyc = currentCycle(data, now);
   if (cyc.session) return workdayOfSession(cyc.session, data);

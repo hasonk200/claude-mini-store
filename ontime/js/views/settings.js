@@ -1,6 +1,7 @@
 import { esc, icon, seg } from '../ui.js';
 import { fmtTime, wdOf, fmtMD, dateKey } from '../time.js';
 import { status } from '../store.js';
+import { sleepWorkdayChanges } from '../logic.js';
 import { syncState } from '../sync.js';
 import { pageHead } from './shared.js';
 
@@ -46,6 +47,10 @@ function cloudCard() {
 function dataCard(data) {
   const st = status();
   const counts = `${data.sessions.length} 次出勤 · ${data.sleeps.length} 筆睡眠 · ${data.meals.length} 餐`;
+  const changes = sleepWorkdayChanges(data).length;
+  const resetLine = changes
+    ? `有 ${changes} 筆睡眠的所屬工作日是舊版寫死的，重新計算會依入睡時間歸屬。`
+    : '全部睡眠的所屬工作日都已是最新。';
   return `<section class="card" aria-label="資料與備份"><div class="card-head"><h2 class="card-title">資料與備份</h2></div>
     <div class="status-line"><i class="dot ${st.saveError ? 'is-warn' : 'k-ok'}"></i><div><strong>${st.saveError ? esc(st.saveError) : '已儲存在這部裝置'}</strong><span>${counts}${st.lastSaved ? ` · 最後儲存 ${fmtTime(st.lastSaved)}` : ''}</span></div></div>
     <p class="fine">${st.persisted === true ? '已受保護：瀏覽器不會在空間不足時自動清除這些紀錄。' : '瀏覽器可能在空間不足時清除本機紀錄，請定期匯出備份或登入雲端同步。'}</p>
@@ -54,7 +59,9 @@ function dataCard(data) {
       <button type="button" class="btn btn-ink" data-action="export-json">${icon('download', 18, 2)}匯出 JSON 備份</button>
       <label class="btn btn-line file-btn">${icon('upload', 18, 2)}匯入 JSON 備份<input type="file" accept="application/json,.json" data-action="import-json" hidden></label>
       <button type="button" class="btn btn-line" data-action="export-csv">${icon('download', 18, 2)}匯出 CSV（試算表）</button>
+      <button type="button" class="btn btn-line" data-action="sleep-wd-reset">重新計算睡眠歸屬${changes ? `（${changes} 筆）` : ''}</button>
     </div>
+    <p class="fine">${resetLine}手動指定過的不受影響。</p>
     <fieldset class="radio-row"><legend>匯入時</legend>
       <label><input type="radio" name="importMode" value="merge" checked> 合併：只加入新的紀錄</label>
       <label><input type="radio" name="importMode" value="replace"> 取代：用備份覆蓋目前資料</label>

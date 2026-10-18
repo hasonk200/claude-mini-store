@@ -1,7 +1,7 @@
 import { esc, icon, bubble } from '../ui.js';
-import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, HOUR, toDateInput, toTimeInput } from '../time.js';
-import { sleepWorkday, sleepByWorkday, sleepAverage, nextSleepPlan } from '../logic.js';
-import { pageHead } from './shared.js';
+import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, HOUR, DAY, dayStart, toDateInput, toTimeInput } from '../time.js';
+import { sleepWorkday, sleepByWorkday, sleepAverage, nextSleepPlan, latestOpenSleep } from '../logic.js';
+import { pageHead, crossBadge } from './shared.js';
 
 function ring(frac) {
   const r = 90;
@@ -13,7 +13,7 @@ function ring(frac) {
 }
 
 function hero(data, now) {
-  const active = data.sleeps.find((s) => s.start != null && s.end == null);
+  const active = latestOpenSleep(data);
   const last = data.sleeps.filter((s) => s.start != null && s.end != null).sort((a, b) => b.end - a.end)[0];
   if (active) {
     const planLen = active.planEnd ? active.planEnd - active.start : 8 * HOUR;
@@ -34,11 +34,13 @@ function hero(data, now) {
 }
 
 function attribution(data, now) {
-  const target = data.sleeps.find((s) => s.start != null && s.end == null)
+  const target = latestOpenSleep(data)
     || data.sleeps.filter((s) => s.start != null).sort((a, b) => b.start - a.start)[0];
   if (!target) return '';
   const wd = sleepWorkday(target, data);
-  const how = target.workdayDate === null ? '按入睡日期' : target.workdayDate ? '已指定' : '按入睡前一次起床計算';
+  const how = target.workdayManual ? '手動指定'
+    : target.workdayDate === null ? '按入睡日期'
+    : '自動（依起床推算）';
   return `<section class="card" aria-label="所屬工作日"><form class="form" data-form="sleep-workday"><input type="hidden" name="id" value="${target.id}">
     <div class="row-card"><div class="row-card-text"><span class="eyebrow">所屬工作日（由起床到下一次起床）· ${how}</span><strong>${wdOfKey(wd)} ${fmtMD(wd)}</strong><span>修改歸屬不會改動入睡或起床時間</span></div></div>
     <div class="form-inline"><label class="field"><span>改成</span><input type="date" name="wd" value="${wd}"></label><button class="btn btn-ink" type="submit">更改</button><button class="btn btn-line" type="button" data-action="sleep-wd-clear" data-id="${target.id}">按入睡日期</button></div>
@@ -83,9 +85,18 @@ function plans(data, now) {
 function history(data, now) {
   const list = data.sleeps.filter((s) => s.start != null).sort((a, b) => b.start - a.start).slice(0, 8);
   if (!list.length) return '';
-  return `<section class="card card-flush"><div class="card-head"><h2 class="card-title">最近的睡眠</h2></div><div class="table-wrap"><table class="table"><thead><tr><th scope="col">所屬工作日</th><th scope="col">入睡</th><th scope="col">起床</th><th scope="col" class="t-right">時數</th></tr></thead><tbody>
-    ${list.map((s) => `<tr><td>${wdOfKey(sleepWorkday(s, data))} ${fmtMD(sleepWorkday(s, data))}</td><td>${wdOf(s.start)} ${fmtTime(s.start)}</td><td>${s.end ? `${wdOf(s.end)} ${fmtTime(s.end)}` : '<span class="chip chip-real">進行中</span>'}</td><td class="t-right"><b>${fmtDur((s.end ?? now) - s.start)}</b> <button type="button" class="icon-btn icon-btn-sm" data-action="sleep-delete" data-id="${s.id}" aria-label="刪除這筆睡眠">${icon('trash', 15)}</button></td></tr>`).join('')}
-  </tbody></table></div></section>`;
+  const rows = list.map((s) => {
+    const wd = sleepWorkday(s, data);
+    const gap = Math.round((dayStart(dateKey(s.start)) - dayStart(wd)) / DAY);
+    const ms = (s.end ?? now) - s.start;
+    const gapBadge = Math.abs(gap) >= 2 ? `<span class="badge-cross is-warn">與入睡差 ${Math.abs(gap)} 天</span>` : '';
+    const longBadge = ms > DAY ? `<span class="badge-cross is-warn">超過 24 小時</span>` : '';
+    return `<tr><td>${wdOfKey(wd)} ${fmtMD(wd)} ${gapBadge}</td>
+      <td>${wdOf(s.start)} ${fmtMD(dateKey(s.start))} ${fmtTime(s.start)} ${crossBadge(s.start, wd)}</td>
+      <td>${s.end ? `${wdOf(s.end)} ${fmtMD(dateKey(s.end))} ${fmtTime(s.end)} ${crossBadge(s.end, dateKey(s.start))}` : '<span class="chip chip-real">進行中</span>'}</td>
+      <td class="t-right"><b>${fmtDur(ms)}</b> ${longBadge}<button type="button" class="icon-btn icon-btn-sm" data-action="sleep-delete" data-id="${s.id}" aria-label="刪除這筆睡眠">${icon('trash', 15)}</button></td></tr>`;
+  }).join('');
+  return `<section class="card card-flush"><div class="card-head"><h2 class="card-title">最近的睡眠</h2></div><div class="table-wrap"><table class="table"><thead><tr><th scope="col">所屬工作日</th><th scope="col">入睡</th><th scope="col">起床</th><th scope="col" class="t-right">時數</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
 }
 
 export function sleepView(ctx) {

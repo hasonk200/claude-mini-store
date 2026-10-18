@@ -4,8 +4,9 @@ import { mergeData } from './sync.js';
 import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
-  currentCycle, activeSession, shiftForClockIn, inferSleepWorkday, sessionsOfWorkday, shiftsOfWorkday,
-  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday
+  currentCycle, activeSession, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
+  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget,
+  sleepWorkdayChanges
 } from './logic.js';
 
 function ensureJob(d) {
@@ -75,6 +76,7 @@ export function findWorkdayTargets(d, wd) {
 }
 
 export function setStepTime(wd, step, t, extra = {}) {
+  let result = { ok: true };
   update((d) => {
     const tg = findWorkdayTargets(d, wd);
     const s = tg.session ? d.sessions.find((x) => x.id === tg.session.id) : null;
@@ -99,15 +101,45 @@ export function setStepTime(wd, step, t, extra = {}) {
     }
     if (step === 'sleepStart' || step === 'sleepEnd') {
       let sl = tg.sleep ? d.sleeps.find((x) => x.id === tg.sleep.id) : null;
+      let touched = null;
       if (step === 'sleepStart') {
-        if (sl && sl.start == null) sl.start = t;
-        else if (sl && sl.start != null && sl.end != null && extra.replace) sl.start = t;
-        else if (sl && sl.end == null) sl.start = t;
-        else d.sleeps.push({ id: uid('slp'), start: t, end: null, planStart: null, planEnd: null, workdayDate: wd, note: '' });
-      } else if (sl) {
-        if (sl.start == null) sl.start = sl.planStart;
-        sl.end = t;
+        // 同時只能有一筆進行中的睡眠。
+        const open = latestOpenSleep(d);
+        if (open && (!sl || open.id !== sl.id)) { result = { ok: false, reason: 'sleeping' }; return; }
+        if (sl && sl.start == null) {
+          // 計畫轉為實際：保留原本的計畫時間，歸屬交給自動推算。
+          sl.start = t;
+          if (!sl.workdayManual) delete sl.workdayDate;
+          touched = sl.id;
+        } else if (sl && sl.end == null) {
+          // 更正進行中的入睡時間。
+          sl.start = t;
+          touched = sl.id;
+        } else if (sl && extra.replace) {
+          // 使用者明確選擇「取代這天最後一筆」。
+          sl.start = t;
+          if (sl.end != null && sl.end <= t) sl.end = null;
+          if (!sl.workdayManual) delete sl.workdayDate;
+          touched = sl.id;
+        } else {
+          // 這天可以有多段睡眠（小睡＋主睡眠），預設新增一筆。
+          const rec = { id: uid('slp'), start: t, end: null, planStart: null, planEnd: null, note: '' };
+          d.sleeps.push(rec);
+          touched = rec.id;
+        }
+      } else {
+        // 起床：先看所屬工作日，找不到就關掉進行中的那一筆（它可能被算到別的日期）。
+        const target = sleepEndTarget(d, wd) || sl;
+        if (!target) { result = { ok: false, reason: 'missing' }; return; }
+        const x = d.sleeps.find((y) => y.id === target.id);
+        if (!x) { result = { ok: false, reason: 'missing' }; return; }
+        if (x.start == null) x.start = x.planStart;
+        if (x.start == null) { result = { ok: false, reason: 'missing-start' }; return; }
+        if (t <= x.start) { result = { ok: false, reason: 'before-start' }; return; }
+        x.end = t;
+        touched = x.id;
       }
+      result = { ok: true, sleepId: touched };
       return;
     }
     if (!j) {
@@ -120,6 +152,7 @@ export function setStepTime(wd, step, t, extra = {}) {
       if (extra.mode !== undefined) j[`${step}Mode`] = extra.mode || null;
     }
   });
+  return result;
 }
 
 export function clearStepTime(wd, step) {
@@ -163,24 +196,31 @@ export function setRefTime(ref, t, extra = {}) {
 
 // ---------- 睡眠 ----------
 export function startSleep(t = Date.now()) {
+  if (latestOpenSleep(get())) return { ok: false, reason: 'sleeping' };
   update((d) => {
     const plan = d.sleeps
       .filter((s) => s.start == null && s.planStart != null && Math.abs(s.planStart - t) < 6 * HOUR)
       .sort((a, b) => Math.abs(a.planStart - t) - Math.abs(b.planStart - t))[0];
     if (plan) {
       plan.start = t;
-      if (plan.workdayDate === undefined) plan.workdayDate = inferSleepWorkday(t, d);
+      // 計畫上的歸屬只是當時的推算，除非使用者手動指定過，否則交給自動規則。
+      if (!plan.workdayManual) delete plan.workdayDate;
     } else {
-      d.sleeps.push({ id: uid('slp'), start: t, end: null, planStart: null, planEnd: null, workdayDate: inferSleepWorkday(t, d), note: '' });
+      d.sleeps.push({ id: uid('slp'), start: t, end: null, planStart: null, planEnd: null, note: '' });
     }
   });
+  return { ok: true };
 }
 
 export function wakeUp(t = Date.now()) {
+  const s = latestOpenSleep(get());
+  if (!s) return { ok: false, reason: 'missing' };
+  if (t <= s.start) return { ok: false, reason: 'before-start' };
   update((d) => {
-    const s = d.sleeps.find((x) => x.start != null && x.end == null);
-    if (s) s.end = t;
+    const x = d.sleeps.find((y) => y.id === s.id);
+    if (x && t > x.start) x.end = t;
   });
+  return { ok: true };
 }
 
 export function addSleepPlan(start, end, wd) {
@@ -194,6 +234,30 @@ export function updateSleep(id, patch) {
     const s = d.sleeps.find((x) => x.id === id);
     if (s) Object.assign(s, patch);
   });
+}
+
+// 手動指定所屬工作日（null = 按入睡日期）。只有這裡會設定 workdayManual。
+export function setSleepWorkday(id, wd) {
+  update((d) => {
+    const s = d.sleeps.find((x) => x.id === id);
+    if (!s) return;
+    s.workdayDate = wd;
+    s.workdayManual = true;
+  });
+}
+
+// 清掉舊資料被自動寫死的歸屬，之後全部即時推算；手動指定的不動。
+// 回傳「歸屬真的改變」的筆數，與設定頁的預覽一致。
+export function resetSleepWorkdays() {
+  const changed = sleepWorkdayChanges(get()).length;
+  update((d) => {
+    for (const s of d.sleeps) {
+      if (s.workdayManual) continue;
+      // workdayDate === null 是使用者明確選的「按入睡日期」，保留。
+      if (s.workdayDate != null) delete s.workdayDate;
+    }
+  });
+  return changed;
 }
 
 export function deleteSleep(id) {
@@ -400,8 +464,8 @@ export function demoData(now = Date.now()) {
     d.meals.push({ id: uid('meal'), name: '宵夜', place: '公司休息室', note: '', photo: null, start: at(addDays(key, 1), '01:10'), end: at(addDays(key, 1), '01:35'), confirmed: at(addDays(key, 1), '01:10') < now });
     const sleepStart = at(addDays(key, 1), '12:00') + ((i * 11) % 30) * MIN;
     const sleepEnd = sleepStart + (6.5 + ((i * 3) % 4) * 0.5) * HOUR;
-    if (sleepEnd < now && i !== -6) d.sleeps.push({ id: uid('slp'), start: sleepStart, end: sleepEnd, planStart: null, planEnd: null, workdayDate: key, note: '' });
-    else if (sleepStart > now) d.sleeps.push({ id: uid('slp'), start: null, end: null, planStart: at(addDays(key, 1), '12:00'), planEnd: at(addDays(key, 1), '20:00'), workdayDate: key, note: '' });
+    if (sleepEnd < now && i !== -6) d.sleeps.push({ id: uid('slp'), start: sleepStart, end: sleepEnd, planStart: null, planEnd: null, note: '' });
+    else if (sleepStart > now) d.sleeps.push({ id: uid('slp'), start: null, end: null, planStart: at(addDays(key, 1), '12:00'), planEnd: at(addDays(key, 1), '20:00'), note: '' });
   }
   d.settings.name = '示範';
   return d;
