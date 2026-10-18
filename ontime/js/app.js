@@ -229,7 +229,8 @@ const handlers = {
   },
   'step': (el) => {
     const step = el.dataset.step;
-    act.recordStep(step, nowFn());
+    const r = act.recordStep(step, nowFn());
+    if (!r.ok) { toast('剛剛已經記過了，等一下再按'); return; }
     toastUndo(`已記錄${el.textContent.replace(' · 現在', '').replace('記錄', '').trim()} ${fmtTime(nowFn())}`);
   },
   'meal-fill': (el) => {
@@ -534,6 +535,7 @@ function bind() {
       return;
     }
     if (e.key === ' ' && ui.route === 'today') {
+      if (e.repeat) return; // 長按 Space 只算一次
       const main = document.querySelector('#view .status-card [data-action=step], #view .status-card [data-action=wake]');
       if (main) { e.preventDefault(); main.click(); }
     }
@@ -566,7 +568,11 @@ async function start() {
       if (r.ok) toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`);
       else toast('已經有一筆進行中的睡眠，先按「現在起床」');
     }
-    else if (doAct === 'out' || doAct === 'clockIn') { act.recordStep(doAct, nowFn()); toastUndo(`已記錄${doAct === 'out' ? '出門' : '上班'} ${fmtTime(nowFn())}`); }
+    else if (doAct === 'out' || doAct === 'clockIn') {
+      const r = act.recordStep(doAct, nowFn());
+      if (r.ok) toastUndo(`已記錄${doAct === 'out' ? '出門' : '上班'} ${fmtTime(nowFn())}`);
+      else toast('剛剛已經記過了，等一下再按');
+    }
   }
   // 每 30 秒更新倒數；正在輸入時不重畫，避免打斷。
   setInterval(() => {
