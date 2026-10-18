@@ -6,6 +6,7 @@ import {
 } from '../logic.js';
 import { ribbon, legend, crossBadge, pageHead, dayNav } from './shared.js';
 import { refKey } from './today.js';
+import { findWorkdayTargets } from '../actions.js';
 
 function weekStrip(data, key, now) {
   const start = weekStartKey(key);
@@ -53,10 +54,20 @@ function workdaySummary(data, wd, now) {
   const sleeps = data.sleeps.filter((s) => sleepWorkday(s, data) === wd && s.start != null);
   const sleepMs = totalOf(sleeps.map((s) => [s.start, s.end ?? now]));
   const sleeping = sleeps.some((s) => s.end == null);
+  // 三張摘要卡都可以點：打開「補登一個時間」，並直接選到最需要補的那一項。
+  const tg = findWorkdayTargets(data, wd);
+  const sess = tg.session;
+  const jr = tg.journey;
+  const workStep = !sess || sess.start == null ? 'clockIn' : sess.end == null ? 'clockOut' : 'clockIn';
+  const commuteStep = ['out', 'arrive', 'leave', 'home'].find((k) => jr?.[k] == null) || 'out';
+  const sl = tg.sleep;
+  const sleepStep = !sl || sl.start == null ? 'sleepStart' : sl.end == null ? 'sleepEnd' : 'sleepStart';
+  const card = (cls, label, value, note, step) =>
+    `<button type="button" class="card mini mini-btn ${cls}" data-action="open-record" data-wd="${wd}" data-step="${step}" aria-label="修改${label}"><span>${label}</span><strong>${value}</strong><small>${note}</small></button>`;
   return `<section class="summary-3">
-    <div class="card mini"><span>工時</span><strong>${fmtDur(work)}</strong><small>${esc(splitText)}</small></div>
-    <div class="card mini"><span>通勤</span><strong>${fmtDur(commute)}</strong><small>只計有完整起止的路程</small></div>
-    <div class="card mini k-sleep-soft"><span>睡眠</span><strong>${sleeps.length ? fmtDur(sleepMs) : '—'}</strong><small>${sleeping ? '進行中，計至現在' : sleeps.length ? '實際紀錄' : '未記錄'}</small></div>
+    ${card('', '工時', fmtDur(work), esc(splitText), workStep)}
+    ${card('', '通勤', fmtDur(commute), '只計有完整起止的路程', commuteStep)}
+    ${card('k-sleep-soft', '睡眠', sleeps.length ? fmtDur(sleepMs) : '—', sleeping ? '進行中，計至現在' : sleeps.length ? '實際紀錄' : '未記錄', sleepStep)}
   </section>`;
 }
 

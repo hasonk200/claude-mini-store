@@ -169,10 +169,12 @@ function parseRef(s) {
   return { type, id, field: field || undefined };
 }
 
-function openRecord(wd) {
+const RECORD_STEPS = new Set(['out', 'ride', 'arrive', 'clockIn', 'clockOut', 'break', 'leave', 'ride2', 'home', 'meal', 'sleepStart', 'sleepEnd']);
+
+function openRecord(wd, step) {
   const c = ctx();
   const key = wd || c.wd;
-  ui.sheet = { type: 'record', wd: key, step: defaultStep(c.data, key) };
+  ui.sheet = { type: 'record', wd: key, step: RECORD_STEPS.has(step) ? step : defaultStep(c.data, key) };
   render();
   setTimeout(() => $('.sheet button, .sheet input')?.focus(), 30);
 }
@@ -241,7 +243,7 @@ const handlers = {
   'break': () => { act.toggleBreak(nowFn()); toastUndo('已更新休息'); },
   'sleep-start': () => { act.startSleep(nowFn()); toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`); },
   'wake': () => { act.wakeUp(nowFn()); toastUndo(`早安，起床時間 ${fmtTime(nowFn())}`); },
-  'open-record': (el) => openRecord(el.dataset.wd),
+  'open-record': (el) => openRecord(el.dataset.wd, el.dataset.step),
   'close-sheet': closeSheet,
   'close-sheet-nav': () => { ui.sheet = null; },
   'rec-step': (el) => { ui.sheet.step = el.dataset.step; render(); },

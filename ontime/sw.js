@@ -1,5 +1,5 @@
 // Service Worker：快取 App 外殼和字體，讓 App 可以離線開啟。個人紀錄存在 IndexedDB，不在這裡。
-const VERSION = 'ontime-v11';
+const VERSION = 'ontime-v12';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/sync.js', './js/legacy.js', './js/actions.js', './js/logic.js', './js/time.js', './js/ui.js',

@@ -397,6 +397,10 @@ details.more .form { padding: 0 14px 14px; }
 .mini span { font-size: 12px; color: var(--muted); }
 .mini strong { font-size: 18px; font-weight: 800; }
 .mini small { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.mini-btn { appearance: none; border: 0; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; position: relative; align-items: flex-start; transition: transform .12s ease; }
+.mini-btn:active { transform: scale(.98); }
+.mini-btn:focus-visible { outline: 2px solid var(--lime, currentColor); outline-offset: 2px; }
+.mini-btn::after { content: '✎'; position: absolute; top: 10px; right: 12px; font-size: 12px; color: var(--muted); opacity: .7; }
 .k-sleep-soft { background: var(--sleep-tint); }
 .k-sleep-soft span, .k-sleep-soft small { color: var(--sleep-deep); }
 .k-deliv-soft { background: var(--deliv-tint); }
