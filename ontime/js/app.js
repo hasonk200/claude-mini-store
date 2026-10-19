@@ -374,6 +374,15 @@ const handlers = {
   'delete-ref': () => {
     const sh = ui.sheet;
     if (!sh || sh.type !== 'ref' || !sh.ref) return;
+    // 舊班不能清空下班時間（會變成長期進行中），先擋下來不要跳確認。
+    if (sh.ref.type === 'session' && sh.ref.field === 'end') {
+      const data = store.get();
+      const s = data.sessions.find((x) => x.id === sh.ref.id);
+      if (s && data.sessions.some((x) => x.id !== s.id && x.start > s.start)) {
+        toast('這班不是最近一班，請直接改時間，不能清空');
+        return;
+      }
+    }
     ui.pendingDelete = { ref: sh.ref, t: sh.t };
     ui.sheet = { type: 'confirm', title: '刪除這一筆？', body: deleteBody(sh.ref), confirm: '刪除', action: 'delete-ref-confirm' };
     render();
@@ -384,7 +393,10 @@ const handlers = {
     ui.sheet = null;
     if (!p) { render(); return; }
     const r = act.deleteRef(p.ref, p.t);
-    const msg = r.ok ? '已刪除' : r.reason === 'no-end' ? '這班還沒有下班時間' : '找不到這一筆，可能已經刪除';
+    const msg = r.ok ? '已刪除'
+      : r.reason === 'no-end' ? '這班還沒有下班時間'
+      : r.reason === 'not-latest' ? '這班不是最近一班，請直接改時間，不能清空'
+      : '找不到這一筆，可能已經刪除';
     toast(msg);
     render();
   },

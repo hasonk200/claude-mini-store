@@ -94,3 +94,27 @@ test('這班本來就沒有下班時間，刪「下班」要回報失敗', () =>
   replaceAll({ ...emptyData(), sessions: [{ id: 'se2', jobId: 'j1', start: 1, end: null, breaks: [] }] });
   assert.deepEqual(deleteRef({ type: 'session', id: 'se2', field: 'end' }), { ok: false, reason: 'no-end' });
 });
+
+test('舊班不能清空下班時間（會變成長期進行中）', () => {
+  replaceAll({
+    ...emptyData(),
+    sessions: [
+      { id: 'old', jobId: 'j1', start: 100, end: 200, breaks: [] },
+      { id: 'new', jobId: 'j1', start: 300, end: 400, breaks: [] }
+    ]
+  });
+  assert.deepEqual(deleteRef({ type: 'session', id: 'old', field: 'end' }), { ok: false, reason: 'not-latest' });
+  assert.equal(visible(getRaw()).sessions.find((x) => x.id === 'old').end, 200, '時間不能被清掉');
+});
+
+test('最後一班可以清空下班時間', () => {
+  replaceAll({
+    ...emptyData(),
+    sessions: [
+      { id: 'old', jobId: 'j1', start: 100, end: 200, breaks: [] },
+      { id: 'new', jobId: 'j1', start: 300, end: 400, breaks: [] }
+    ]
+  });
+  assert.equal(deleteRef({ type: 'session', id: 'new', field: 'end' }).ok, true);
+  assert.equal(visible(getRaw()).sessions.find((x) => x.id === 'new').end, null);
+});

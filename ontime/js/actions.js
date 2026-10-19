@@ -424,6 +424,13 @@ export function deleteRef(ref, t) {
     }
     // 刪「下班」只清掉下班時間，這班回到進行中；要刪整班請刪「上班」。
     if (ref.field === 'end') {
+      const data = get();
+      const target = data.sessions.find((x) => x.id === ref.id);
+      if (!target) return { ok: false, reason: 'missing' };
+      if (target.end == null) return { ok: false, reason: 'no-end' };
+      // 只有最後一班可以清空：舊班清空會變成「一直工作到現在」，工時與薪水會爆掉。
+      const later = data.sessions.some((x) => x.id !== target.id && x.start > target.start);
+      if (later) return { ok: false, reason: 'not-latest' };
       let cleared = false;
       update((d) => {
         const s = d.sessions.find((x) => x.id === ref.id);
