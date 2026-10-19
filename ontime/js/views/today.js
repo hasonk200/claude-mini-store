@@ -90,7 +90,8 @@ function statusCard(data, wd, cycle, now) {
       const p = Math.min(100, Math.max(0, ((now - s.start) / (sh.end - s.start)) * 100));
       progress = `<div class="progress"><div class="progress-bar"><i style="width:${p.toFixed(1)}%"></i></div><div class="progress-legend"><span>上班 ${wdOf(s.start)} ${fmtTime(s.start)}</span><span>預計下班 ${wdOf(sh.end)} ${fmtTime(sh.end)}</span></div></div>`;
     }
-  } else if (st.since) sub = `${{ out: '出門', ride: '上車', arrive: '抵達', off: '下班', ride2: '上車' }[st.key] || ''} ${wdOf(st.since)} ${fmtTime(st.since)}`;
+  } else if (st.key === 'rest') sub = `休息開始 ${fmtTime(st.since)} · ${fmtDurLong(now - st.since)}`;
+  else if (st.since) sub = `${{ out: '出門', ride: '上車', arrive: '抵達', off: '下班', ride2: '上車' }[st.key] || ''} ${wdOf(st.since)} ${fmtTime(st.since)}`;
   else {
     const upcoming = data.shifts.filter((x) => x.start > now).sort((a, b) => a.start - b.start)[0];
     sub = upcoming ? `下一班 ${wdOf(upcoming.start)} ${fmtMD(dateKey(upcoming.start))} ${fmtTime(upcoming.start)} · ${esc(jobOf(data, upcoming.jobId)?.name ?? '')}` : '目前沒有排班';
@@ -108,8 +109,9 @@ function statusCard(data, wd, cycle, now) {
     if (ns === 'arrive') alt.push(['clockIn', '直接上班']);
     if (ns === 'ride2') alt.push(['home', '直接到家']);
     const altHTML = alt.map(([k, l]) => `<button type="button" class="btn btn-ghost-dark" data-action="step" data-step="${k}">${l}</button>`).join('');
-    const brk = st.key === 'work' ? '<button type="button" class="btn btn-ghost-dark" data-action="break">開始休息</button>'
-      : st.key === 'break' ? '<button type="button" class="btn btn-ghost-dark" data-action="break">結束休息</button>' : '';
+    // 休息一律可以按：上班中記的是班內休息，沒班時記獨立休息。
+    const resting = st.key === 'break' || st.key === 'rest';
+    const brk = `<button type="button" class="btn btn-ghost-dark" data-action="break">${resting ? '結束休息' : '開始休息'}</button>`;
     const sleepBtn = ['free', 'off'].includes(st.key) || ns === 'out' ? '<button type="button" class="btn btn-ghost-dark" data-action="sleep-start">現在入睡</button>' : '';
     if (altHTML || brk || sleepBtn) buttons.push(`<div class="btn-row">${altHTML}${brk}${sleepBtn}</div>`);
   }
@@ -163,11 +165,11 @@ function nextMealCard(data, now) {
 
 function quickTiles(cycle, data, now) {
   const st = statusOf(cycle, data, now);
-  const working = st.key === 'work' || st.key === 'break';
+  const resting = st.key === 'break' || st.key === 'rest';
   return `<section class="tiles" aria-label="快捷記錄">
     <a class="tile" href="#/meals"><span class="tile-icon k-meal">${icon('meal', 20)}</span>用餐</a>
     <button type="button" class="tile" data-action="open-record"><span class="tile-icon k-work">${icon('clockPlus', 20)}</span>補登</button>
-    <button type="button" class="tile" data-action="break" ${working ? '' : 'disabled'}><span class="tile-icon k-commute">${icon('cup', 20)}</span>${st.key === 'break' ? '結束休息' : '休息'}</button>
+    <button type="button" class="tile" data-action="break"><span class="tile-icon k-commute">${icon('cup', 20)}</span>${resting ? '結束休息' : '休息'}</button>
     <a class="tile" href="#/stats"><span class="tile-icon k-deliv">${icon('wallet', 20)}</span>收入</a>
   </section>`;
 }

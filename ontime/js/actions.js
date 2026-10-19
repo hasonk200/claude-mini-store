@@ -6,7 +6,7 @@ import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js'
 import {
   currentCycle, activeSession, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
   journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget,
-  sleepWorkdayChanges
+  sleepWorkdayChanges, activeRest
 } from './logic.js';
 
 function ensureJob(d) {
@@ -30,12 +30,18 @@ function newSession(d, t, wdHint) {
 const RECENT_STEPS = new Map();
 const STEP_GAP_MS = 1500;
 
+// 上班或入睡時，把還開著的獨立休息自動結束，避免時間軸一直顯示「進行中」。
+function closeOpenRest(d, t) {
+  for (const r of d.rests || []) if (r.start != null && r.end == null && t > r.start) r.end = t;
+}
+
 // 首頁主按鈕：記錄下一個環節。
 export function recordStep(step, t = Date.now()) {
   const now = Date.now();
   if (now - (RECENT_STEPS.get(step) || 0) < STEP_GAP_MS) return { ok: false, reason: 'too-fast' };
   RECENT_STEPS.set(step, now);
   update((d) => {
+    if (step === 'clockIn') closeOpenRest(d, t);
     const cyc = currentCycle(d, t);
     let j = cyc.journey ? d.journeys.find((x) => x.id === cyc.journey.id) : null;
     let s = cyc.session ? d.sessions.find((x) => x.id === cyc.session.id) : null;
@@ -68,6 +74,20 @@ export function toggleBreak(t = Date.now()) {
     if (open) open.end = t;
     else s.breaks.push({ start: t, end: null });
   });
+}
+
+// 獨立休息：不屬於任何班別，不影響工時。
+export function toggleRest(t = Date.now()) {
+  let opened = false;
+  update((d) => {
+    const r = activeRest(d);
+    if (r) { if (t > r.start) r.end = t; }
+    else {
+      d.rests.push({ id: uid('rst'), start: t, end: null, note: '' });
+      opened = true;
+    }
+  });
+  return { ok: true, opened };
 }
 
 // ---------- 補登：只改一個欄位 ----------
@@ -187,6 +207,9 @@ export function setRefTime(ref, t, extra = {}) {
     } else if (ref.type === 'session') {
       const s = d.sessions.find((x) => x.id === ref.id);
       if (s && (ref.field === 'start' || ref.field === 'end')) s[ref.field] = t;
+    } else if (ref.type === 'rest') {
+      const r = d.rests.find((x) => x.id === ref.id);
+      if (r) r[ref.field] = t;
     } else if (ref.type === 'sleep') {
       const s = d.sleeps.find((x) => x.id === ref.id);
       if (!s) return;
@@ -206,6 +229,7 @@ export function setRefTime(ref, t, extra = {}) {
 export function startSleep(t = Date.now()) {
   if (latestOpenSleep(get())) return { ok: false, reason: 'sleeping' };
   update((d) => {
+    closeOpenRest(d, t);
     const plan = d.sleeps
       .filter((s) => s.start == null && s.planStart != null && Math.abs(s.planStart - t) < 6 * HOUR)
       .sort((a, b) => Math.abs(a.planStart - t) - Math.abs(b.planStart - t))[0];
@@ -270,6 +294,10 @@ export function resetSleepWorkdays() {
 
 export function deleteSleep(id) {
   update((d) => { d.sleeps = d.sleeps.filter((x) => x.id !== id); });
+}
+
+export function deleteRest(id) {
+  update((d) => { d.rests = d.rests.filter((x) => x.id !== id); });
 }
 
 // ---------- 用餐 ----------
@@ -372,8 +400,62 @@ export function setSessionIncome(id, patch) {
 export function deleteSession(id) {
   update((d) => {
     d.sessions = d.sessions.filter((s) => s.id !== id);
-    for (const j of d.journeys) if (j.sessionId === id) j.sessionId = null;
+    // 同一次出勤的行程一起刪，避免留下看不見的孤兒紀錄。
+    d.journeys = d.journeys.filter((j) => j.sessionId !== id);
   });
+}
+
+// 時間線／面板的「刪除這一筆」。t 只用來定位班內某一段休息。
+export function deleteRef(ref, t, now = Date.now()) {
+  if (!ref || !ref.id) return { ok: false, reason: 'missing' };
+  if (ref.type === 'sleep') { deleteSleep(ref.id); return { ok: true }; }
+  if (ref.type === 'meal') { deleteMeal(ref.id); return { ok: true }; }
+  if (ref.type === 'shift') { deleteShift(ref.id); return { ok: true }; }
+  if (ref.type === 'rest') { deleteRest(ref.id); return { ok: true }; }
+  if (ref.type === 'session') {
+    if (ref.field === 'break') {
+      update((d) => {
+        const s = d.sessions.find((x) => x.id === ref.id);
+        if (!s) return;
+        const i = (s.breaks || []).findIndex((b) => b.start === t);
+        if (i >= 0) s.breaks.splice(i, 1);
+      });
+      return { ok: true };
+    }
+    // 刪「下班」只清掉下班時間，這班回到進行中；要刪整班請刪「上班」。
+    if (ref.field === 'end') {
+      const data = get();
+      const target = data.sessions.find((x) => x.id === ref.id);
+      if (!target) return { ok: false, reason: 'missing' };
+      if (target.end == null) return { ok: false, reason: 'no-end' };
+      // 只有最後一班可以清空：舊班清空會變成「一直工作到現在」，工時與薪水會爆掉。
+      const later = data.sessions.some((x) => x.id !== target.id && x.start > target.start);
+      if (later) return { ok: false, reason: 'not-latest' };
+      // 就算是最後一班，下班超過 24 小時也不能清空（三天前的班一樣會算到現在）。
+      if (now - target.end > 24 * HOUR) return { ok: false, reason: 'too-old' };
+      let cleared = false;
+      update((d) => {
+        const s = d.sessions.find((x) => x.id === ref.id);
+        if (!s || s.end == null) return;
+        s.end = null;
+        cleared = true;
+      });
+      return cleared ? { ok: true } : { ok: false, reason: 'no-end' };
+    }
+    deleteSession(ref.id);
+    return { ok: true };
+  }
+  if (ref.type === 'journey') {
+    update((d) => {
+      const j = d.journeys.find((x) => x.id === ref.id);
+      if (!j) return;
+      j[ref.field] = null;
+      const left = ['out', 'ride', 'arrive', 'leave', 'ride2', 'home'].some((k) => j[k] != null);
+      if (!left) d.journeys = d.journeys.filter((x) => x.id !== j.id);
+    });
+    return { ok: true };
+  }
+  return { ok: false, reason: 'unknown' };
 }
 
 // ---------- 設定 ----------
