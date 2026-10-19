@@ -78,12 +78,13 @@ test('找不到的紀錄回報失敗，不會假裝成功', () => {
 });
 
 test('刪「下班」只清掉下班時間，整班與行程都留著', () => {
+  const now = at('2026-10-18T12:00:00-04:00');
   replaceAll({
     ...emptyData(),
-    sessions: [{ id: 'se1', jobId: 'j1', start: 1, end: 2, breaks: [] }],
+    sessions: [{ id: 'se1', jobId: 'j1', start: now - 8 * 3600e3, end: now - 3600e3, breaks: [] }],
     journeys: [{ id: 'jr1', sessionId: 'se1', out: 1 }]
   });
-  assert.equal(deleteRef({ type: 'session', id: 'se1', field: 'end' }).ok, true);
+  assert.equal(deleteRef({ type: 'session', id: 'se1', field: 'end' }, null, now).ok, true);
   const d = visible(getRaw());
   assert.equal(d.sessions.length, 1, '整班要留著');
   assert.equal(d.sessions[0].end, null, '要變回進行中');
@@ -107,14 +108,25 @@ test('舊班不能清空下班時間（會變成長期進行中）', () => {
   assert.equal(visible(getRaw()).sessions.find((x) => x.id === 'old').end, 200, '時間不能被清掉');
 });
 
-test('最後一班可以清空下班時間', () => {
+test('最後一班、下班在 24 小時內，可以清空', () => {
+  const now = at('2026-10-18T12:00:00-04:00');
   replaceAll({
     ...emptyData(),
     sessions: [
-      { id: 'old', jobId: 'j1', start: 100, end: 200, breaks: [] },
-      { id: 'new', jobId: 'j1', start: 300, end: 400, breaks: [] }
+      { id: 'old', jobId: 'j1', start: now - 40 * 3600e3, end: now - 32 * 3600e3, breaks: [] },
+      { id: 'new', jobId: 'j1', start: now - 10 * 3600e3, end: now - 2 * 3600e3, breaks: [] }
     ]
   });
-  assert.equal(deleteRef({ type: 'session', id: 'new', field: 'end' }).ok, true);
+  assert.equal(deleteRef({ type: 'session', id: 'new', field: 'end' }, null, now).ok, true);
   assert.equal(visible(getRaw()).sessions.find((x) => x.id === 'new').end, null);
+});
+
+test('下班超過 24 小時，就算是最後一班也不能清空', () => {
+  const now = at('2026-10-18T12:00:00-04:00');
+  replaceAll({
+    ...emptyData(),
+    sessions: [{ id: 'se3', jobId: 'j1', start: now - 40 * 3600e3, end: now - 32 * 3600e3, breaks: [] }]
+  });
+  assert.deepEqual(deleteRef({ type: 'session', id: 'se3', field: 'end' }, null, now), { ok: false, reason: 'too-old' });
+  assert.equal(visible(getRaw()).sessions[0].end, now - 32 * 3600e3, '時間不能被清掉');
 });

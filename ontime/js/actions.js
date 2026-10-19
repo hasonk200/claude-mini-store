@@ -406,7 +406,7 @@ export function deleteSession(id) {
 }
 
 // 時間線／面板的「刪除這一筆」。t 只用來定位班內某一段休息。
-export function deleteRef(ref, t) {
+export function deleteRef(ref, t, now = Date.now()) {
   if (!ref || !ref.id) return { ok: false, reason: 'missing' };
   if (ref.type === 'sleep') { deleteSleep(ref.id); return { ok: true }; }
   if (ref.type === 'meal') { deleteMeal(ref.id); return { ok: true }; }
@@ -431,6 +431,8 @@ export function deleteRef(ref, t) {
       // 只有最後一班可以清空：舊班清空會變成「一直工作到現在」，工時與薪水會爆掉。
       const later = data.sessions.some((x) => x.id !== target.id && x.start > target.start);
       if (later) return { ok: false, reason: 'not-latest' };
+      // 就算是最後一班，下班超過 24 小時也不能清空（三天前的班一樣會算到現在）。
+      if (now - target.end > 24 * HOUR) return { ok: false, reason: 'too-old' };
       let cleared = false;
       update((d) => {
         const s = d.sessions.find((x) => x.id === ref.id);

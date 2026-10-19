@@ -382,6 +382,10 @@ const handlers = {
         toast('這班不是最近一班，請直接改時間，不能清空');
         return;
       }
+      if (s && s.end != null && nowFn() - s.end > 24 * HOUR) {
+        toast('下班已經超過 24 小時，請直接改時間，不能清空');
+        return;
+      }
     }
     ui.pendingDelete = { ref: sh.ref, t: sh.t };
     ui.sheet = { type: 'confirm', title: '刪除這一筆？', body: deleteBody(sh.ref), confirm: '刪除', action: 'delete-ref-confirm' };
@@ -396,6 +400,7 @@ const handlers = {
     const msg = r.ok ? '已刪除'
       : r.reason === 'no-end' ? '這班還沒有下班時間'
       : r.reason === 'not-latest' ? '這班不是最近一班，請直接改時間，不能清空'
+      : r.reason === 'too-old' ? '下班已經超過 24 小時，請直接改時間，不能清空'
       : '找不到這一筆，可能已經刪除';
     toast(msg);
     render();
