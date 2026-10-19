@@ -29,7 +29,7 @@ const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
   selRef: null, sheet: null, mealEdit: null, mealPhoto: undefined, incomeEdit: null, jobEdit: null, canInstall: false,
-  pendingRecord: null
+  pendingRecord: null, pendingDelete: null
 };
 
 // 測試可以用 ?now=2026-10-13T03:18 固定時間。
@@ -192,6 +192,23 @@ function confirmFirst(el, title, body, confirm) {
   return false;
 }
 
+const DELETE_TEXT = {
+  sleep: '整筆睡眠都會刪除，前後工作日的歸屬可能跟著改變。',
+  meal: '這一餐和它的相片都會刪除。',
+  shift: '這個班表會刪除，這天會變成沒有排班。',
+  rest: '這一段休息會刪除，不影響工時。'
+};
+
+function deleteBody(ref) {
+  if (ref.type === 'session') {
+    if (ref.field === 'break') return '只會刪除這一段休息，工時會跟著調整。';
+    if (ref.field === 'end') return '只會清掉下班時間，這班回到「工作中」；收入不會刪除。';
+    return '整班都會刪除：上班時間、收入、休息、去程和回程一起消失，班表不會受影響。';
+  }
+  if (ref.type === 'journey') return '只會清掉這一個時間，其他行程欄位保留。';
+  return DELETE_TEXT[ref.type] || '這一筆紀錄會刪除。';
+}
+
 // 相片：裝置上縮小到最長邊 1280px、256 KiB 以內的 JPEG。
 async function compressPhoto(file) {
   const url = URL.createObjectURL(file);
@@ -242,7 +259,12 @@ const handlers = {
   },
   'undo': () => { if (store.undo()) toast('已復原'); },
   'show-templates': () => { ui.showTemplates = true; render(); },
-  'break': () => { act.toggleBreak(nowFn()); toastUndo('已更新休息'); },
+  'break': () => {
+    const working = store.get().sessions.some((x) => x.end == null);
+    if (working) { act.toggleBreak(nowFn()); toastUndo('已更新休息'); return; }
+    const r = act.toggleRest(nowFn());
+    toastUndo(r.opened ? '開始休息' : '結束休息');
+  },
   'sleep-start': () => {
     const r = act.startSleep(nowFn());
     if (!r.ok) { toast('已經有一筆進行中的睡眠，先按「現在起床」'); return; }
@@ -349,6 +371,40 @@ const handlers = {
   },
   'meal-confirm': (el) => { act.confirmMeal(el.dataset.id); toastUndo('已確認這一餐'); },
   'meal-delete': (el) => { act.deleteMeal(el.dataset.id); if (ui.sheet?.type === 'ref') ui.sheet = null; toastUndo('已刪除'); },
+  'delete-ref': () => {
+    const sh = ui.sheet;
+    if (!sh || sh.type !== 'ref' || !sh.ref) return;
+    // 舊班不能清空下班時間（會變成長期進行中），先擋下來不要跳確認。
+    if (sh.ref.type === 'session' && sh.ref.field === 'end') {
+      const data = store.get();
+      const s = data.sessions.find((x) => x.id === sh.ref.id);
+      if (s && data.sessions.some((x) => x.id !== s.id && x.start > s.start)) {
+        toast('這班不是最近一班，請直接改時間，不能清空');
+        return;
+      }
+      if (s && s.end != null && nowFn() - s.end > 24 * HOUR) {
+        toast('下班已經超過 24 小時，請直接改時間，不能清空');
+        return;
+      }
+    }
+    ui.pendingDelete = { ref: sh.ref, t: sh.t };
+    ui.sheet = { type: 'confirm', title: '刪除這一筆？', body: deleteBody(sh.ref), confirm: '刪除', action: 'delete-ref-confirm' };
+    render();
+  },
+  'delete-ref-confirm': () => {
+    const p = ui.pendingDelete;
+    ui.pendingDelete = null;
+    ui.sheet = null;
+    if (!p) { render(); return; }
+    const r = act.deleteRef(p.ref, p.t);
+    const msg = r.ok ? '已刪除'
+      : r.reason === 'no-end' ? '這班還沒有下班時間'
+      : r.reason === 'not-latest' ? '這班不是最近一班，請直接改時間，不能清空'
+      : r.reason === 'too-old' ? '下班已經超過 24 小時，請直接改時間，不能清空'
+      : '找不到這一筆，可能已經刪除';
+    toast(msg);
+    render();
+  },
   'meal-edit': (el) => { ui.mealEdit = el.dataset.id; ui.mealPhoto = undefined; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
   'meal-cancel': () => { ui.mealEdit = null; ui.mealPhoto = undefined; render(); },
   'meal-photo-remove': () => { ui.mealPhoto = null; lastView = ''; render(); },

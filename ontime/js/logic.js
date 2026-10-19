@@ -173,6 +173,8 @@ export function statusOf(cycle, data, now) {
     if (onBreak) return { key: 'break', title: '休息中', since: onBreak.start };
     return { key: 'work', title: '工作中', since: s.start };
   }
+  const resting = activeRest(data);
+  if (resting) return { key: 'rest', title: '休息中', since: resting.start };
   const j = cycle.journey;
   if (j) {
     if (s && s.end != null) {
@@ -217,6 +219,13 @@ export function sleepWorkday(sl, data) {
 export function latestOpenSleep(data) {
   return data.sleeps.filter((s) => s.start != null && s.end == null).sort((a, b) => b.start - a.start)[0] || null;
 }
+
+// 獨立休息（不屬於任何班別，不扣工時）。
+export function activeRest(data) {
+  return (data.rests || []).filter((r) => r.start != null && r.end == null).sort((a, b) => b.start - a.start)[0] || null;
+}
+
+export const restWorkday = (r, data) => dayOf(data, r.start) || dateKey(r.start);
 
 // 補登「起床」要找哪一筆：這天進行中 → 任何進行中 → 這天最後一筆完成的。
 // 進行中的紀錄一律優先，避免改到已完成的小睡。
@@ -410,6 +419,14 @@ export function workdayEvents(data, wd, now) {
       ev.push({ t: sl.planStart, kind: 'sleep', icon: 'moon', title: '預計入睡', plan: true, ref: { type: 'sleep', id: sl.id, field: 'start' } });
       if (sl.planEnd != null) ev.push({ t: sl.planEnd, kind: 'sleep', icon: 'sun', title: '預計起床', plan: true, ref: { type: 'sleep', id: sl.id, field: 'end' } });
     }
+  }
+  for (const r of data.rests || []) {
+    if (r.start == null || restWorkday(r, data) !== wd) continue;
+    ev.push({
+      t: r.start, kind: 'break', icon: 'cup', title: '休息',
+      detail: r.end ? `${Math.round((r.end - r.start) / MIN)} 分鐘` : '進行中',
+      ref: { type: 'rest', id: r.id, field: 'start' }
+    });
   }
   for (const m of data.meals) {
     if (mealWorkday(m, data, now) !== wd) continue;

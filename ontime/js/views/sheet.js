@@ -109,6 +109,7 @@ function refSheet(ctx) {
   const isRideRef = ref.type === 'journey' && (ref.field === 'ride' || ref.field === 'ride2');
   const jr = isRideRef ? data.journeys.find((x) => x.id === ref.id) : null;
   const rideRef = isRideRef ? { mode: jr?.[`${ref.field}Mode`], from: jr?.[`${ref.field}From`] } : null;
+  const canDelete = ['journey', 'session', 'sleep', 'meal', 'shift', 'rest'].includes(ref.type);
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>
   <section class="sheet sheet-small" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="sheet-handle"></div>
@@ -120,7 +121,7 @@ function refSheet(ctx) {
       ${rideRef ? rideFieldsHtml(ctx.data, rideRef.mode, rideRef.from) : ''}
       <p class="fine">只會改這一個時間${rideRef ? '和交通工具、上車地點' : ''}；其他紀錄保持不變。</p>
       <button class="btn btn-ink btn-block btn-lg" type="submit">儲存</button>
-      ${ref.type === 'meal' ? `<button type="button" class="btn btn-line btn-block" data-action="meal-delete" data-id="${esc(ref.id)}">刪除這一餐</button>` : ''}
+      ${canDelete ? `<button type="button" class="btn btn-danger btn-block" data-action="delete-ref">刪除此紀錄</button>` : ''}
     </form></div>
   </section>`;
 }
