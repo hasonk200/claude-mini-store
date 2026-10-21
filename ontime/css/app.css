@@ -545,15 +545,25 @@ details.more .form { padding: 0 14px 14px; }
 .data-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 
 /* 補登面板 */
-.sheet-backdrop { position: fixed; inset: 0; background: rgba(17, 20, 24, .32); z-index: 50; animation: fade .18s ease; }
-.sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 92vh; z-index: 51; background: var(--surface); border-radius: 30px 30px 0 0; box-shadow: 0 -12px 40px rgba(17, 20, 24, .14); display: flex; flex-direction: column; animation: rise .22s ease; }
+/* 動畫只在打開（is-enter）和關閉（is-leave）時播放；儲存、換步驟時只更新內容，不會閃。 */
+.sheet-backdrop { position: fixed; inset: 0; background: rgba(17, 20, 24, .32); z-index: 50; }
+.sheet-backdrop.is-enter { animation: fade .22s ease; }
+.sheet-backdrop.is-leave { animation: fade-out .22s ease forwards; pointer-events: none; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 92vh; z-index: 51; background: var(--surface); border-radius: 30px 30px 0 0; box-shadow: 0 -12px 40px rgba(17, 20, 24, .14); display: flex; flex-direction: column; }
+.sheet.is-enter { animation: rise .3s cubic-bezier(.2, .8, .2, 1); }
+.sheet.is-leave { animation: sink .22s ease-in forwards; pointer-events: none; }
 .sheet-small { max-height: 80vh; }
 @media (min-width: 720px) {
-  .sheet { left: 50%; right: auto; top: 50%; bottom: auto; transform: translate(-50%, -50%); width: min(560px, 92vw); border-radius: 28px; animation: pop .18s ease; }
+  .sheet { left: 50%; right: auto; top: 50%; bottom: auto; transform: translate(-50%, -50%); width: min(560px, 92vw); border-radius: 28px; }
+  .sheet.is-enter { animation: pop .2s ease; }
+  .sheet.is-leave { animation: unpop .18s ease-in forwards; }
 }
 @keyframes fade { from { opacity: 0; } }
-@keyframes rise { from { transform: translateY(40px); opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes rise { from { transform: translateY(100%); } }
+@keyframes sink { to { transform: translateY(100%); } }
 @keyframes pop { from { transform: translate(-50%, -46%); opacity: 0; } }
+@keyframes unpop { to { transform: translate(-50%, -46%); opacity: 0; } }
 .sheet-handle { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 10px auto 0; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px 6px 20px; }
 .sheet-head h2 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
