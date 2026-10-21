@@ -2,7 +2,7 @@
 // 版本：主.次.修（semver）。主版 2 代表目前這一代；次版延續舊的流水號（原本 v17）。
 // 改功能或畫面 → 升次版；只修錯字、註解或微調 → 升修訂版。
 // 這個字串也是快取名稱，改了才會讓舊快取失效、使用者拿到新檔。
-const VERSION = '2.18.1';
+const VERSION = '2.19.0';
 const CACHE = `ontime-${VERSION}`;
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
@@ -14,7 +14,8 @@ const SHELL = [
 const FONT_CACHE = 'ontime-fonts';
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+  // cache: 'reload' 繞過瀏覽器的 HTTP 快取，確保新版本裝到的是新檔案。
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))));
 });
 
 self.addEventListener('activate', (e) => {
@@ -23,6 +24,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('message', (e) => {
   if (e.data === 'skip-waiting') self.skipWaiting();
+  if (e.data === 'get-version' && e.source) e.source.postMessage({ type: 'version', version: VERSION });
 });
 
 self.addEventListener('fetch', (e) => {

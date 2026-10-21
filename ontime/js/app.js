@@ -426,7 +426,9 @@ const RECORD_ERROR = {
   sleeping: '已經有一筆進行中的睡眠，先記「起床」',
   missing: '找不到可以更新的睡眠，請先補登入睡',
   'missing-start': '這筆睡眠沒有入睡時間，請先補登入睡',
-  'before-start': '起床時間不能早於入睡時間'
+  'before-start': '起床時間不能早於入睡時間',
+  'no-session': '這個工作日還沒有上班紀錄，請先補登「上班」',
+  'before-clock-in': '下班時間不能早於上班時間'
 };
 
 // 實際寫入補登，並把「這筆歸到哪個工作日」講清楚。
@@ -642,14 +644,36 @@ async function start() {
     render();
   }, 30000);
   if ('serviceWorker' in navigator && location.protocol !== 'file:' && !params.has('nosw')) {
-    navigator.serviceWorker.register('./sw.js').then((reg) => {
+    // 新版本：按「更新」要叫等待中的新版接手，接手後才重新載入；
+    // 只 reload 的話舊版會一直留著（之前「改了很多版，手機還是舊的」就是這個原因）。
+    const sw = navigator.serviceWorker;
+    const hadController = !!sw.controller;
+    let reloading = false;
+    sw.addEventListener('controllerchange', () => {
+      if (!hadController || reloading) return;
+      reloading = true;
+      location.reload();
+    });
+    sw.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'version') { ui.appVersion = e.data.version; if (ui.route === 'settings') render(); }
+    });
+    sw.ready.then((r) => r.active?.postMessage('get-version')).catch(() => {});
+    sw.register('./sw.js').then((reg) => {
+      window.ontimeUpdate = () => {
+        if (reg.waiting) reg.waiting.postMessage('skip-waiting');
+        else location.reload();
+      };
+      const offer = () => toast('有新版本', '<button type="button" class="btn btn-lime btn-sm" onclick="window.ontimeUpdate()">更新</button>', 60000);
+      if (reg.waiting && sw.controller) offer();
       reg.addEventListener('updatefound', () => {
         const w = reg.installing;
         w?.addEventListener('statechange', () => {
-          if (w.state === 'installed' && navigator.serviceWorker.controller) {
-            toast('有新版本', '<button type="button" class="btn btn-lime btn-sm" onclick="location.reload()">更新</button>');
-          }
+          if (w.state === 'installed' && sw.controller) offer();
         });
+      });
+      // 從背景回來時檢查新版本（手機上的 App 常常不會真的重開）。
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
       });
     }).catch(() => {});
   }
