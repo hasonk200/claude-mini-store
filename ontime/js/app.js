@@ -72,6 +72,44 @@ function shell() {
 let lastHero = '';
 let lastView = '';
 let lastSheet = '';
+let lastSheetType = null;
+let sheetCloseTimer = null;
+let sheetScrollToForm = false;
+const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 面板：第一次打開向上滑入；之後只換內容（不閃、捲動位置不變）；關閉時向下滑出再移除。
+function swapSheet(html, type) {
+  const host = $('#sheet-host');
+  clearTimeout(sheetCloseTimer);
+  const old = host.querySelector('.sheet');
+  const wasOpen = !!old && !old.classList.contains('is-leave');
+  if (!html) {
+    lastSheetType = null;
+    if (!wasOpen || reduceMotion()) { host.innerHTML = ''; return; }
+    host.querySelectorAll('.sheet, .sheet-backdrop').forEach((el) => { el.classList.remove('is-enter'); el.classList.add('is-leave'); });
+    sheetCloseTimer = setTimeout(() => { host.innerHTML = ''; }, 240);
+    return;
+  }
+  const top = old?.querySelector('.sheet-body')?.scrollTop ?? 0;
+  const enter = !wasOpen || type !== lastSheetType;
+  host.innerHTML = html;
+  lastSheetType = type;
+  if (enter) host.querySelectorAll('.sheet, .sheet-backdrop').forEach((el) => el.classList.add('is-enter'));
+  else { const body = host.querySelector('.sheet-body'); if (body) body.scrollTop = top; }
+  if (sheetScrollToForm) {
+    sheetScrollToForm = false;
+    setTimeout(scrollSheetToForm, enter && !reduceMotion() ? 280 : 0);
+  }
+}
+
+// 選了步驟之後，慢慢捲到「X 在什麼時候？」輸入時間的位置。
+function scrollSheetToForm() {
+  const body = $('#sheet-host .sheet-body');
+  const target = $('#sheet-host #record-form .sheet-step-title');
+  if (!body || !target) return;
+  const y = target.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 8;
+  body.scrollTo({ top: Math.max(0, y), behavior: reduceMotion() ? 'auto' : 'smooth' });
+}
 let dirty = false;
 
 function applyTheme(theme) {
@@ -104,7 +142,7 @@ function render() {
     if (a.dataset.route === ui.route) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   const sheetHTML = sheetView(c);
-  if (sheetHTML !== lastSheet) { $('#sheet-host').innerHTML = sheetHTML; lastSheet = sheetHTML; }
+  if (sheetHTML !== lastSheet) { swapSheet(sheetHTML, ui.sheet?.type || null); lastSheet = sheetHTML; }
   const st = store.status();
   const sy = syncState();
   const SYNC_TEXT = { cloud: '已同步到雲端', loading: '正在同步…', signin: '未登入雲端', error: '同步失敗', offline: '離線中', full: '雲端空間不足' };
@@ -176,6 +214,8 @@ function openRecord(wd, step) {
   const c = ctx();
   const key = wd || c.wd;
   ui.sheet = { type: 'record', wd: key, step: RECORD_STEPS.has(step) ? step : defaultStep(c.data, key) };
+  // 由卡片直接指定步驟打開時，滑入後捲到輸入時間的位置。
+  if (RECORD_STEPS.has(step)) sheetScrollToForm = true;
   render();
   setTimeout(() => $('.sheet button, .sheet input')?.focus(), 30);
 }
@@ -293,7 +333,7 @@ const handlers = {
     ui.sheet = p ? { type: 'record', wd: p.wd, step: p.step, t: p.t } : null;
     render();
   },
-  'rec-step': (el) => { ui.sheet.step = el.dataset.step; render(); },
+  'rec-step': (el) => { ui.sheet.step = el.dataset.step; delete ui.sheet.t; sheetScrollToForm = true; render(); },
   'rec-now': () => { const t = nowFn(); $('#record-form [name=date]').value = dateKey(t); $('#record-form [name=time]').value = fmtTime(t); },
   'rec-minus': () => {
     const f = $('#record-form');
@@ -428,12 +468,14 @@ const RECORD_ERROR = {
   'missing-start': '這筆睡眠沒有入睡時間，請先補登入睡',
   'before-start': '起床時間不能早於入睡時間',
   'no-session': '這個工作日還沒有上班紀錄，請先補登「上班」',
-  'before-clock-in': '下班時間不能早於上班時間'
+  'before-clock-in': '下班時間不能早於上班時間',
+  'break-end-before-start': '休息結束不能早於開始'
 };
 
 // 實際寫入補登，並把「這筆歸到哪個工作日」講清楚。
 function applyRecord(p) {
-  ui.sheet = null;
+  // 「儲存」：存檔期間面板保持打開，才不會先關再開而閃一下。
+  ui.sheet = p.stay ? { type: 'record', wd: p.wd, step: p.step, t: p.t } : null;
   const r = act.setStepTime(p.wd, p.step, p.t, p.extra);
   if (!r.ok) {
     toast(RECORD_ERROR[r.reason] || '沒有可更新的紀錄');

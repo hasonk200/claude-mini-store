@@ -87,3 +87,22 @@ test('入睡／起床：存完一定在某個工作日看得到（就是提示�
   const rec2 = get().sleeps.find((x) => x.id === r2.sleepId);
   assert.ok(shown(sleepWorkday(rec2, get()), t2));
 });
+
+test('休息：同一段再按儲存（補上結束時間）是更新，不會多一筆', () => {
+  replaceAll({ ...emptyData(), jobs: [job], sessions: [{ id: 's', jobId: 'j1', start: at(WD, '22:00'), end: at('2026-10-21', '09:00'), breaks: [], workdayDate: WD, workdayManual: true }] });
+  const a = at('2026-10-21', '13:36');
+  setStepTime(WD, 'break', a);
+  setStepTime(WD, 'break', a, { end: at('2026-10-21', '14:47') });
+  const br = get().sessions[0].breaks;
+  assert.equal(br.length, 1);
+  assert.equal(br[0].end, at('2026-10-21', '14:47'));
+  const ev = workdayEvents(get(), WD, NOW).filter((e) => e.kind === 'break');
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].detail, '71 分鐘');
+});
+
+test('休息：結束早於開始會報錯', () => {
+  replaceAll({ ...emptyData(), jobs: [job], sessions: [{ id: 's', jobId: 'j1', start: at(WD, '22:00'), end: null, breaks: [] }] });
+  const r = setStepTime(WD, 'break', at(WD, '23:00'), { end: at(WD, '22:30') });
+  assert.deepEqual(r, { ok: false, reason: 'break-end-before-start' });
+});

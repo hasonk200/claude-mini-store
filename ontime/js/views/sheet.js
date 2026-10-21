@@ -69,7 +69,11 @@ function recordSheet(ctx) {
 
   const t = sh.t ?? val[step] ?? plan[step] ?? now;
   const isBreak = step === 'break';
-  const breakEnd = isBreak ? (session?.breaks?.find((b) => b.end == null) ? now : t + 30 * MIN) : null;
+  // 已經有這一段休息時，顯示它真正存下的結束時間；還沒結束的顯示現在；新的一段預設 30 分鐘。
+  const savedBreak = isBreak ? (session?.breaks || []).find((b) => b.start === t) : null;
+  const breakEnd = !isBreak ? null
+    : savedBreak ? (savedBreak.end ?? now)
+    : session?.breaks?.find((b) => b.end == null) ? now : t + 30 * MIN;
   const isRide = step === 'ride' || step === 'ride2';
   const tg = findWorkdayTargets(data, wd);
   const jr = tg.journey;

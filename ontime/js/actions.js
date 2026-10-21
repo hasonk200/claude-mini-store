@@ -125,7 +125,15 @@ export function setStepTime(wd, step, t, extra = {}) {
     }
     if (step === 'break') {
       if (!s) { result = { ok: false, reason: 'no-session' }; return; }
-      s.breaks.push({ start: t, end: extra.end ?? null });
+      const end = extra.end ?? null;
+      if (end != null && end <= t) { result = { ok: false, reason: 'break-end-before-start' }; return; }
+      s.breaks = s.breaks || [];
+      // 同一個開始時間 = 改這一段；這班已經下班卻還有沒結束的休息 = 補上它的結束。
+      const same = s.breaks.find((b) => b.start === t);
+      const forgotten = s.end != null ? s.breaks.find((b) => b.end == null) : null;
+      const b = same || forgotten;
+      if (b) { b.start = t; b.end = end; }
+      else s.breaks.push({ start: t, end });
       return;
     }
     if (step === 'sleepStart' || step === 'sleepEnd') {
