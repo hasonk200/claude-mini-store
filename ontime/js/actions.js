@@ -5,7 +5,7 @@ import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
   currentCycle, activeSession, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
-  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget,
+  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys,
   sleepWorkdayChanges, activeRest
 } from './logic.js';
 
@@ -94,9 +94,7 @@ export function toggleRest(t = Date.now()) {
 export function findWorkdayTargets(d, wd) {
   const s = sessionsOfWorkday(d, wd)[0] || null;
   let j = s ? journeyOfSession(d, s) : null;
-  if (!j) {
-    j = d.journeys.find((x) => !x.sessionId && x.out != null && dateKey(x.out) === wd) || null;
-  }
+  if (!j) j = standaloneJourneys(d, wd)[0] || null;
   const sleeps = d.sleeps.filter((x) => sleepWorkday(x, d) === wd);
   const sleep = sleeps.filter((x) => x.start != null).sort((a, b) => b.start - a.start)[0] || sleeps[0] || null;
   const shift = shiftsOfWorkday(d, wd)[0] || null;
@@ -110,20 +108,23 @@ export function setStepTime(wd, step, t, extra = {}) {
     const s = tg.session ? d.sessions.find((x) => x.id === tg.session.id) : null;
     let j = tg.journey ? d.journeys.find((x) => x.id === tg.journey.id) : null;
     if (step === 'clockIn') {
-      if (s) s.start = t;
-      else {
-        const ns = newSession(d, t, wd);
-        ns.end = extra.end ?? null;
-        if (j && !j.sessionId) j.sessionId = ns.id;
-      }
+      // 補登：你揀了哪一個工作日，這班就固定屬於那一天，不會跑去別日。
+      const target = s || newSession(d, t, wd);
+      target.start = t;
+      target.workdayDate = wd;
+      target.workdayManual = true;
+      if (!s) target.end = extra.end ?? null;
+      if (j && !j.sessionId) { j.sessionId = target.id; delete j.workdayDate; }
       return;
     }
     if (step === 'clockOut') {
-      if (s) s.end = t;
+      if (!s) { result = { ok: false, reason: 'no-session' }; return; }
+      if (t <= s.start) { result = { ok: false, reason: 'before-clock-in' }; return; }
+      s.end = t;
       return;
     }
     if (step === 'break') {
-      if (!s) return;
+      if (!s) { result = { ok: false, reason: 'no-session' }; return; }
       s.breaks.push({ start: t, end: extra.end ?? null });
       return;
     }
@@ -174,6 +175,8 @@ export function setStepTime(wd, step, t, extra = {}) {
       j = { id: uid('jr'), sessionId: s?.id ?? null, out: null, ride: null, arrive: null, leave: null, ride2: null, home: null };
       d.journeys.push(j);
     }
+    // 還沒有出勤時，記住這段行程屬於你揀的工作日。
+    if (!j.sessionId) j.workdayDate = wd;
     j[step] = t;
     if (step === 'ride' || step === 'ride2') {
       if (extra.from !== undefined) j[`${step}From`] = extra.from || null;

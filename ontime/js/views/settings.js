@@ -99,6 +99,7 @@ export function settingsView(ctx) {
           <button type="button" class="btn btn-line" data-action="demo">載入示範資料</button>
           <button type="button" class="btn btn-danger" data-action="clear-all">清除所有資料</button></div>
           <p class="fine">載入示範資料和清除資料都會取代目前的紀錄，執行前會再問一次。</p>
+          <p class="fine">目前版本：<strong>${esc(ui.appVersion || '讀取中…')}</strong></p>
         </section>
       </div>
     </div>`;

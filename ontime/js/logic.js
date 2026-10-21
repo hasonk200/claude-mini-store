@@ -71,7 +71,8 @@ export function dayOf(data, t) {
   return dayKeyOfWake(bs[found]);
 }
 
-export const workdayOfSession = (s, data) => (data && dayOf(data, s.start)) || dateKey(s.start);
+// 補登時揀咗嘅工作日（workdayManual）優先；即時按掣的紀錄才用起床邊界推算。
+export const workdayOfSession = (s, data) => (s.workdayManual && s.workdayDate) || (data && dayOf(data, s.start)) || dateKey(s.start);
 export const activeSession = (data) => data.sessions.find((s) => s.end == null) || null;
 
 export function breakIntervals(s, now) {
@@ -126,6 +127,20 @@ export function shiftForClockIn(data, t) {
 // ---------- 通勤與這一趟 ----------
 export function journeyOfSession(data, s) {
   return s ? data.journeys.find((j) => j.sessionId === s.id) || null : null;
+}
+
+const JOURNEY_KEYS = ['out', 'ride', 'arrive', 'leave', 'ride2', 'home'];
+// 還沒掛到出勤的行程（例如只補登了「到家」）屬於哪個工作日。
+export function journeyWorkday(j, data) {
+  if (j.workdayDate) return j.workdayDate;
+  const t = JOURNEY_KEYS.map((k) => j[k]).find((v) => v != null);
+  if (t == null) return null;
+  return (data && dayOf(data, t)) || dateKey(t);
+}
+
+export function standaloneJourneys(data, wd) {
+  const ids = new Set(data.sessions.map((s) => s.id));
+  return data.journeys.filter((j) => (!j.sessionId || !ids.has(j.sessionId)) && journeyWorkday(j, data) === wd);
 }
 
 function journeyFirstTime(j) {
@@ -396,6 +411,14 @@ export function workdayEvents(data, wd, now) {
       for (const k of ['leave', 'ride2', 'home']) {
         if (j[k] != null) ev.push({ t: j[k], step: k, kind: KIND_OF[k], icon: ICON_OF[k], title: k === 'ride2' ? '回程搭車' : STEP_LABEL[k], detail: k === 'ride2' ? rideDetail(j, 'ride2') : undefined, ref: { type: 'journey', id: j.id, field: k } });
       }
+    }
+  }
+  // 還沒有出勤的行程也要顯示，不然補登了會「看不到」。
+  for (const j of standaloneJourneys(data, wd)) {
+    for (const k of JOURNEY_KEYS) {
+      if (j[k] == null) continue;
+      const title = k === 'ride' ? '去程搭車' : k === 'ride2' ? '回程搭車' : STEP_LABEL[k];
+      ev.push({ t: j[k], step: k, kind: KIND_OF[k], icon: ICON_OF[k], title, detail: k === 'ride' || k === 'ride2' ? rideDetail(j, k) : undefined, ref: { type: 'journey', id: j.id, field: k } });
     }
   }
   const usedShifts = new Set(sessions.map((s) => s.shiftId));
