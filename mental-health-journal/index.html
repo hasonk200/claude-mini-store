@@ -1170,7 +1170,7 @@ function loadLocal(){let d=null;try{d=JSON.parse(localStorage.getItem(LS)||'null
 let S=loadLocal()||defaults();
 
 /* ---------- storage: local-first + authenticated Google Firebase ---------- */
-let fbAuth=null, fbDb=null, fbUser=null, authEpoch=0;
+let fbAuth=null, fbDb=null, fbUser=null, authEpoch=0, cloudInitPending=true;
 const CLOUD_UID_KEY='dicky-care-firebase-uid-v1';
 let cloud=null; // {core, years:{}}
 const dirty={core:false,years:new Set(),months:new Set()};
@@ -1275,14 +1275,16 @@ async function loadCloudFor(user){
       setSync(false,'Google 登入成功，正在同步…');
       await flush();
     }else setSync(true,'已連接 Google Firebase，資料已更新。');
+    cloudInitPending=false;milesSoon();
   }catch(e){
     if(run!==authEpoch)return;
-    cloud=null;
+    cloud=null;cloudInitPending=false;milesSoon();
     setSync(false,'Google 同步暫時失敗（'+(e.code||'網絡問題')+'）；本機記錄仍然保留。');
   }
 }
 async function connect(){
   if(!window.firebase||!window.FIREBASE_CONFIG){
+    cloudInitPending=false;milesSoon();
     setSync(false,'Google 同步暫時不可用；資料仍然儲存在本機。');
     return;
   }
@@ -1293,12 +1295,12 @@ async function connect(){
     fbAuth.onAuthStateChanged(user=>{
       fbUser=user||null;
       if(!user){
-        authEpoch++;cloud=null;
+        authEpoch++;cloud=null;cloudInitPending=false;milesSoon();
         setSync(false,'未登入 Google，資料只儲存在呢個瀏覽器。');
-      }else loadCloudFor(user);
+      }else{cloudInitPending=true;loadCloudFor(user);}
     });
     fbAuth.getRedirectResult().catch(e=>setSync(false,'Google 登入未完成（'+(e.code||'')+'），請重試。'));
-  }catch(e){setSync(false,'Firebase 初始化失敗；仍可使用本機手帳。');}
+  }catch(e){cloudInitPending=false;milesSoon();setSync(false,'Firebase 初始化失敗；仍可使用本機手帳。');}
 }
 $('#google-login').addEventListener('click',async()=>{
   if(!fbAuth)await connect();
@@ -2942,7 +2944,7 @@ const MILES=[
 ];
 const CQ=[];let milesT=0;
 function milesSoon(){clearTimeout(milesT);milesT=setTimeout(checkMiles,1200);}
-function checkMiles(){if(typeof ritual!=='undefined'&&(ritual||drawing)){milesSoon();return;}
+function checkMiles(){if(cloudInitPending){milesSoon();return;}if(typeof ritual!=='undefined'&&(ritual||drawing)){milesSoon();return;}
  S.miles=S.miles||{};const fresh=MILES.filter(m=>!S.miles[m.id]&&(()=>{try{return m.f();}catch(e){return false;}})());if(!fresh.length)return;const k=keyOf(new Date());
  if(!S.milesInit){S.milesInit=1;fresh.forEach(m=>{S.miles[m.id]=k;});if(S.pet)S.pet.coins+=10*fresh.length;persist();
   CQ.push({eyebrow:'你一路做到嘅',title:'之前已經達成 '+fresh.length+' 個里程碑',sub:fresh.map(m=>m.t).join('、')+'。',rew:S.pet?'寵物金幣 +'+(10*fresh.length):''});showCele();return;}
