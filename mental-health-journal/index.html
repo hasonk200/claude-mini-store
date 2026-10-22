@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Dicky 心晴手帳</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -543,7 +548,8 @@ hr.sep{border:0;border-top:1px solid var(--rule);margin:16px 0}
   .toast{transition:none}
 }
 </style>
-
+</head>
+<body>
 <div class="app">
   <nav class="nav" aria-label="主選單">
     <div class="brand"><b>心晴手帳</b><span>DICKY · 每日一分鐘</span></div>
@@ -727,7 +733,7 @@ hr.sep{border:0;border-top:1px solid var(--rule);margin:16px 0}
       <div class="head">
         <span class="eyebrow">ARCANA · 22 主牌 ＋ 4 張隱藏牌</span>
         <h1>收工抽卡</h1>
-        <p>收工之後寫低今晚想講嘅說話，長短都得。Claude 會讀完先幫你揀一張最貼近今日嘅牌，再收入你嘅牌庫同書櫃。呢副牌唔係占卜，唔講運程，係借牌嘅畫面同你一齊睇返今日。</p>
+        <p>收工之後寫低今晚想講嘅說話，長短都得。手帳會按日記內容揀一張貼近今日嘅牌，再收入你嘅牌庫同書櫃。呢副牌唔係占卜，唔講運程，係借牌嘅畫面同你一齊睇返今日。</p>
       </div>
       <div class="seg" data-name="drawtab" style="margin-bottom:16px"><button data-v="draw" class="on">抽卡</button><button data-v="deck">牌庫圖鑑</button><button data-v="shelf">書櫃</button></div>
 
@@ -1061,8 +1067,13 @@ hr.sep{border:0;border-top:1px solid var(--rule);margin:16px 0}
             <button class="btn ghost" id="set-save">儲存設定</button>
           </div>
           <div class="sheet">
+            <h2>Google 同步</h2>
+            <div class="sub">登入 Google 後，手帳會同步到 Firebase，同一個 Google 帳戶可以跨裝置使用；未登入都可以離線記錄。</div>
+            <p class="note" id="google-status" role="status" style="margin-bottom:12px">正在檢查同步狀態…</p>
+            <div class="row"><button class="btn" id="google-login" type="button">使用 Google 登入</button><span class="muted" id="google-email"></span></div>
+            <hr class="sep">
             <h2>私隱同備份</h2>
-            <div class="sub" id="privacy-txt">登入咗 Claude 嘅話，記錄會存喺你帳戶入面一個只有你自己睇到嘅位置，連分享咗條連結嘅人都睇唔到。</div>
+            <div class="sub" id="privacy-txt">記錄先儲存本機。雲端資料有 Firebase 登入及每個帳戶的存取限制，但雲端同步並非端對端加密，亦不屬醫療級保密服務。你可隨時匯出備份。</div>
             <div class="row"><button class="btn ghost" id="bk-export">匯出備份</button><label class="btn ghost" for="bk-file">匯入備份</label><input type="file" id="bk-file" accept="application/json,.json" hidden></div>
             <pre class="summary" id="bk-pre" hidden></pre>
             <hr class="sep">
@@ -1079,6 +1090,10 @@ hr.sep{border:0;border-top:1px solid var(--rule);margin:16px 0}
 <button class="buddy" id="buddy" hidden aria-label="去睇我嘅寵物"><span class="buddy-b" id="buddy-b" hidden></span><span class="buddy-pet" id="buddy-pet"></span></button>
 <div class="cele" id="cele" hidden role="dialog" aria-modal="true" aria-labelledby="cele-t"><div class="cele-card"><div class="cele-art" id="cele-art"></div><span class="eyebrow" id="cele-eb"></span><h2 id="cele-t"></h2><p id="cele-s"></p><span class="chip good" id="cele-r"></span><button class="btn" id="cele-ok">好！</button></div></div>
 
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
+<script>window.FIREBASE_CONFIG = {"apiKey":"AIzaSyBpKFMUpZR64m3HinCE925foHM4wM09Nas","authDomain":"dicky-supplement-tracker-2026.firebaseapp.com","projectId":"dicky-supplement-tracker-2026","appId":"1:735935979151:web:626b644728e2d353af1afa","messagingSenderId":"735935979151"};</script>
 <script>
 (function(){
 const LS='dicky-care-v1';
@@ -1154,11 +1169,19 @@ function normalize(d){
 function loadLocal(){let d=null;try{d=JSON.parse(localStorage.getItem(LS)||'null');}catch(e){}return d?normalize(d):null;}
 let S=loadLocal()||defaults();
 
-/* ---------- storage: local cache + private cloud doc ---------- */
+/* ---------- storage: local-first + authenticated Google Firebase ---------- */
+let fbAuth=null, fbDb=null, fbUser=null, authEpoch=0;
+const CLOUD_UID_KEY='dicky-care-firebase-uid-v1';
 let cloud=null; // {core, years:{}}
 const dirty={core:false,years:new Set(),months:new Set()};
 let flushTimer=null, flushing=false;
-function setSync(on,msg){$('#sync').classList.toggle('on',!!on);$('#sync-txt').textContent=msg;}
+function setSync(on,msg){
+  $('#sync').classList.toggle('on',!!on);
+  $('#sync-txt').textContent=msg;
+  const status=$('#google-status');if(status)status.textContent=msg;
+  const btn=$('#google-login');if(btn)btn.textContent=fbUser?'登出 Google':'使用 Google 登入';
+  const mail=$('#google-email');if(mail)mail.textContent=fbUser?(fbUser.email||'已登入'):'未登入';
+}
 function saveLocal(){try{localStorage.setItem(LS,JSON.stringify(S));return true;}catch(e){return false;}}
 function coreBody(){const years=Array.from(new Set(Object.keys(S.checkins).map(k=>k.slice(0,4))));return {evidence:S.evidence,ladders:S.ladders,plan:S.plan,phq:S.phq,weeks:S.weeks,settings:S.settings,favs:S.favs||[],pet:S.pet||null,habits:S.habits||[],miles:S.miles||{},milesInit:S.milesInit||0,cardNotes:S.cardNotes||{},drawMonths:Array.from(new Set(Object.keys(S.draws||{}).map(k=>k.slice(0,7)))),years,t:S.t};}
 function monthBody(m){const o={};Object.keys(S.draws||{}).forEach(k=>{if(k.slice(0,7)===m)o[k]=S.draws[k];});return {entries:o};}
@@ -1181,52 +1204,125 @@ async function flush(){
       if(dirty.years.size){const y=dirty.years.values().next().value;dirty.years.delete(y);await cloud.year(y).set(yearBody(y));}
       if(dirty.core){dirty.core=false;await cloud.core.set(coreBody());}
     }
-    setSync(true,'已存入你嘅 Claude 帳戶，只有你自己睇到。');
+    setSync(true,'已同步 Google Firebase；只限登入同一 Google 帳戶存取。');
   }catch(e){
-    setSync(false,'雲端暫時存唔到，記錄仍然喺呢個瀏覽器。');
+    setSync(false,'雲端同步暫時失敗；本機記錄仍然保留。');
+    dirty.core=true;
+    Object.keys(S.checkins).forEach(k=>dirty.years.add(k.slice(0,4)));
+    Object.keys(S.draws||{}).forEach(k=>dirty.months.add(k.slice(0,7)));
   }finally{flushing=false;}
 }
-async function connect(){
+async function loadCloudFor(user){
+  const run=++authEpoch;
+  cloud=null;
+  setSync(false,'正在讀取 Google 雲端資料…');
   try{
-    if(!window.claude||!window.claude.use){setSync(false,'資料存喺呢個瀏覽器。記得間中匯出備份。');return;}
-    const [db,user]=await Promise.all([window.claude.use('db'),window.claude.use('user')]);
-    if(!db||!user){setSync(false,'資料存喺呢個瀏覽器。登入 Claude 就可以跨裝置保存。');return;}
-    const id=await user.id();
-    if(!id){setSync(false,'資料存喺呢個瀏覽器。');return;}
-    const base='data/users/'+id;
-    const c={core:db.doc(base+'/core'),year:y=>db.doc(base+'/ci-'+y),month:m=>db.doc(base+'/dr-'+m)};
+    const previous=localStorage.getItem(CLOUD_UID_KEY);
+    if(previous && previous!==user.uid){
+      // Keep previous account's data offline, never upload it to a different account.
+      localStorage.setItem(LS+'-account-'+previous,JSON.stringify(S));
+      const own=localStorage.getItem(LS+'-account-'+user.uid);
+      S=own?normalize(JSON.parse(own)):defaults();
+      saveLocal();render();
+      dirty.core=false;dirty.years.clear();dirty.months.clear();
+    }
+    localStorage.setItem(CLOUD_UID_KEY,user.uid);
+    const base='users/'+user.uid+'/mentalHealthJournal';
+    const c={core:fbDb.doc(base+'/core'),year:y=>fbDb.doc(base+'/ci-'+y),month:m=>fbDb.doc(base+'/dr-'+m)};
     const snap=await c.core.get();
+    if(run!==authEpoch)return;
     if(snap.exists){
-      const remote=snap.data();
+      const remote=snap.data()||{};
       const merged=normalize(JSON.parse(JSON.stringify(remote)));
-      const localCk=S.checkins;
+      const localCk=S.checkins||{};
       merged.checkins={};
-      for(const y of (remote.years||[])){const ys=await c.year(y).get();if(ys.exists){Object.assign(merged.checkins,JSON.parse(JSON.stringify(ys.data().entries||{})));}}
-      const localDr=S.draws||{};merged.draws={};
-      for(const m of (remote.drawMonths||[])){const ms=await c.month(m).get();if(ms.exists){Object.assign(merged.draws,JSON.parse(JSON.stringify(ms.data().entries||{})));}}
-      const newerDr=[];Object.keys(localDr).forEach(k=>{const r=merged.draws[k];if(!r||(localDr[k].t||0)>(r.t||0)){merged.draws[k]=localDr[k];newerDr.push(k.slice(0,7));}});
-      const newerLocal=[];
-      Object.keys(localCk).forEach(k=>{const r=merged.checkins[k];if(!r||(localCk[k].t||0)>(r.t||0)){merged.checkins[k]=localCk[k];newerLocal.push(k.slice(0,4));}});
+      for(const y of (remote.years||[])){
+        const ys=await c.year(y).get();if(run!==authEpoch)return;
+        if(ys.exists)Object.assign(merged.checkins,JSON.parse(JSON.stringify(ys.data().entries||{})));
+      }
+      const localDr=S.draws||{};
+      merged.draws={};
+      for(const m of (remote.drawMonths||[])){
+        const ms=await c.month(m).get();if(run!==authEpoch)return;
+        if(ms.exists)Object.assign(merged.draws,JSON.parse(JSON.stringify(ms.data().entries||{})));
+      }
+      const newerMonths=new Set(),newerYears=new Set();
+      Object.keys(localDr).forEach(k=>{
+        const cur=merged.draws[k];
+        if(!cur||(localDr[k].t||0)>(cur.t||0)){merged.draws[k]=localDr[k];newerMonths.add(k.slice(0,7));}
+      });
+      Object.keys(localCk).forEach(k=>{
+        const cur=merged.checkins[k];
+        if(!cur||(localCk[k].t||0)>(cur.t||0)){merged.checkins[k]=localCk[k];newerYears.add(k.slice(0,4));}
+      });
       const localCoreNewer=(S.t||0)>(remote.t||0);
-      if(localCoreNewer){['evidence','ladders','plan','phq','weeks','settings','favs','pet','habits','miles','milesInit','cardNotes'].forEach(k=>merged[k]=S[k]);}
-      S=merged;cloud=c;saveLocal();
-      newerLocal.forEach(y=>dirty.years.add(y));newerDr.forEach(m=>dirty.months.add(m));
-      if(localCoreNewer||newerLocal.length||newerDr.length)dirty.core=true;
-      render();
+      if(localCoreNewer){
+        try{localStorage.setItem(LS+'-remote-backup-'+user.uid,JSON.stringify(remote));}catch(e){}
+        ['evidence','ladders','plan','phq','weeks','settings','favs','pet','habits','miles','milesInit','cardNotes'].forEach(k=>merged[k]=S[k]);
+      }
+      S=merged;saveLocal();render();
+      newerYears.forEach(y=>dirty.years.add(y));
+      newerMonths.forEach(m=>dirty.months.add(m));
+      if(localCoreNewer||newerYears.size||newerMonths.size)dirty.core=true;
     }else{
-      cloud=c;
-      Object.keys(S.checkins).forEach(k=>dirty.years.add(k.slice(0,4)));
+      Object.keys(S.checkins||{}).forEach(k=>dirty.years.add(k.slice(0,4)));
       Object.keys(S.draws||{}).forEach(k=>dirty.months.add(k.slice(0,7)));
       dirty.core=true;
     }
+    if(run!==authEpoch)return;
     cloud=c;
-    setSync(true,'已存入你嘅 Claude 帳戶，只有你自己睇到。');
-    flush();
+    if(dirty.core||dirty.months.size||dirty.years.size){
+      setSync(false,'Google 登入成功，正在同步…');
+      await flush();
+    }else setSync(true,'已連接 Google Firebase，資料已更新。');
   }catch(e){
+    if(run!==authEpoch)return;
     cloud=null;
-    setSync(false,'資料存喺呢個瀏覽器。記得間中匯出備份。');
+    setSync(false,'Google 同步暫時失敗（'+(e.code||'網絡問題')+'）；本機記錄仍然保留。');
   }
 }
+async function connect(){
+  if(!window.firebase||!window.FIREBASE_CONFIG){
+    setSync(false,'Google 同步暫時不可用；資料仍然儲存在本機。');
+    return;
+  }
+  try{
+    if(!firebase.apps.length)firebase.initializeApp(window.FIREBASE_CONFIG);
+    fbAuth=firebase.auth();fbDb=firebase.firestore();
+    await fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    fbAuth.onAuthStateChanged(user=>{
+      fbUser=user||null;
+      if(!user){
+        authEpoch++;cloud=null;
+        setSync(false,'未登入 Google，資料只儲存在呢個瀏覽器。');
+      }else loadCloudFor(user);
+    });
+    fbAuth.getRedirectResult().catch(e=>setSync(false,'Google 登入未完成（'+(e.code||'')+'），請重試。'));
+  }catch(e){setSync(false,'Firebase 初始化失敗；仍可使用本機手帳。');}
+}
+$('#google-login').addEventListener('click',async()=>{
+  if(!fbAuth)await connect();
+  if(!fbAuth){toast('Google 同步暫時不可用');return;}
+  if(fbAuth.currentUser){
+    try{await fbAuth.signOut();toast('已登出 Google；雲端同步暫停。');}
+    catch(e){toast('Google 登出失敗');}
+    return;
+  }
+  const provider=new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({prompt:'select_account'});
+  try{await fbAuth.signInWithPopup(provider);}
+  catch(e){
+    if(e&&['auth/popup-blocked','auth/cancelled-popup-request'].includes(e.code)){
+      try{await fbAuth.signInWithRedirect(provider);}
+      catch(err){setSync(false,'Google 登入失敗：'+(err.code||'請重試'));}
+    }else if(e&&e.code==='auth/popup-closed-by-user')toast('已取消 Google 登入');
+    else setSync(false,'Google 登入失敗：'+(e.code||'請重試'));
+  }
+});
+window.addEventListener('online',()=>{
+  if(cloud&&(dirty.core||dirty.years.size||dirty.months.size))flush();
+  else if(fbAuth&&fbAuth.currentUser&&!cloud)loadCloudFor(fbAuth.currentUser);
+});
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('on'),2000);}
 function applyTheme(){const t=S.settings.theme;if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);else document.documentElement.removeAttribute('data-theme');}
@@ -3126,9 +3222,12 @@ function renderSettings(){$('#set-a').value=S.settings.a;$('#set-b').value=S.set
 $('#set-save').addEventListener('click',()=>{S.settings.a=$('#set-a').value||'09:00';S.settings.b=$('#set-b').value||'16:30';S.settings.theme=segGet('theme')||'auto';S.settings.buddy=segGet('buddy')!=='off';applyTheme();updBuddy();persist();toast('設定儲存咗');});
 $('#bk-export').addEventListener('click',async()=>{
   const data=JSON.stringify(S,null,2);const name='dicky-心晴手帳-備份-'+keyOf(new Date())+'.json';
-  let dl=null;try{dl=window.claude&&window.claude.use?await window.claude.use('downloads'):null;}catch(e){}
-  if(dl){try{await dl.save({filename:name,data:new Blob([data],{type:'application/json'})});return;}catch(e){if(e&&e.code&&e.code!=='unavailable'&&e.code!=='bad_request'){return;}}}
-  const pre=$('#bk-pre');pre.textContent=data;pre.hidden=false;selectText(pre);toast('呢度唔可以直接下載，已經揀好備份內容，複製去記事本儲存就得');
+  const blob=new Blob([data],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),30000);
+  toast('已開始下載 JSON 備份');
 });
 $('#bk-file').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||typeof d!=='object'||!d.checkins)throw 0;S=normalize(d);Object.keys(S.checkins).forEach(k=>dirty.years.add(k.slice(0,4)));persist();render();toast('匯入咗');}catch(err){toast('呢個檔案唔係手帳備份格式');}};r.readAsText(f);e.target.value='';});
 let clearArmed=false;
@@ -3158,3 +3257,5 @@ connect();
 milesSoon();
 })();
 </script>
+</body>
+</html>
