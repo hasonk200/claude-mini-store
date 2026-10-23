@@ -2,7 +2,7 @@
 // 版本：主.次.修（semver）。主版 2 代表目前這一代；次版延續舊的流水號（原本 v17）。
 // 改功能或畫面 → 升次版；只修錯字、註解或微調 → 升修訂版。
 // 這個字串也是快取名稱，改了才會讓舊快取失效、使用者拿到新檔。
-const VERSION = '2.21.0';
+const VERSION = '2.22.0';
 const CACHE = `ontime-${VERSION}`;
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',

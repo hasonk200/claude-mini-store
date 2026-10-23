@@ -96,3 +96,17 @@ export function monthEndKey(key) {
 export function daysBetween(a, b) {
   return Math.round((dayStart(b) - dayStart(a)) / DAY);
 }
+
+// 把 1830、930、18、18:5、１８：３０ 都整理成 HH:MM；看不懂回傳 null。
+export function normTime(raw) {
+  let s = String(raw || '').trim().replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[：.．]/g, ':').replace(/\s+/g, '');
+  if (!s) return '';
+  let h; let m;
+  let mt = s.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (mt) { h = +mt[1]; m = +mt[2]; }
+  else if ((mt = s.match(/^\d{3,4}$/))) { h = +s.slice(0, -2); m = +s.slice(-2); }
+  else if ((mt = s.match(/^\d{1,2}$/))) { h = +s; m = 0; }
+  else return null;
+  if (h > 23 || m > 59) return null;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
