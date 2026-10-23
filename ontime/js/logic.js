@@ -28,40 +28,40 @@ export function clip(intervals, a, b) {
 
 export const totalOf = (intervals) => mergeIntervals(intervals).reduce((n, [s, e]) => n + (e - s), 0);
 
-// ---------- 時間準確度 ----------
-// 每個時間點可以標成「大約」：rec.approx = { start: true, ... }。沒有標記 = 準確。
-export const isApprox = (rec, field) => !!(rec && rec.approx && rec.approx[field]);
-export function markApprox(rec, field, approx) {
+// ---------- 已驗證標記 ----------
+// 通用：rec[key] = { start: true, ... }。
+export const isFlag = (rec, key, field) => !!(rec && rec[key] && rec[key][field]);
+export function markFlag(rec, key, field, on) {
   if (!rec || !field) return;
-  if (approx) { rec.approx = { ...(rec.approx || {}), [field]: true }; return; }
-  if (!rec.approx) return;
-  const a = { ...rec.approx };
+  if (on) { rec[key] = { ...(rec[key] || {}), [field]: true }; return; }
+  if (!rec[key]) return;
+  const a = { ...rec[key] };
   delete a[field];
-  if (Object.keys(a).length) rec.approx = a; else delete rec.approx;
+  if (Object.keys(a).length) rec[key] = a; else delete rec[key];
 }
 
-// 時間線上的一個事件，對應的時間是不是「大約」。計畫不算。
-export function eventApprox(data, e) {
+// ---------- 已驗證 ----------
+// 你手動打勾、確認「這個時間是對的」：rec.verified = { start: true, ... }。沒有標記 = 還沒驗證。
+// 改時間不會自動取消打勾，要不要保留由你決定。
+export const isVerified = (rec, field) => isFlag(rec, 'verified', field);
+export const markVerified = (rec, field, on) => markFlag(rec, 'verified', field, on);
+
+// 時間線上的一個事件，對應的時間有沒有某個標記（目前只有 verified 已驗證）。計畫不算。
+function eventFlag(data, e, key) {
   if (e.plan || !e.ref) return false;
   const { type, id, field } = e.ref;
-  if (type === 'journey') return isApprox(data.journeys.find((x) => x.id === id), field);
+  if (type === 'journey') return isFlag(data.journeys.find((x) => x.id === id), key, field);
   if (type === 'session') {
     const s = data.sessions.find((x) => x.id === id);
-    if (field === 'break') return isApprox((s?.breaks || []).find((b) => b.start === e.t), 'start');
-    return isApprox(s, field);
+    if (field === 'break') return isFlag((s?.breaks || []).find((b) => b.start === e.t), key, 'start');
+    return isFlag(s, key, field);
   }
-  if (type === 'sleep') return isApprox(data.sleeps.find((x) => x.id === id), field);
-  if (type === 'rest') return isApprox((data.rests || []).find((x) => x.id === id), field);
-  if (type === 'meal') return isApprox(data.meals.find((x) => x.id === id), 'start');
+  if (type === 'sleep') return isFlag(data.sleeps.find((x) => x.id === id), key, field);
+  if (type === 'rest') return isFlag((data.rests || []).find((x) => x.id === id), key, field);
+  if (type === 'meal') return isFlag(data.meals.find((x) => x.id === id), key, 'start');
   return false;
 }
-
-// 一班出勤裡有幾個大約時間（上班、下班、休息開始和結束）。
-export function sessionApproxCount(s) {
-  let n = (isApprox(s, 'start') ? 1 : 0) + (isApprox(s, 'end') ? 1 : 0);
-  for (const b of s.breaks || []) n += (isApprox(b, 'start') ? 1 : 0) + (isApprox(b, 'end') ? 1 : 0);
-  return n;
-}
+export const eventVerified = (data, e) => eventFlag(data, e, 'verified');
 
 // ---------- 出勤 ----------
 // ---------- 工作日：由主睡眠起床開始，到下一次主睡眠起床為止 ----------
@@ -499,7 +499,7 @@ export function workdayEvents(data, wd, now) {
       detail: m.end ? `${fmtClock(m.start)}–${fmtClock(m.end)}` : '', plan: !m.confirmed, ref: { type: 'meal', id: m.id }
     });
   }
-  for (const e of ev) e.approx = eventApprox(data, e);
+  for (const e of ev) e.verified = eventVerified(data, e);
   return ev.sort((a, b) => a.t - b.t);
 }
 

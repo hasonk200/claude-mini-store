@@ -1,4 +1,4 @@
-import { esc, icon, accToggle } from '../ui.js';
+import { esc, icon, verifyToggle } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, toDateInput, toTimeInput, MIN } from '../time.js';
 import { mealWorkday, sessionsOfWorkday, frequentMealValues } from '../logic.js';
 import { lastMealLine } from './today.js';
@@ -21,7 +21,7 @@ function mealForm(ui, now, editing, data) {
       <input type="hidden" name="id" value="${esc(m.id || '')}">
       <div class="field-pair"><label class="field"><span>日期</span><input type="date" name="date" value="${toDateInput(start)}" required></label>
       <label class="field"><span>開始</span><input type="time" name="start" value="${toTimeInput(start)}" required></label></div>
-      ${accToggle(!!m.approx?.start)}
+      ${verifyToggle(!!m.verified?.start)}
       <div class="field-pair"><label class="field"><span>結束（可空白）</span><input type="time" name="end" value="${end ? toTimeInput(end) : ''}"></label>
       <label class="field"><span>狀態</span><select name="confirmed"><option value="1"${m.confirmed !== false ? ' selected' : ''}>已經吃了</option><option value="0"${m.confirmed === false ? ' selected' : ''}>只是安排</option></select></label></div>
       <details class="more"${m.name || m.place || m.note || photo || favNames.length || favPlaces.length ? ' open' : ''}><summary>餐點、地點、備註、相片（選填）</summary>

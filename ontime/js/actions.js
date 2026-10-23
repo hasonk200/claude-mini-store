@@ -5,7 +5,7 @@ import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
   currentCycle, activeSession, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
-  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys, markApprox,
+  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys, markFlag,
   sleepWorkdayChanges, activeRest
 } from './logic.js';
 
@@ -103,8 +103,10 @@ export function findWorkdayTargets(d, wd) {
 
 export function setStepTime(wd, step, t, extra = {}) {
   let result = { ok: true };
-  // extra.approx：true = 大約、false = 準確、undefined = 不改。
-  const mark = (rec, field) => { if (extra.approx !== undefined) markApprox(rec, field, extra.approx); };
+  // extra.verified：true = 已驗證、false = 取消、undefined = 不改。
+  const mark = (rec, field) => {
+    if (extra.verified !== undefined) markFlag(rec, 'verified', field, extra.verified);
+  };
   update((d) => {
     const tg = findWorkdayTargets(d, wd);
     const s = tg.session ? d.sessions.find((x) => x.id === tg.session.id) : null;
@@ -139,7 +141,7 @@ export function setStepTime(wd, step, t, extra = {}) {
       if (b) { b.start = t; b.end = end; }
       else { b = { start: t, end }; s.breaks.push(b); }
       mark(b, 'start');
-      if (end != null) mark(b, 'end'); else markApprox(b, 'end', false);
+      if (end != null) mark(b, 'end'); else markFlag(b, 'verified', 'end', false);
       return;
     }
     if (step === 'sleepStart' || step === 'sleepEnd') {
@@ -203,20 +205,24 @@ export function setStepTime(wd, step, t, extra = {}) {
   return result;
 }
 
-// 只改「準確／大約」，不動時間（待確認清單、修改面板用）。t 用來找班內哪一段休息。
-export function setApprox(ref, approx, t) {
+// 只改某個標記（目前只有 verified 已驗證），不動時間。t 用來找班內哪一段休息。
+function setFlag(ref, key, on, t) {
   update((d) => {
     const { type, id, field } = ref;
-    if (type === 'journey') markApprox(d.journeys.find((x) => x.id === id), field, approx);
+    const mk = (rec, f) => markFlag(rec, key, f, on);
+    if (type === 'journey') mk(d.journeys.find((x) => x.id === id), field);
     else if (type === 'session') {
       const s = d.sessions.find((x) => x.id === id);
-      if (field === 'break') markApprox((s?.breaks || []).find((b) => b.start === t), 'start', approx);
-      else markApprox(s, field, approx);
-    } else if (type === 'sleep') markApprox(d.sleeps.find((x) => x.id === id), field, approx);
-    else if (type === 'rest') markApprox((d.rests || []).find((x) => x.id === id), field, approx);
-    else if (type === 'meal') markApprox(d.meals.find((x) => x.id === id), 'start', approx);
+      if (field === 'break') mk((s?.breaks || []).find((b) => b.start === t), 'start');
+      else mk(s, field);
+    } else if (type === 'sleep') mk(d.sleeps.find((x) => x.id === id), field);
+    else if (type === 'rest') mk((d.rests || []).find((x) => x.id === id), field);
+    else if (type === 'meal') mk(d.meals.find((x) => x.id === id), 'start');
   });
 }
+
+// 只改「已驗證」打勾（時間線上的小勾勾、修改面板用）。
+export const setVerified = (ref, on, t) => setFlag(ref, 'verified', on, t);
 
 export function clearStepTime(wd, step) {
   update((d) => {
@@ -263,7 +269,7 @@ export function setRefTime(ref, t, extra = {}) {
       if (sh) { const len = sh.end - sh.start; sh.start = t; sh.end = t + len; }
     }
   });
-  if (extra.approx !== undefined && ref.type !== 'shift') setApprox(ref, extra.approx, t);
+  if (extra.verified !== undefined && ref.type !== 'shift') setVerified(ref, extra.verified, t);
 }
 
 // ---------- 睡眠 ----------
