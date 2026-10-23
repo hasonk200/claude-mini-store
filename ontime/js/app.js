@@ -519,6 +519,7 @@ const forms = {
     if (f.mode) { extra.mode = f.mode.value.trim(); extra.from = f.from.value.trim(); }
     if (f.replace && f.replace.checked) extra.replace = true;
     if (f.acc) extra.approx = f.acc.value === 'approx';
+    if (f.mainSleep) extra.mainSleep = f.mainSleep.checked;
     const p = { wd: f.wd.value, step: f.step.value, t, extra, stay };
     // 只能補登「入睡」時先預告歸屬；起床的歸屬由該筆入睡時間決定。
     if (p.step === 'sleepStart') {
