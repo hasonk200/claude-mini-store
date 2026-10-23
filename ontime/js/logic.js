@@ -1,6 +1,6 @@
 // 作息規則：純函式，不碰畫面和儲存，方便測試。
 // data = { jobs, shifts, sessions, journeys, meals, sleeps, dayMarks, settings }
-import { MIN, HOUR, dateKey, dayStart, dayEnd, addDays, wdOfKey } from './time.js';
+import { MIN, HOUR, dateKey, dayStart, dayEnd, addDays, wdOfKey, at } from './time.js';
 
 export const STEPS = ['out', 'ride', 'arrive', 'clockIn', 'clockOut', 'ride2', 'home'];
 export const OPTIONAL_STEPS = new Set(['ride', 'ride2']);
@@ -162,6 +162,62 @@ export function shiftForClockIn(data, t) {
     if (d <= 4 * HOUR && (!best || d < Math.abs(best.start - t))) best = sh;
   }
   return best;
+}
+
+// ---------- 補登：時間都扣在「班次」上 ----------
+// 班次 = 一筆出勤（session）。補登時先選班次，只填「時：分」，日期由班次決定，不會跑去「現在」。
+export const SHIFT_FAR_MS = 12 * HOUR;
+const PRE_STEPS = new Set(['out', 'ride', 'arrive', 'clockIn']);
+const POST_STEPS = new Set(['clockOut', 'leave', 'ride2', 'home']);
+export const SHIFT_BOUND_STEPS = new Set(['out', 'ride', 'arrive', 'clockIn', 'break', 'clockOut', 'leave', 'ride2', 'home']);
+
+// 這一步「通常」落在班次的哪個時間附近（選日期、預設時間都靠它）。
+function stepAnchor(step, s) {
+  const end = s.end ?? s.start + 8 * HOUR;
+  if (PRE_STEPS.has(step)) return s.start;
+  if (step === 'break') return s.start + (end - s.start) / 2;
+  return end;
+}
+
+// 預設時間：還沒有這一步時，放在班次附近合理的位置（不是「現在」）。
+const DEFAULT_OFFSET = { out: -45 * MIN, ride: -30 * MIN, arrive: -5 * MIN, clockIn: 0, break: 0, clockOut: 0, leave: 5 * MIN, ride2: 10 * MIN, home: 40 * MIN };
+export function defaultStepTime(step, s) {
+  return Math.round((stepAnchor(step, s) + (DEFAULT_OFFSET[step] || 0)) / MIN) * MIN;
+}
+
+// 你只打「時：分」，這個函式找出最合理的日期：前後一天裡，離這一步通常位置最近的那一個。
+// 例如班次 23:00→07:00，打下班 07:05 → 隔天 07:05；打出門 22:20 → 班次當天 22:20。
+export function resolveStepTime(step, hhmm, s) {
+  if (!s || !SHIFT_BOUND_STEPS.has(step) || !hhmm) return null;
+  const ref = stepAnchor(step, s);
+  const base = dateKey(ref);
+  let best = null;
+  for (const k of [addDays(base, -1), base, addDays(base, 1)]) {
+    const t = at(k, hhmm);
+    if (Number.isNaN(t)) return null;
+    if (best == null || Math.abs(t - ref) < Math.abs(best - ref)) best = t;
+  }
+  return best;
+}
+
+// 這個時間離班次（上班到下班）有多遠；在班次裡面是 0。
+export function shiftDistance(t, s) {
+  const end = s.end ?? s.start;
+  if (t < s.start) return s.start - t;
+  if (t > end) return t - end;
+  return 0;
+}
+
+// 最近用過的班次時段（HH:MM–HH:MM），新增班次時一按就填好。
+export function recentShiftRanges(data, n = 3) {
+  const seen = [];
+  for (const x of [...data.sessions].sort((a, b) => b.start - a.start)) {
+    if (x.end == null) continue;
+    const key = `${fmtClock(x.start)}–${fmtClock(x.end)}`;
+    if (!seen.some((r) => r.key === key)) seen.push({ key, from: fmtClock(x.start), to: fmtClock(x.end) });
+    if (seen.length >= n) break;
+  }
+  return seen;
 }
 
 // ---------- 通勤與這一趟 ----------

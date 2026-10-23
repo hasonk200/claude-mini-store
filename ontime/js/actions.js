@@ -101,6 +101,20 @@ export function findWorkdayTargets(d, wd) {
   return { session: s, journey: j, sleep, shift };
 }
 
+// 新增班次：先建立一班出勤（開工、收工可以先空著收工），之後的時間都扣在這一班上。
+export function createShift(wd, start, end = null) {
+  let id = null;
+  update((d) => {
+    const s = newSession(d, start, wd);
+    s.workdayDate = wd;
+    s.workdayManual = true;
+    s.end = end;
+    id = s.id;
+  });
+  return { ok: true, id };
+}
+
+// extra.sessionId：指定班次。有指定就一定寫進這一班，不再自己猜是哪一班。
 export function setStepTime(wd, step, t, extra = {}) {
   let result = { ok: true };
   // extra.verified：true = 已驗證、false = 取消、undefined = 不改。
@@ -109,8 +123,14 @@ export function setStepTime(wd, step, t, extra = {}) {
   };
   update((d) => {
     const tg = findWorkdayTargets(d, wd);
-    const s = tg.session ? d.sessions.find((x) => x.id === tg.session.id) : null;
-    let j = tg.journey ? d.journeys.find((x) => x.id === tg.journey.id) : null;
+    const anchored = extra.sessionId != null && step !== 'sleepStart' && step !== 'sleepEnd';
+    const s = anchored
+      ? d.sessions.find((x) => x.id === extra.sessionId) || null
+      : tg.session ? d.sessions.find((x) => x.id === tg.session.id) : null;
+    let j = anchored
+      ? (s ? d.journeys.find((x) => x.sessionId === s.id) || null : null)
+      : tg.journey ? d.journeys.find((x) => x.id === tg.journey.id) : null;
+    if (anchored && !s) { result = { ok: false, reason: 'no-session' }; return; }
     if (step === 'clockIn') {
       // 補登：你揀了哪一個工作日，這班就固定屬於那一天，不會跑去別日。
       const target = s || newSession(d, t, wd);

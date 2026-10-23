@@ -840,3 +840,11 @@ details.more .form { padding: 0 14px 14px; }
 .time-pick { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); width: 42px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: var(--muted); background: var(--surface-2); overflow: hidden; }
 .time-pick:active { background: var(--hover); }
 .field .time-pick .time-native { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; font-size: 16px; }
+
+/* 補登：先選班次 */
+.shift-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.shift-chip { min-height: 58px; }
+.shift-chip .step-chip-text strong { font-size: 15px; }
+.shift-add { border-style: dashed; background: transparent; }
+.shift-add.is-on { background: var(--solid); border-style: solid; }
+#rec-preview strong { font-weight: 800; }

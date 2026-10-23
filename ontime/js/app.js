@@ -2,7 +2,7 @@ import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
 import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD, normTime } from './time.js';
-import { currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday } from './logic.js';
+import { currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { timelineView } from './views/timeline.js';
 import { weekView } from './views/week.js';
@@ -10,7 +10,7 @@ import { sleepView } from './views/sleep.js';
 import { mealsView } from './views/meals.js';
 import { statsView } from './views/stats.js';
 import { settingsView } from './views/settings.js';
-import { sheetView, defaultStep } from './views/sheet.js';
+import { sheetView, defaultStep, previewText } from './views/sheet.js';
 import { initSync, onSync, syncState, signIn, signOut } from './sync.js';
 
 const ROUTES = {
@@ -334,17 +334,28 @@ const handlers = {
     // 取消後回到補登面板，保留剛才填的時間。
     const p = ui.pendingRecord;
     ui.pendingRecord = null;
-    ui.sheet = p ? { type: 'record', wd: p.wd, step: p.step, t: p.t } : null;
+    ui.sheet = p ? { type: 'record', wd: p.wd, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
     render();
   },
-  'rec-step': (el) => { ui.sheet.step = el.dataset.step; delete ui.sheet.t; sheetScrollToForm = true; render(); },
+  'rec-step': (el) => { ui.sheet.step = el.dataset.step; delete ui.sheet.t; ui.sheet.newShift = false; sheetScrollToForm = true; render(); },
+  // 補登先選班次：之後所有時間都扣在這一班上。
+  'rec-shift': (el) => { ui.sheet.sid = el.dataset.sid; ui.sheet.newShift = false; delete ui.sheet.t; render(); },
+  'rec-newshift': () => { ui.sheet.newShift = true; render(); },
+  'rec-newshift-cancel': () => { ui.sheet.newShift = false; render(); },
+  'shift-range': (el) => {
+    const f = $('form[data-form=new-shift]');
+    if (!f) return;
+    f.start.value = el.dataset.from; f.end.value = el.dataset.to;
+  },
   'rec-now': () => {
     const t = nowFn(); $('#record-form [name=date]').value = dateKey(t); $('#record-form [name=time]').value = fmtTime(t);
+    markDateManual($('#record-form'));
   },
   'rec-minus': () => {
     const f = $('#record-form');
     const t = fromInputs(f.date.value, f.time.value) - 15 * MIN;
     f.date.value = dateKey(t); f.time.value = fmtTime(t);
+    markDateManual(f);
   },
   'ride-mode': (el) => {
     const f = el.closest('form');
@@ -352,7 +363,7 @@ const handlers = {
     f.querySelectorAll('[data-action="ride-mode"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === f.mode.value)));
   },
   'ride-place': (el) => { el.closest('form').from.value = el.dataset.v; },
-  'rec-plan': (el) => { const t = Number(el.dataset.t); const f = $('#record-form'); f.date.value = dateKey(t); f.time.value = fmtTime(t); },
+  'rec-plan': (el) => { const t = Number(el.dataset.t); const f = $('#record-form'); f.date.value = dateKey(t); f.time.value = fmtTime(t); markDateManual(f); },
   'wd-shift': (el) => { const c = ctx(); ui.wd = addDays(c.wd, Number(el.dataset.dir)); render(); },
   'wd-auto': () => { ui.wd = null; render(); },
   'tl-shift': (el) => {
@@ -470,6 +481,26 @@ const handlers = {
   'install': async () => { if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; ui.canInstall = false; render(); } }
 };
 
+// 補登面板（已選班次）：你只打時間，日期由班次決定；按了「現在」、−15 分或手動改日期，就以你設的為準。
+function markDateManual(f) {
+  if (!f?.date) return;
+  f.date.dataset.manual = '1';
+  updatePreview(f);
+}
+function updatePreview(f) {
+  const box = $('#rec-preview');
+  if (!box || !f?.dataset.sStart) return;
+  const hhmm = normTime(f.time.value);
+  if (!hhmm) return;
+  const s = { start: Number(f.dataset.sStart), end: f.dataset.sEnd ? Number(f.dataset.sEnd) : null };
+  if (f.date.dataset.manual !== '1') {
+    const t = resolveStepTime(f.step.value, hhmm, s);
+    if (t != null) f.date.value = dateKey(t);
+  }
+  const t = fromInputs(f.date.value, hhmm);
+  if (t != null) box.innerHTML = previewText(t, s);
+}
+
 const RECORD_ERROR = {
   sleeping: '已經有一筆進行中的睡眠，先記「起床」',
   missing: '找不到可以更新的睡眠，請先補登入睡',
@@ -483,12 +514,12 @@ const RECORD_ERROR = {
 // 實際寫入補登，並把「這筆歸到哪個工作日」講清楚。
 function applyRecord(p) {
   // 「儲存」：存檔期間面板保持打開，才不會先關再開而閃一下。
-  ui.sheet = p.stay ? { type: 'record', wd: p.wd, step: p.step, t: p.t } : null;
+  ui.sheet = p.stay ? { type: 'record', wd: p.wd, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
   const r = act.setStepTime(p.wd, p.step, p.t, p.extra);
   if (!r.ok) {
     toast(RECORD_ERROR[r.reason] || '沒有可更新的紀錄');
     // 「儲存」模式失敗時留在面板，保留剛填的時間。
-    ui.sheet = p.stay ? { type: 'record', wd: p.wd, step: p.step, t: p.t } : null;
+    ui.sheet = p.stay ? { type: 'record', wd: p.wd, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
     render();
     return;
   }
@@ -503,7 +534,7 @@ function applyRecord(p) {
   }
   toast(`已儲存 ${fmtTime(p.t)}${note}`);
   // 「儲存」只存不關，讓同一頁可以接著補下一個步驟。
-  if (p.stay) ui.sheet = { type: 'record', wd: p.wd, step: p.step };
+  if (p.stay) ui.sheet = { type: 'record', wd: p.wd, step: p.step, sid: p.extra?.sessionId };
   render();
 }
 
@@ -513,12 +544,27 @@ const forms = {
     const t = fromInputs(f.date.value, f.time.value);
     if (t == null) return;
     const extra = {};
+    if (f.sid && f.sid.value) extra.sessionId = f.sid.value;
     if (f.endTime && f.endTime.value) extra.end = fromInputs(f.endDate.value || f.date.value, f.endTime.value);
     if (f.mode) { extra.mode = f.mode.value.trim(); extra.from = f.from.value.trim(); }
     if (f.replace && f.replace.checked) extra.replace = true;
     if (f.verified) extra.verified = f.verified.checked;
     if (f.mainSleep) extra.mainSleep = f.mainSleep.checked;
     const p = { wd: f.wd.value, step: f.step.value, t, extra, stay };
+    // 離這一班太遠（例如把 16 號的時間記進 1 號的班）：先問清楚再存。
+    if (f.dataset.sStart && !['clockIn', 'clockOut'].includes(p.step)) {
+      const s = { start: Number(f.dataset.sStart), end: f.dataset.sEnd ? Number(f.dataset.sEnd) : null };
+      if (shiftDistance(t, s) > SHIFT_FAR_MS) {
+        ui.pendingRecord = p;
+        ui.sheet = {
+          type: 'confirm', title: '離這一班太遠',
+          body: `你要存的是 ${wdOfKey(dateKey(t))} ${fmtMD(dateKey(t))} ${fmtTime(t)}，但這班是 ${fmtTime(s.start)}–${s.end != null ? fmtTime(s.end) : '進行中'}（${wdOfKey(dateKey(s.start))} ${fmtMD(dateKey(s.start))}），相差超過 12 小時。日期是不是填錯了？`,
+          confirm: '照樣儲存', action: 'record-force', tone: 'ink', cancel: 'record-cancel'
+        };
+        render();
+        return;
+      }
+    }
     // 只能補登「入睡」時先預告歸屬；起床的歸屬由該筆入睡時間決定。
     if (p.step === 'sleepStart') {
       const data = store.get();
@@ -535,6 +581,16 @@ const forms = {
       }
     }
     applyRecord(p);
+  },
+  'new-shift': (f) => {
+    const start = fromInputs(f.date.value, f.start.value);
+    if (start == null) return;
+    let end = f.end.value ? fromInputs(f.date.value, f.end.value) : null;
+    if (end != null && end <= start) end += 24 * HOUR;
+    const r = act.createShift(f.wd.value, start, end);
+    ui.sheet = { type: 'record', wd: f.wd.value, step: ui.sheet?.step || 'out', sid: r.id };
+    toast('已新增班次');
+    render();
   },
   'ref-time': (f) => {
     const t = fromInputs(f.date.value, f.time.value);
@@ -655,7 +711,12 @@ function bindTimeInputs() {
     if (e.target.classList?.contains('time-text')) fixTimeText(e.target);
   });
   document.addEventListener('input', (e) => {
-    if (e.target.classList?.contains('time-text')) e.target.setCustomValidity('');
+    if (e.target.classList?.contains('time-text')) {
+      e.target.setCustomValidity('');
+      const f = e.target.closest('#record-form[data-anchored]');
+      if (f && e.target.name === 'time') updatePreview(f);
+    }
+    if (e.target.name === 'date' && e.target.closest('#record-form[data-anchored]')) markDateManual(e.target.form);
   });
 }
 
@@ -686,6 +747,9 @@ function bind() {
     const el = e.target;
     if (el.dataset.action === 'rec-wd' && el.value) {
       ui.sheet.wd = el.value;
+      ui.sheet.sid = undefined;
+      ui.sheet.newShift = false;
+      delete ui.sheet.t;
       ui.sheet.step = defaultStep(store.get(), el.value);
       render();
     }
