@@ -623,7 +623,7 @@ textarea {
     renderLists();
     if (kind === 'c') syncCommuteForm(); else syncSleepForm();
     setMsg(kind, doVerify ? '已核對 ✓ 編號 ' + f.num : '已儲存 ✓ ' + nowHM());
-    push(e);
+    scheduleCloudPush();
     renderStatus();
   }
   function flushForms() {
@@ -955,7 +955,7 @@ textarea {
     if (form.s.editing === id) { form.s = blankS(); syncSleepForm(); setMsg('s', '已刪除'); }
     persist();
     renderLists();
-    flushDeletes();
+    scheduleCloudPush();
     renderStatus();
   }
   function sortKey(e) {
@@ -1139,7 +1139,7 @@ textarea {
         if (cur) entries[entries.indexOf(cur)] = inc; else entries.push(inc);
         n++;
       });
-      persist(); renderLists(); renderStatus(); flushDirty();
+      persist(); renderLists(); renderStatus(); scheduleCloudPush();
       msg.textContent = n ? '已匯入 ' + n + ' 筆 ✓' : '沒有需要匯入的新資料';
     } catch (e) {
       msg.textContent = '看不懂這段內容，請貼上完整的「備份資料」';
@@ -1232,7 +1232,7 @@ textarea {
 
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) flushForms();
-    else { flushDirty(); flushDeletes(); }
+    else { if (currentUser) pushCloud(false); }
   });
   window.addEventListener('pagehide', flushForms);
   window.addEventListener('online', function () {
