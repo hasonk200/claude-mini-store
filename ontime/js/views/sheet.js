@@ -145,7 +145,7 @@ function refSheet(ctx) {
       ${canAcc ? accToggle(eventApprox(data, { ref, t })) : ''}
       ${rideRef ? rideFieldsHtml(ctx.data, rideRef.mode, rideRef.from) : ''}
       ${mainSleepBox}
-      <p class="fine">只會改這一個時間${rideRef ? '和交通工具、上車地點' : ''}；其他紀錄保持不變。</p>
+      <p class="fine">${sleep ? '會改這個時間和「工作日分界」設定' : `只會改這一個時間${rideRef ? '和交通工具、上車地點' : ''}`}；其他紀錄保持不變。</p>
       <button class="btn btn-ink btn-block btn-lg" type="submit">儲存</button>
       ${canDelete ? `<button type="button" class="btn btn-danger btn-block" data-action="delete-ref">刪除此紀錄</button>` : ''}
     </form></div>
