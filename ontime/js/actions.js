@@ -5,7 +5,7 @@ import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
   currentCycle, activeSession, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
-  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys,
+  journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys, markApprox,
   sleepWorkdayChanges, activeRest
 } from './logic.js';
 
@@ -103,6 +103,8 @@ export function findWorkdayTargets(d, wd) {
 
 export function setStepTime(wd, step, t, extra = {}) {
   let result = { ok: true };
+  // extra.approx：true = 大約、false = 準確、undefined = 不改。
+  const mark = (rec, field) => { if (extra.approx !== undefined) markApprox(rec, field, extra.approx); };
   update((d) => {
     const tg = findWorkdayTargets(d, wd);
     const s = tg.session ? d.sessions.find((x) => x.id === tg.session.id) : null;
@@ -115,12 +117,14 @@ export function setStepTime(wd, step, t, extra = {}) {
       target.workdayManual = true;
       if (!s) target.end = extra.end ?? null;
       if (j && !j.sessionId) { j.sessionId = target.id; delete j.workdayDate; }
+      mark(target, 'start');
       return;
     }
     if (step === 'clockOut') {
       if (!s) { result = { ok: false, reason: 'no-session' }; return; }
       if (t <= s.start) { result = { ok: false, reason: 'before-clock-in' }; return; }
       s.end = t;
+      mark(s, 'end');
       return;
     }
     if (step === 'break') {
@@ -131,9 +135,11 @@ export function setStepTime(wd, step, t, extra = {}) {
       // 同一個開始時間 = 改這一段；這班已經下班卻還有沒結束的休息 = 補上它的結束。
       const same = s.breaks.find((b) => b.start === t);
       const forgotten = s.end != null ? s.breaks.find((b) => b.end == null) : null;
-      const b = same || forgotten;
+      let b = same || forgotten;
       if (b) { b.start = t; b.end = end; }
-      else s.breaks.push({ start: t, end });
+      else { b = { start: t, end }; s.breaks.push(b); }
+      mark(b, 'start');
+      if (end != null) mark(b, 'end'); else markApprox(b, 'end', false);
       return;
     }
     if (step === 'sleepStart' || step === 'sleepEnd') {
@@ -176,6 +182,8 @@ export function setStepTime(wd, step, t, extra = {}) {
         x.end = t;
         touched = x.id;
       }
+      const rec = d.sleeps.find((y) => y.id === touched);
+      mark(rec, step === 'sleepStart' ? 'start' : 'end');
       result = { ok: true, sleepId: touched };
       return;
     }
@@ -186,12 +194,28 @@ export function setStepTime(wd, step, t, extra = {}) {
     // 還沒有出勤時，記住這段行程屬於你揀的工作日。
     if (!j.sessionId) j.workdayDate = wd;
     j[step] = t;
+    mark(j, step);
     if (step === 'ride' || step === 'ride2') {
       if (extra.from !== undefined) j[`${step}From`] = extra.from || null;
       if (extra.mode !== undefined) j[`${step}Mode`] = extra.mode || null;
     }
   });
   return result;
+}
+
+// 只改「準確／大約」，不動時間（待確認清單、修改面板用）。t 用來找班內哪一段休息。
+export function setApprox(ref, approx, t) {
+  update((d) => {
+    const { type, id, field } = ref;
+    if (type === 'journey') markApprox(d.journeys.find((x) => x.id === id), field, approx);
+    else if (type === 'session') {
+      const s = d.sessions.find((x) => x.id === id);
+      if (field === 'break') markApprox((s?.breaks || []).find((b) => b.start === t), 'start', approx);
+      else markApprox(s, field, approx);
+    } else if (type === 'sleep') markApprox(d.sleeps.find((x) => x.id === id), field, approx);
+    else if (type === 'rest') markApprox((d.rests || []).find((x) => x.id === id), field, approx);
+    else if (type === 'meal') markApprox(d.meals.find((x) => x.id === id), 'start', approx);
+  });
 }
 
 export function clearStepTime(wd, step) {
@@ -218,6 +242,10 @@ export function setRefTime(ref, t, extra = {}) {
     } else if (ref.type === 'session') {
       const s = d.sessions.find((x) => x.id === ref.id);
       if (s && (ref.field === 'start' || ref.field === 'end')) s[ref.field] = t;
+      if (s && ref.field === 'break' && extra.origT != null) {
+        const b = (s.breaks || []).find((x) => x.start === extra.origT);
+        if (b) { const len = b.end != null ? b.end - b.start : null; b.start = t; if (len != null) b.end = t + len; }
+      }
     } else if (ref.type === 'rest') {
       const r = d.rests.find((x) => x.id === ref.id);
       if (r) r[ref.field] = t;
@@ -234,6 +262,7 @@ export function setRefTime(ref, t, extra = {}) {
       if (sh) { const len = sh.end - sh.start; sh.start = t; sh.end = t + len; }
     }
   });
+  if (extra.approx !== undefined && ref.type !== 'shift') setApprox(ref, extra.approx, t);
 }
 
 // ---------- 睡眠 ----------

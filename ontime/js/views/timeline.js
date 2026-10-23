@@ -1,8 +1,7 @@
 import { esc, icon, bubble, seg } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, weekStartKey, dayStart, dayEnd, HOUR } from '../time.js';
 import {
-  workdayEvents, workdaySpan, sessionsOfWorkday, splitWorkByDay, sessionWorkMs, calendarAllocation,
-  intervalsAround, totalOf, clip, sleepWorkday, shiftsOfWorkday, wakeSpan
+  workdayEvents, workdaySpan, sessionsOfWorkday, splitWorkByDay, sessionWorkMs, calendarAllocation, intervalsAround, totalOf, clip, sleepWorkday, shiftsOfWorkday, wakeSpan, sessionApproxCount
 } from '../logic.js';
 import { ribbon, legend, crossBadge, pageHead, dayNav } from './shared.js';
 import { refKey } from './today.js';
@@ -32,14 +31,27 @@ function workdayList(data, wd, now) {
     }
     const last = i === ev.length - 1;
     return `${divider}<li class="tl-item${last ? ' is-last' : ''} k-${e.kind}">
-      <div class="tl-time${e.plan ? ' is-plan-text' : ''}"><strong>${fmtTime(e.t)}</strong><span>${wdOf(e.t)}</span></div>
+      <div class="tl-time${e.plan ? ' is-plan-text' : ''}${e.approx ? ' is-approx' : ''}"><strong>${fmtTime(e.t)}</strong><span>${wdOf(e.t)}</span></div>
       <div class="tl-rail">${bubble(e.icon, e.kind, { plan: e.plan, iconSize: 18 })}<i></i></div>
-      <button type="button" class="tl-body" data-action="edit-ref" data-ref="${esc(refKey(e.ref))}" data-t="${e.t}" data-title="${esc(e.title)}">
-        <strong>${esc(e.title)}</strong>${e.detail ? `<span>${esc(e.detail)}</span>` : ''}${e.plan ? '<span class="chip chip-plan">計畫</span>' : ''}
+      <button type="button" class="tl-body" data-action="edit-ref" data-ref="${esc(refKey(e.ref))}" data-t="${e.t}" data-title="${esc(e.title)}" data-plan="${e.plan ? 1 : 0}">
+        <strong>${esc(e.title)}</strong>${e.detail ? `<span>${esc(e.detail)}</span>` : ''}${e.plan ? '<span class="chip chip-plan">計畫</span>' : ''}${e.approx ? '<span class="chip chip-approx">大約</span>' : ''}
       </button>
     </li>`;
   }).join('');
-  return `<div class="card"><div class="card-head"><h2 class="card-title">${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</h2><span class="muted small">點一項可以修改時間</span></div><ol class="tl">${items}</ol></div>`;
+  return `${pendingCard(ev)}<div class="card"><div class="card-head"><h2 class="card-title">${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</h2><span class="muted small">點一項可以修改時間</span></div><ol class="tl">${items}</ol></div>`;
+}
+
+// 待確認：這個工作日所有「大約」的時間。按「準確」直接確認；點時間打開面板修改。
+function pendingCard(ev) {
+  const list = ev.filter((e) => e.approx);
+  if (!list.length) return '';
+  const rows = list.map((e) => `<li>
+      <button type="button" class="pending-main" data-action="edit-ref" data-ref="${esc(refKey(e.ref))}" data-t="${e.t}" data-title="${esc(e.title)}" data-plan="0">
+        <strong>約 ${fmtTime(e.t)}</strong><span>${wdOf(e.t)} · ${esc(e.title)}</span></button>
+      <button type="button" class="btn btn-soft btn-sm" data-action="acc-ok" data-ref="${esc(refKey(e.ref))}" data-t="${e.t}">準確</button>
+    </li>`).join('');
+  return `<section class="card pending-card" aria-label="待確認的時間"><div class="card-head"><h2 class="card-title">待確認 · ${list.length} 個大約時間</h2></div>
+    <p class="fine">記得清楚的按「準確」；要改時間就點那一行。</p><ul class="pending-list">${rows}</ul></section>`;
 }
 
 function workdaySummary(data, wd, now) {
@@ -47,7 +59,8 @@ function workdaySummary(data, wd, now) {
   const work = sessions.reduce((n, s) => n + sessionWorkMs(s, now), 0);
   const split = {};
   for (const s of sessions) for (const [k, v] of Object.entries(splitWorkByDay(s, now))) split[k] = (split[k] || 0) + v;
-  const splitText = Object.entries(split).map(([k, v]) => `${wdShort(k)} ${fmtDur(v)}`).join(' · ') || '沒有出勤';
+  const approxN = sessions.reduce((n, s) => n + sessionApproxCount(s), 0);
+  const splitText = (Object.entries(split).map(([k, v]) => `${wdShort(k)} ${fmtDur(v)}`).join(' · ') || '沒有出勤') + (approxN ? ` · 含 ${approxN} 個大約時間` : '');
   const [a, b] = workdaySpan(data, wd, now);
   const items = intervalsAround(data, a, b, now).filter((x) => !x.plan);
   const commute = totalOf(items.filter((x) => x.kind === 'commute').map((x) => [x.a, x.b]));

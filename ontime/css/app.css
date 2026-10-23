@@ -816,3 +816,23 @@ details.more .form { padding: 0 14px 14px; }
 
 .ride-fields { display: flex; flex-direction: column; gap: 8px; }
 .ride-fields .btn[aria-pressed="true"] { background: var(--solid); color: var(--on-solid); }
+
+/* 時間準確度：準確／大約（琥珀色＝大約） */
+:root { --approx: #9A5B00; --approx-tint: #FDF0D5; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --approx: #F5B94A; --approx-tint: #3A2A0E; } }
+:root[data-theme="dark"] { --approx: #F5B94A; --approx-tint: #3A2A0E; }
+.acc-toggle { display: inline-grid; grid-auto-flow: column; gap: 2px; padding: 4px; background: var(--seg-bg); border-radius: 14px; align-self: flex-start; }
+.acc-toggle label { position: relative; }
+.acc-toggle input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.acc-toggle span { display: block; min-height: 34px; line-height: 34px; padding: 0 16px; border-radius: 10px; font-size: 14px; font-weight: 800; color: var(--muted); }
+.acc-toggle input:checked + span { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.acc-toggle input[value="approx"]:checked + span { color: var(--approx); }
+.acc-toggle input:focus-visible + span { outline: 2px solid currentColor; outline-offset: 2px; }
+.is-approx em { font-style: normal; font-size: .72em; font-weight: 800; margin-right: 3px; color: var(--approx); }
+.tl-time.is-approx strong, td.is-approx { color: var(--approx); }
+.chip-approx { background: var(--approx-tint); color: var(--approx); }
+.pending-card { gap: 8px; }
+.pending-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pending-list li { display: flex; align-items: center; gap: 10px; }
+.pending-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: var(--surface-2); border: 0; border-radius: 12px; padding: 8px 12px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.pending-main span { font-size: 12px; color: var(--muted); }
