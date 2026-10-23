@@ -81,10 +81,7 @@ export function seg(key, name, options, value) {
     `<button type="button" data-action="seg" data-seg="${esc(key)}" data-value="${esc(v)}" aria-pressed="${v === value}">${esc(label)}</button>`).join('')}</div>`;
 }
 
-// 「準確／大約」切換。預設準確。
-export function accToggle(approx) {
-  return `<div class="acc-toggle" role="radiogroup" aria-label="這個時間有多準">
-    <label><input type="radio" name="acc" value="exact"${approx ? '' : ' checked'}><span>準確</span></label>
-    <label><input type="radio" name="acc" value="approx"${approx ? ' checked' : ''}><span>大約</span></label>
-  </div>`;
+// 「已驗證」打勾：你手動確認這個時間是對的。預設沒勾。
+export function verifyToggle(on) {
+  return `<label class="verify-toggle"><input type="checkbox" name="verified"${on ? ' checked' : ''}><span class="verify-box" aria-hidden="true">${icon('check', 14, 3.2)}</span><span class="verify-text"><strong>已驗證</strong><small>我確認這個時間是對的</small></span></label>`;
 }

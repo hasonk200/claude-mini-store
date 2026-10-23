@@ -186,7 +186,7 @@ function eventTable(data, wd, now, ui) {
     const on = e === sel;
     const src = e.plan ? '計畫' : '紀錄';
     return `<tr class="${on ? 'is-selected' : ''}">
-      <td class="t-time${e.plan ? ' is-plan-text' : ''}${e.approx ? ' is-approx' : ''}">${e.approx ? '<em>約</em>' : ''}${fmtTime(e.t)}</td>
+      <td class="t-time${e.plan ? ' is-plan-text' : ''}">${fmtTime(e.t)}${e.verified ? '<i class="vf-dot" title="已驗證">✓</i>' : ''}</td>
       <td class="muted">${wdOf(e.t)} ${fmtMD(dateKey(e.t))} ${crossBadge(e.t, wd)}</td>
       <td><button type="button" class="row-btn" data-action="select-ref" data-ref="${esc(refKey(e.ref))}" aria-pressed="${on}">${bubble(e.icon, e.kind, { plan: e.plan, size: 'sm', iconSize: 15 })}${esc(e.title)}</button></td>
       <td class="t-right"><span class="chip ${e.plan ? 'chip-plan' : 'chip-real'}">${src}</span></td>

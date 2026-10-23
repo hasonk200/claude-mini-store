@@ -340,8 +340,6 @@ const handlers = {
   'rec-step': (el) => { ui.sheet.step = el.dataset.step; delete ui.sheet.t; sheetScrollToForm = true; render(); },
   'rec-now': () => {
     const t = nowFn(); $('#record-form [name=date]').value = dateKey(t); $('#record-form [name=time]').value = fmtTime(t);
-    // 按「現在」= 當下記的，一定準確。
-    const ex = $('#record-form [name=acc][value=exact]'); if (ex) ex.checked = true;
   },
   'rec-minus': () => {
     const f = $('#record-form');
@@ -372,8 +370,8 @@ const handlers = {
   },
   'select-ref': (el) => { ui.selRef = el.dataset.ref; render(); },
   'edit-ref': (el) => { ui.sheet = { type: 'ref', ref: parseRef(el.dataset.ref), t: Number(el.dataset.t), title: el.dataset.title, plan: el.dataset.plan === '1' }; render(); },
-  // 待確認清單：直接標成準確，不用打開面板。
-  'acc-ok': (el) => { act.setApprox(parseRef(el.dataset.ref), false, Number(el.dataset.t)); toastUndo('已標成準確'); },
+  // 時間線上的小勾勾：直接打勾／取消「已驗證」，不用打開面板。
+  'toggle-verified': (el) => { act.setVerified(parseRef(el.dataset.ref), el.dataset.on !== '1', Number(el.dataset.t)); },
   'week-shift': (el) => { ui.weekOffset += Number(el.dataset.dir); render(); },
   'month-shift': (el) => {
     const c = ctx();
@@ -518,7 +516,7 @@ const forms = {
     if (f.endTime && f.endTime.value) extra.end = fromInputs(f.endDate.value || f.date.value, f.endTime.value);
     if (f.mode) { extra.mode = f.mode.value.trim(); extra.from = f.from.value.trim(); }
     if (f.replace && f.replace.checked) extra.replace = true;
-    if (f.acc) extra.approx = f.acc.value === 'approx';
+    if (f.verified) extra.verified = f.verified.checked;
     if (f.mainSleep) extra.mainSleep = f.mainSleep.checked;
     const p = { wd: f.wd.value, step: f.step.value, t, extra, stay };
     // 只能補登「入睡」時先預告歸屬；起床的歸屬由該筆入睡時間決定。
@@ -541,7 +539,7 @@ const forms = {
   'ref-time': (f) => {
     const t = fromInputs(f.date.value, f.time.value);
     const extra = f.mode ? { mode: f.mode.value.trim(), from: f.from.value.trim() } : {};
-    if (f.acc) extra.approx = f.acc.value === 'approx';
+    if (f.verified) extra.verified = f.verified.checked;
     if (f.origT) extra.origT = Number(f.origT.value);
     act.setRefTime({ type: f.type.value, id: f.id.value, field: f.field.value || undefined }, t, extra);
     ui.selRef = `${f.type.value}:${f.id.value}:${f.field.value}`;
@@ -553,9 +551,8 @@ const forms = {
     let end = f.end.value ? fromInputs(f.date.value, f.end.value) : null;
     if (end != null && end < start) end += 24 * HOUR;
     const existing = f.id.value ? store.get().meals.find((m) => m.id === f.id.value) : null;
-    const approxMeal = f.acc ? f.acc.value === 'approx' : !!existing?.approx?.start;
     act.saveMeal({
-      approx: approxMeal ? { start: true } : undefined,
+      verified: (f.verified ? f.verified.checked : !!existing?.verified?.start) ? { start: true } : undefined,
       ...(f.id.value ? { id: f.id.value } : {}),
       start, end, confirmed: f.confirmed.value === '1',
       name: f.name.value.trim(), place: f.place.value.trim(), note: f.note.value.trim(),
