@@ -1,7 +1,7 @@
 import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
-import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD } from './time.js';
+import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD, normTime } from './time.js';
 import { currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { timelineView } from './views/timeline.js';
@@ -93,6 +93,7 @@ function swapSheet(html, type) {
   const top = old?.querySelector('.sheet-body')?.scrollTop ?? 0;
   const enter = !wasOpen || type !== lastSheetType;
   host.innerHTML = html;
+  enhanceTimeInputs(host);
   lastSheetType = type;
   if (enter) host.querySelectorAll('.sheet, .sheet-backdrop').forEach((el) => el.classList.add('is-enter'));
   else { const body = host.querySelector('.sheet-body'); if (body) body.scrollTop = top; }
@@ -137,12 +138,15 @@ function render() {
     lastView = html;
     if (focusedName) view.querySelector(`[name="${CSS.escape(focusedName)}"]`)?.focus();
     fixLabels();
+    enhanceTimeInputs(view);
   }
   document.querySelectorAll('[data-route]').forEach((a) => {
     if (a.dataset.route === ui.route) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   const sheetHTML = sheetView(c);
   if (sheetHTML !== lastSheet) { swapSheet(sheetHTML, ui.sheet?.type || null); lastSheet = sheetHTML; }
+  // 點了已經選中的步驟：內容沒變，也要捲到輸入位置。
+  else if (sheetScrollToForm) { sheetScrollToForm = false; scrollSheetToForm(); }
   const st = store.status();
   const sy = syncState();
   const SYNC_TEXT = { cloud: '已同步到雲端', loading: '正在同步…', signin: '未登入雲端', error: '同步失敗', offline: '離線中', full: '雲端空間不足' };
@@ -586,7 +590,79 @@ const forms = {
 
 let deferredPrompt = null;
 
+// ---------- 時間輸入：點數字直接打字；點旁邊的時鐘才開手機的時間選擇器 ----------
+function fixTimeText(inp) {
+  const v = normTime(inp.value);
+  if (v === null) { inp.setCustomValidity('請輸入時間，例如 1830 或 18:30'); return false; }
+  inp.setCustomValidity('');
+  inp.value = v;
+  return true;
+}
+
+// 畫面上每一個 <input type="time"> 換成「文字框＋時鐘按鈕」。
+// 時鐘按鈕裡面疊了一個透明的原生時間輸入，所以點它會開 iOS 的滾輪、Android 的時鐘。
+function enhanceTimeInputs(root) {
+  root.querySelectorAll('input[type="time"]:not(.time-native)').forEach((inp) => {
+    const wrap = document.createElement('span');
+    wrap.className = 'time-input';
+    inp.replaceWith(wrap);
+    inp.type = 'text';
+    inp.inputMode = 'numeric';
+    inp.autocomplete = 'off';
+    inp.maxLength = 5;
+    inp.classList.add('time-text');
+    if (!inp.placeholder) inp.placeholder = '例如 1830';
+    const pick = document.createElement('span');
+    pick.className = 'time-pick';
+    pick.innerHTML = icon('clock', 20, 2);
+    const nat = document.createElement('input');
+    nat.type = 'time';
+    nat.className = 'time-native';
+    nat.tabIndex = -1;
+    nat.setAttribute('aria-label', '用時鐘選時間');
+    pick.appendChild(nat);
+    wrap.append(inp, pick);
+  });
+}
+
+function bindTimeInputs() {
+  // 打開選擇器前，先帶入文字框現在的時間。
+  const seed = (e) => {
+    const nat = e.target.closest?.('.time-native');
+    if (!nat) return;
+    const txt = nat.closest('.time-input')?.querySelector('.time-text');
+    const v = txt ? normTime(txt.value) : '';
+    if (v) nat.value = v;
+  };
+  document.addEventListener('pointerdown', seed, true);
+  document.addEventListener('focusin', seed, true);
+  // 電腦瀏覽器點一下不會自動打開，補叫一次。
+  document.addEventListener('click', (e) => {
+    const nat = e.target.closest?.('.time-native');
+    if (nat && nat.showPicker) { try { nat.showPicker(); } catch {} }
+  }, true);
+  const sync = (e) => {
+    const nat = e.target.closest?.('.time-native');
+    if (!nat || !nat.value) return;
+    const txt = nat.closest('.time-input')?.querySelector('.time-text');
+    if (!txt) return;
+    txt.value = nat.value;
+    txt.setCustomValidity('');
+    txt.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  document.addEventListener('input', sync, true);
+  document.addEventListener('change', sync, true);
+  // 打完字離開時就整理格式（1830 → 18:30）。
+  document.addEventListener('focusout', (e) => {
+    if (e.target.classList?.contains('time-text')) fixTimeText(e.target);
+  });
+  document.addEventListener('input', (e) => {
+    if (e.target.classList?.contains('time-text')) e.target.setCustomValidity('');
+  });
+}
+
 function bind() {
+  bindTimeInputs();
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-action]');
     if (!el || el.tagName === 'INPUT') return;
@@ -601,6 +677,10 @@ function bind() {
     const f = e.target.closest('form[data-form]');
     if (!f) return;
     e.preventDefault();
+    // 自己打的時間（例如 1830）先整理成 18:30；看不懂的就提示，不送出。
+    for (const inp of f.querySelectorAll('input.time-text')) {
+      if (!fixTimeText(inp)) { inp.reportValidity(); return; }
+    }
     dirty = false;
     forms[f.dataset.form]?.(f, e);
   });
