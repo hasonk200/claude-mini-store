@@ -80,3 +80,11 @@ export function seg(key, name, options, value) {
   return `<div class="seg" role="group" aria-label="${esc(name)}">${options.map(([v, label]) =>
     `<button type="button" data-action="seg" data-seg="${esc(key)}" data-value="${esc(v)}" aria-pressed="${v === value}">${esc(label)}</button>`).join('')}</div>`;
 }
+
+// 「準確／大約」切換。預設準確。
+export function accToggle(approx) {
+  return `<div class="acc-toggle" role="radiogroup" aria-label="這個時間有多準">
+    <label><input type="radio" name="acc" value="exact"${approx ? '' : ' checked'}><span>準確</span></label>
+    <label><input type="radio" name="acc" value="approx"${approx ? ' checked' : ''}><span>大約</span></label>
+  </div>`;
+}

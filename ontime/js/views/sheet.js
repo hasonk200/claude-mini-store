@@ -1,6 +1,6 @@
-import { esc, icon, bubble, STEP_ICON, STEP_KIND } from '../ui.js';
+import { esc, icon, bubble, STEP_ICON, STEP_KIND, accToggle } from '../ui.js';
 import { dateKey, fmtTime, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN } from '../time.js';
-import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces } from '../logic.js';
+import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isApprox, eventApprox } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
 
 const GROUPS = [
@@ -53,6 +53,18 @@ export function rideFieldsHtml(data, mode, from) {
     </div>`;
 }
 
+// 補登面板上，目前這個步驟已存的時間是不是「大約」。
+function stepApprox(tg, step, t) {
+  const s = tg.session;
+  if (['out', 'ride', 'arrive', 'leave', 'ride2', 'home'].includes(step)) return isApprox(tg.journey, step);
+  if (step === 'clockIn') return isApprox(s, 'start');
+  if (step === 'clockOut') return isApprox(s, 'end');
+  if (step === 'break') return isApprox((s?.breaks || []).find((b) => b.start === t), 'start');
+  if (step === 'sleepStart') return isApprox(tg.sleep, 'start');
+  if (step === 'sleepEnd') return isApprox(tg.sleep, 'end');
+  return false;
+}
+
 function recordSheet(ctx) {
   const { data, now, ui } = ctx;
   const sh = ui.sheet;
@@ -86,6 +98,7 @@ function recordSheet(ctx) {
       <div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
       <label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
       ${isBreak ? `<div class="field-pair"><label class="field"><span>結束日期</span><input type="date" name="endDate" value="${toDateInput(breakEnd)}"></label><label class="field"><span>結束時間（可空白）</span><input type="time" name="endTime" value="${toTimeInput(breakEnd)}"></label></div>` : ''}
+      ${accToggle(stepApprox(tg, step, t))}
       ${rideFields}
       ${replaceable ? `<label class="fine"><input type="checkbox" name="replace"> 取代這天最後一筆的入睡時間（不勾就新增一筆）</label>` : ''}
       ${dateKey(t) !== wd ? `<div class="cross-note"><span class="badge-cross">隔日</span>仍屬${wdOfKey(wd)}工作日，實際發生在${wdOfKey(dateKey(t))}</div>` : ''}
@@ -115,14 +128,17 @@ function refSheet(ctx) {
   const jr = isRideRef ? data.journeys.find((x) => x.id === ref.id) : null;
   const rideRef = isRideRef ? { mode: jr?.[`${ref.field}Mode`], from: jr?.[`${ref.field}From`] } : null;
   const canDelete = ['journey', 'session', 'sleep', 'meal', 'shift', 'rest'].includes(ref.type);
+  const canAcc = ref.type !== 'shift' && !ui.sheet.plan;
+  const origT = `<input type="hidden" name="origT" value="${t}">`;
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>
   <section class="sheet sheet-small" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2 id="sheet-title">修改「${esc(title)}」</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button></div>
     <div class="sheet-body"><form class="form" data-form="ref-time">
-      <input type="hidden" name="type" value="${esc(ref.type)}"><input type="hidden" name="id" value="${esc(ref.id)}"><input type="hidden" name="field" value="${esc(ref.field || '')}">
+      <input type="hidden" name="type" value="${esc(ref.type)}"><input type="hidden" name="id" value="${esc(ref.id)}"><input type="hidden" name="field" value="${esc(ref.field || '')}">${origT}
       <div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
       <label class="field field-strong"><span>時間</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
+      ${canAcc ? accToggle(eventApprox(data, { ref, t })) : ''}
       ${rideRef ? rideFieldsHtml(ctx.data, rideRef.mode, rideRef.from) : ''}
       <p class="fine">只會改這一個時間${rideRef ? '和交通工具、上車地點' : ''}；其他紀錄保持不變。</p>
       <button class="btn btn-ink btn-block btn-lg" type="submit">儲存</button>

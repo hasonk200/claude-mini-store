@@ -28,6 +28,41 @@ export function clip(intervals, a, b) {
 
 export const totalOf = (intervals) => mergeIntervals(intervals).reduce((n, [s, e]) => n + (e - s), 0);
 
+// ---------- 時間準確度 ----------
+// 每個時間點可以標成「大約」：rec.approx = { start: true, ... }。沒有標記 = 準確。
+export const isApprox = (rec, field) => !!(rec && rec.approx && rec.approx[field]);
+export function markApprox(rec, field, approx) {
+  if (!rec || !field) return;
+  if (approx) { rec.approx = { ...(rec.approx || {}), [field]: true }; return; }
+  if (!rec.approx) return;
+  const a = { ...rec.approx };
+  delete a[field];
+  if (Object.keys(a).length) rec.approx = a; else delete rec.approx;
+}
+
+// 時間線上的一個事件，對應的時間是不是「大約」。計畫不算。
+export function eventApprox(data, e) {
+  if (e.plan || !e.ref) return false;
+  const { type, id, field } = e.ref;
+  if (type === 'journey') return isApprox(data.journeys.find((x) => x.id === id), field);
+  if (type === 'session') {
+    const s = data.sessions.find((x) => x.id === id);
+    if (field === 'break') return isApprox((s?.breaks || []).find((b) => b.start === e.t), 'start');
+    return isApprox(s, field);
+  }
+  if (type === 'sleep') return isApprox(data.sleeps.find((x) => x.id === id), field);
+  if (type === 'rest') return isApprox((data.rests || []).find((x) => x.id === id), field);
+  if (type === 'meal') return isApprox(data.meals.find((x) => x.id === id), 'start');
+  return false;
+}
+
+// 一班出勤裡有幾個大約時間（上班、下班、休息開始和結束）。
+export function sessionApproxCount(s) {
+  let n = (isApprox(s, 'start') ? 1 : 0) + (isApprox(s, 'end') ? 1 : 0);
+  for (const b of s.breaks || []) n += (isApprox(b, 'start') ? 1 : 0) + (isApprox(b, 'end') ? 1 : 0);
+  return n;
+}
+
 // ---------- 出勤 ----------
 // ---------- 工作日：由主睡眠起床開始，到下一次主睡眠起床為止 ----------
 export const MAIN_SLEEP_MS = 4 * HOUR;
@@ -459,6 +494,7 @@ export function workdayEvents(data, wd, now) {
       detail: m.end ? `${fmtClock(m.start)}–${fmtClock(m.end)}` : '', plan: !m.confirmed, ref: { type: 'meal', id: m.id }
     });
   }
+  for (const e of ev) e.approx = eventApprox(data, e);
   return ev.sort((a, b) => a.t - b.t);
 }
 
