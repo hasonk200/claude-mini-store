@@ -1,0 +1,1263 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f3f6f5">
+<meta name="description" content="Commute Log (Claude) temporary emergency version — commute and sleep log with local-first Firebase sync.">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<title>Commute Log (Claude) · Temp</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one narrow column. Three tabs (通勤 / 睡眠 / 備份). Each of the first two is a form on top, history below. */
+:root {
+  --bg: #f3f6f5;
+  --surface: #ffffff;
+  --fg: #16201e;
+  --muted: #5a6a66;
+  --line: #d6dfdc;
+  --accent: #0f766e;
+  --accent-fg: #ffffff;
+  --accent-soft: #d9f0ec;
+  --work: #a8480a;
+  --work-soft: #fde6d1;
+  --danger: #b42318;
+  --ok: #157347;
+  --warn: #9a5b00;
+  --font: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1514;
+    --surface: #18211f;
+    --fg: #e6eeeb;
+    --muted: #9aaca7;
+    --line: #2b3835;
+    --accent: #4fd1c0;
+    --accent-fg: #06201c;
+    --accent-soft: #17382f;
+    --work: #f2a96b;
+    --work-soft: #3a2a18;
+    --danger: #ff8f85;
+    --ok: #6ee7a8;
+    --warn: #f5c26b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1514;
+  --surface: #18211f;
+  --fg: #e6eeeb;
+  --muted: #9aaca7;
+  --line: #2b3835;
+  --accent: #4fd1c0;
+  --accent-fg: #06201c;
+  --accent-soft: #17382f;
+  --work: #f2a96b;
+  --work-soft: #3a2a18;
+  --danger: #ff8f85;
+  --ok: #6ee7a8;
+  --warn: #f5c26b;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  padding-block: 16px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; }
+h1 { font-size: 20px; margin: 0; letter-spacing: .02em; }
+h2 { font-size: 15px; margin: 0; color: var(--muted); font-weight: 600; letter-spacing: .04em; }
+button, input, textarea { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.status { font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.status[data-s="on"] .dot { background: var(--ok); }
+.status[data-s="pending"] .dot { background: var(--warn); }
+.status[data-s="off"] .dot { background: var(--danger); }
+
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--line); padding: 4px; border-radius: 12px; }
+.tab { border: 0; background: transparent; min-height: 44px; border-radius: 9px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 12px; }
+.field { display: grid; gap: 4px; }
+.field > label, .lab .name { font-weight: 600; }
+input[type="date"], input[type="time"] {
+  min-height: 48px; width: 100%; min-width: 0;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: 6px 10px; font-size: 20px; font-variant-numeric: tabular-nums;
+}
+.rows { display: grid; gap: 8px; }
+.row { display: grid; grid-template-columns: 4.6em minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.lab { display: grid; line-height: 1.25; }
+.lab .hint { font-size: 12px; color: var(--muted); min-height: 1.25em; }
+.btn {
+  min-height: 48px; padding: 0 16px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); font-weight: 600;
+}
+.btn.small { min-height: 48px; padding: 0 12px; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.danger { color: var(--danger); border-color: var(--danger); }
+.btn.icon { width: 44px; padding: 0; color: var(--muted); font-size: 20px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.msg { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+.editing { font-size: 13px; background: var(--accent-soft); border-radius: 8px; padding: 6px 10px; }
+.sleepsum { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; min-height: 1.5em; }
+
+.list { display: grid; gap: 10px; }
+.empty { color: var(--muted); font-size: 14px; padding: 8px 2px; }
+.ch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ch strong { font-size: 17px; }
+.tag { font-size: 12px; color: var(--warn); border: 1px solid var(--warn); border-radius: 999px; padding: 0 8px; }
+.facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; color: var(--muted); }
+.facts b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 6px; }
+.cell { background: var(--accent-soft); border-radius: 10px; padding: 6px 4px; text-align: center; display: grid; line-height: 1.25; min-width: 0; }
+.cell.work { background: var(--work-soft); }
+.cell .cl { font-size: 12px; color: var(--muted); }
+.cell b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.cell .cd { font-size: 11px; color: var(--muted); min-height: 1.2em; }
+.cardactions { display: flex; gap: 8px; }
+.cardactions .btn { min-height: 44px; flex: 0 0 auto; }
+
+textarea {
+  width: 100%; min-height: 150px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px; font-size: 13px; font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.hintp { font-size: 13px; color: var(--muted); margin: 0; }
+
+.verify { border: 1px dashed var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; }
+.verify .vdate { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.verify input[type="text"] {
+  min-height: 48px; width: 100%; min-width: 0; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 6px 10px; font-size: 20px; font-variant-numeric: tabular-nums;
+}
+.chk { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; cursor: pointer; }
+.chk input { width: 24px; height: 24px; margin: 0; flex: none; accent-color: var(--accent); }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; border-radius: 999px; padding: 2px 10px; border: 1px solid var(--warn); color: var(--warn); }
+.badge.ok { border-color: var(--ok); color: var(--ok); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.sub { font-size: 13px; color: var(--muted); }
+
+.layout { max-width: 1060px; margin: 0 auto; display: grid; gap: 14px; }
+.layout > .wrap { margin: 0; width: 100%; min-width: 0; }
+.cal { min-width: 0; }
+@media (min-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 560px) minmax(0, 1fr); align-items: start; gap: 24px; }
+  .cal { position: sticky; top: 16px; }
+}
+.calhead { display: flex; align-items: center; gap: 8px; }
+.calhead strong { flex: 1; text-align: center; font-size: 20px; }
+.calgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.dow { text-align: center; font-size: 13px; color: var(--muted); padding: 4px 0; }
+.day {
+  min-height: 62px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
+  display: grid; align-content: space-between; justify-items: center; padding: 6px 2px; cursor: pointer;
+}
+.day.blank { border: 0; background: transparent; cursor: default; }
+.day .dn { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.day.today { border-color: var(--accent); }
+.day.sel { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.dots { display: flex; gap: 3px; min-height: 8px; }
+.d { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.d.w { background: var(--work); }
+.d.a { background: var(--accent); }
+.d.s { background: var(--muted); }
+.day.sel .d { box-shadow: 0 0 0 1.5px var(--accent-fg); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.sync-auth{display:grid;gap:8px}
+.sync-user{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.temp-note{font-size:12px;color:var(--warn);margin-top:2px}
+</style>
+</head>
+<body>
+
+<div class="layout">
+<div class="wrap">
+  <header>
+    <h1>通勤睡眠記錄 <span style="font-size:12px;color:var(--warn);font-weight:600">TEMP</span></h1>
+    <div class="temp-note">Emergency temporary version · PWA + Firebase sync</div>
+    <div class="status" id="status" data-s="init" role="status"><span class="dot"></span><span id="statusText">載入中…</span></div>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-c" aria-selected="true" aria-controls="panel-c">通勤</button>
+    <button class="tab" role="tab" id="tab-s" aria-selected="false" aria-controls="panel-s">睡眠</button>
+    <button class="tab" role="tab" id="tab-b" aria-selected="false" aria-controls="panel-b">備份</button>
+  </div>
+
+  <section id="panel-c" role="tabpanel" aria-labelledby="tab-c" class="wrap" style="gap:14px">
+    <div class="card">
+      <div id="c-editing" class="editing" hidden></div>
+      <div class="field">
+        <label for="c-date">實際日期（出門那天）</label>
+        <input type="date" id="c-date">
+      </div>
+      <div class="field">
+        <label for="c-wd">工作日（這班算哪一天）</label>
+        <input type="date" id="c-wd">
+      </div>
+      <div class="rows" id="c-rows"></div>
+      <div class="verify">
+        <div><span class="badge" id="c-vbadge">未核對</span></div>
+        <div class="vdate" id="c-vdate"></div>
+        <div class="field">
+          <label for="c-num">追蹤 App 的編號</label>
+          <input type="text" id="c-num" inputmode="numeric" autocomplete="off" placeholder="只填數字">
+        </div>
+        <label class="chk"><input type="checkbox" id="c-chk"><span>我對照過追蹤 App，上面的日期和時間都一樣</span></label>
+        <button class="btn primary" id="c-verify" type="button" disabled>核對</button>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="c-save" type="button">儲存</button>
+        <button class="btn" id="c-new" type="button">新增一趟</button>
+      </div>
+      <div class="msg" id="c-msg" aria-live="polite">輸入後會自動儲存。過了午夜的時間會自動算成隔天。</div>
+    </div>
+    <h2>通勤記錄</h2>
+    <div class="list" id="c-list"></div>
+  </section>
+
+  <section id="panel-s" role="tabpanel" aria-labelledby="tab-s" class="wrap" style="gap:14px" hidden>
+    <div class="card">
+      <div id="s-editing" class="editing" hidden></div>
+      <div class="field">
+        <label for="s-date">實際日期（入睡那天）</label>
+        <input type="date" id="s-date">
+      </div>
+      <div class="rows">
+        <div class="row">
+          <div class="lab"><span class="name">入睡</span><span class="hint" id="s-hint1"></span></div>
+          <input type="time" id="s-sleep" step="60">
+          <button class="btn small" type="button" id="s-now1">現在</button>
+          <button class="btn icon" type="button" id="s-clr1" aria-label="清除入睡時間">×</button>
+        </div>
+        <div class="row">
+          <div class="lab"><span class="name">起床</span><span class="hint" id="s-hint2"></span></div>
+          <input type="time" id="s-wake" step="60">
+          <button class="btn small" type="button" id="s-now2">現在</button>
+          <button class="btn icon" type="button" id="s-clr2" aria-label="清除起床時間">×</button>
+        </div>
+      </div>
+      <div class="sleepsum" id="s-sum"></div>
+      <div class="verify">
+        <div><span class="badge" id="s-vbadge">未核對</span></div>
+        <div class="vdate" id="s-vdate"></div>
+        <div class="field">
+          <label for="s-num">追蹤 App 的編號</label>
+          <input type="text" id="s-num" inputmode="numeric" autocomplete="off" placeholder="只填數字">
+        </div>
+        <label class="chk"><input type="checkbox" id="s-chk"><span>我對照過追蹤 App，上面的日期和時間都一樣</span></label>
+        <button class="btn primary" id="s-verify" type="button" disabled>核對</button>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="s-save" type="button">儲存</button>
+        <button class="btn" id="s-new" type="button">新增一筆</button>
+      </div>
+      <div class="msg" id="s-msg" aria-live="polite">輸入後會自動儲存。起床時間比入睡早，就算成隔天。</div>
+    </div>
+    <h2>睡眠記錄</h2>
+    <div class="list" id="s-list"></div>
+  </section>
+
+  <section id="panel-b" role="tabpanel" aria-labelledby="tab-b" class="wrap" style="gap:14px" hidden>
+    <div class="card">
+      <h2>備份</h2>
+      <p class="hintp">資料會存在雲端，同時也存在這部裝置。想多一份保險，可以複製下面的文字貼到備忘錄。</p>
+      <div class="actions">
+        <button class="btn" type="button" id="b-json">備份資料（還原用）</button>
+        <button class="btn" type="button" id="b-text">文字清單（好讀）</button>
+      </div>
+      <textarea id="b-out" readonly hidden aria-label="備份內容"></textarea>
+      <button class="btn primary" type="button" id="b-copy" hidden>複製全部</button>
+      <div class="msg" id="b-msg" aria-live="polite"></div>
+    </div>
+    <div class="card">
+      <h2>還原</h2>
+      <p class="hintp">把之前複製的「備份資料」貼在這裡。已有的記錄不會被蓋掉，除非備份比較新。</p>
+      <textarea id="b-in" aria-label="貼上備份資料" placeholder="貼上備份資料"></textarea>
+      <button class="btn" type="button" id="b-import">匯入</button>
+      <div class="msg" id="b-imsg" aria-live="polite"></div>
+    </div>
+    <div class="card">
+      <h2>Firebase 同步</h2>
+      <div class="sync-auth">
+        <div class="sync-user" id="b-user">未登入 Google</div>
+        <div class="actions">
+          <button class="btn primary" type="button" id="b-signin">Google 登入</button>
+          <button class="btn" type="button" id="b-signout" hidden>登出</button>
+        </div>
+      </div>
+      <button class="btn" type="button" id="b-sync">立即同步</button>
+      <div class="msg" id="b-smsg" aria-live="polite"></div>
+    </div>
+  </section>
+</div>
+
+<aside class="card cal" id="cal" aria-label="日曆">
+  <div class="calhead">
+    <button class="btn icon" type="button" id="cal-prev" aria-label="上個月">‹</button>
+    <strong id="cal-title"></strong>
+    <button class="btn icon" type="button" id="cal-next" aria-label="下個月">›</button>
+    <button class="btn small" type="button" id="cal-today">今天</button>
+  </div>
+  <div class="calgrid" id="cal-grid"></div>
+  <div class="legend">
+    <span><i class="d w"></i>工作日</span>
+    <span><i class="d a"></i>實際有時間的日子</span>
+    <span><i class="d s"></i>睡眠</span>
+  </div>
+  <h2 id="cal-daytitle"></h2>
+  <div class="actions">
+    <button class="btn" type="button" id="cal-addc">用這天新增通勤</button>
+    <button class="btn" type="button" id="cal-adds">用這天新增睡眠</button>
+  </div>
+  <div class="list" id="cal-daylist"></div>
+</aside>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var LABELS = ['出門', '上車', '抵達', '上班', '下班', '上車', '到家'];
+  var WD = '日一二三四五六';
+  var KEY = 'tl_data_v1';
+
+  var entries = [];
+  var pendingDel = new Set();
+  var deletedAt = {};
+  var firebaseApp = null;
+  var fb = null;
+  var auth = null;
+  var fbDb = null;
+  var currentUser = null;
+  var cloudRef = null;
+  var cloudUnsub = null;
+  var cloudPushTimer = null;
+  var pushingCloud = false;
+  var pushAgain = false;
+  var dbState = 'signin';
+  var resumed = false;
+  var timers = { c: null, s: null };
+  var formDirty = { c: false, s: false };
+
+  /* ---------- helpers ---------- */
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function fmtDate(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function today() { return fmtDate(new Date()); }
+  function nowHM() { var d = new Date(); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function isDate(s) { return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+  function isTime(s) { return typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s); }
+  function parseDate(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+  function toMin(t) { return +t.slice(0, 2) * 60 + +t.slice(3); }
+  function wd(d) { return '週' + WD[d.getDay()]; }
+  function md(d) { return (d.getMonth() + 1) + '/' + d.getDate(); }
+  function fmtDur(m) {
+    var h = Math.floor(m / 60), r = m % 60;
+    if (h && r) return h + ' 小時 ' + r + ' 分';
+    if (h) return h + ' 小時';
+    return r + ' 分';
+  }
+  function newId(p) { return p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function $(id) { return document.getElementById(id); }
+  function h(tag, attrs) {
+    var el = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      var v = attrs[k];
+      if (k === 'class') el.className = v;
+      else if (k === 'text') el.textContent = v;
+      else if (k.indexOf('on') === 0) el.addEventListener(k.slice(2), v);
+      else if (v !== false && v != null) el.setAttribute(k, v === true ? '' : v);
+    }
+    for (var i = 2; i < arguments.length; i++) {
+      var c = arguments[i];
+      if (c == null || c === false) continue;
+      el.append(c.nodeType ? c : document.createTextNode(String(c)));
+    }
+    return el;
+  }
+
+  /* ---------- data cleaning ---------- */
+  function clean(e) {
+    if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !/^[A-Za-z0-9_-]{1,60}$/.test(e.id)) return null;
+    if (!isDate(e.date)) return null;
+    var u = Number(e.updatedAt) || 0;
+    var num = cleanNum(e.num);
+    var ver = typeof e.ver === 'string' ? e.ver.slice(0, 200) : '';
+    var verAt = Number(e.verAt) || 0;
+    if (e.type === 'commute') {
+      if (!Array.isArray(e.t)) return null;
+      var t = [];
+      for (var i = 0; i < 7; i++) t.push(isTime(e.t[i]) ? e.t[i] : '');
+      return { id: e.id, type: 'commute', date: e.date, work: isDate(e.work) ? e.work : e.date, t: t, num: num, ver: ver, verAt: verAt, updatedAt: u, dirty: !!e.dirty };
+    }
+    if (e.type === 'sleep') {
+      return { id: e.id, type: 'sleep', date: e.date, sleep: isTime(e.sleep) ? e.sleep : '', wake: isTime(e.wake) ? e.wake : '', num: num, ver: ver, verAt: verAt, updatedAt: u, dirty: !!e.dirty };
+    }
+    return null;
+  }
+  function cleanNum(v) { return String(v == null ? '' : v).replace(/\D/g, '').slice(0, 20); }
+  /* An entry counts as verified only while its date, times and number still match what was verified. */
+  function sig(e) {
+    return e.type === 'commute'
+      ? e.date + '|' + e.t.join(',') + (e.work && e.work !== e.date ? '@' + e.work : '') + '#' + e.num
+      : e.date + '|' + e.sleep + ',' + e.wake + '#' + e.num;
+  }
+  function isVer(e) { return !!e.num && e.ver === sig(e); }
+  function strip(e) {
+    var o = {}; for (var k in e) if (k !== 'dirty') o[k] = e[k];
+    return o;
+  }
+
+  /* ---------- local storage mirror ---------- */
+  function persist() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({
+        entries: entries,
+        pendingDel: Array.from(pendingDel),
+        deletedAt: deletedAt
+      }));
+    } catch (e) {}
+  }
+
+  function loadLocal() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var d = JSON.parse(raw);
+      entries = (d.entries || []).map(clean).filter(Boolean);
+      pendingDel = new Set((d.pendingDel || []).filter(function (x) { return typeof x === 'string'; }));
+      deletedAt = d.deletedAt && typeof d.deletedAt === 'object' ? d.deletedAt : {};
+      Object.keys(deletedAt).forEach(function (id) {
+        var n = Number(deletedAt[id]) || 0;
+        if (!n) delete deletedAt[id]; else deletedAt[id] = n;
+      });
+    } catch (e) {}
+  }
+
+  /* ---------- date math ---------- */
+  function cResolve(dateStr, t) {
+    var base = parseDate(dateStr), off = 0, prev = null;
+    return t.map(function (x) {
+      if (!x) return null;
+      var m = toMin(x);
+      if (prev !== null && m < prev) off++;
+      prev = m;
+      return { off: off, abs: off * 1440 + m, date: addDays(base, off) };
+    });
+  }
+  function sResolve(dateStr, sleep, wake) {
+    var base = parseDate(dateStr), out = { wakeDate: null, dur: null, wakeNext: false };
+    if (wake) {
+      var next = sleep && toMin(wake) < toMin(sleep);
+      out.wakeNext = !!next;
+      out.wakeDate = addDays(base, next ? 1 : 0);
+      if (sleep) out.dur = toMin(wake) + (next ? 1440 : 0) - toMin(sleep);
+    }
+    return out;
+  }
+
+  /* ---------- forms state ---------- */
+  function blankC() { return { editing: null, date: today(), work: today(), workAuto: true, t: ['', '', '', '', '', '', ''], num: '', ticked: false }; }
+  function blankS() { return { editing: null, date: today(), sleep: '', wake: '', num: '', ticked: false }; }
+  var form = { c: blankC(), s: blankS() };
+
+  /* ---------- verify box (shared by both forms) ---------- */
+  function formEntry(kind) {
+    var f = form[kind];
+    return kind === 'c'
+      ? { type: 'commute', date: f.date, work: f.work, t: f.t, num: f.num }
+      : { type: 'sleep', date: f.date, sleep: f.sleep, wake: f.wake, num: f.num };
+  }
+  function refreshVerify(kind) {
+    var f = form[kind];
+    var cur = f.editing ? entries.find(function (e) { return e.id === f.editing; }) : null;
+    var hasTime = kind === 'c' ? f.t.some(Boolean) : !!(f.sleep || f.wake);
+    var ok = !!(cur && isDate(f.date) && f.num && cur.ver === sig(formEntry(kind)));
+    var b = $(kind + '-vbadge');
+    b.className = 'badge' + (ok ? ' ok' : '');
+    if (ok) b.textContent = '已核對 ✓ 編號 ' + f.num;
+    else if (cur && cur.ver) b.textContent = '未核對（內容改過，要重新核對）';
+    else b.textContent = '未核對';
+    var dt = isDate(f.date) ? '實際 ' + md(parseDate(f.date)) + ' ' + wd(parseDate(f.date)) : '請先選日期';
+    if (kind === 'c') dt = (isDate(f.work) ? '工作日 ' + md(parseDate(f.work)) + ' ' + wd(parseDate(f.work)) : '請先選工作日') + '　' + dt;
+    $(kind + '-vdate').textContent = dt;
+    $(kind + '-verify').disabled = ok || !f.num || !f.ticked || !hasTime || !isDate(f.date) || (kind === 'c' && !isDate(f.work));
+  }
+  function verify(kind) {
+    var f = form[kind];
+    if (!f.num) { setMsg(kind, '請先輸入追蹤 App 的編號'); return; }
+    if (!f.ticked) { setMsg(kind, '請先勾選「我對照過追蹤 App」'); return; }
+    save(kind, true, true);
+  }
+
+  /* ---------- commute form ---------- */
+  var cInputs = [], cHints = [];
+  function buildCommuteRows() {
+    var box = $('c-rows');
+    LABELS.forEach(function (name, i) {
+      var inp = h('input', { type: 'time', id: 'c-t' + i, step: '60', 'aria-label': name + '時間' });
+      var hint = h('span', { class: 'hint' });
+      inp.addEventListener('input', function () { form.c.t[i] = inp.value; refreshCommuteHints(); touch('c'); });
+      var now = h('button', { class: 'btn small', type: 'button', text: '現在', 'aria-label': name + '填入現在時間', onclick: function () {
+        inp.value = nowHM(); form.c.t[i] = inp.value; refreshCommuteHints(); touch('c');
+      } });
+      var clr = h('button', { class: 'btn icon', type: 'button', text: '×', 'aria-label': '清除' + name, onclick: function () {
+        inp.value = ''; form.c.t[i] = ''; refreshCommuteHints(); touch('c');
+      } });
+      cInputs.push(inp); cHints.push(hint);
+      box.append(h('div', { class: 'row' }, h('div', { class: 'lab' }, h('span', { class: 'name', text: name }), hint), inp, now, clr));
+    });
+  }
+  function refreshCommuteHints() {
+    refreshVerify('c');
+    if (!isDate(form.c.date)) { cHints.forEach(function (x) { x.textContent = ''; }); return; }
+    var r = cResolve(form.c.date, form.c.t);
+    r.forEach(function (x, i) {
+      cHints[i].textContent = x ? wd(x.date) + (x.off === 1 ? ' · 隔天' : x.off > 1 ? ' · +' + x.off + ' 天' : '') : '';
+    });
+  }
+  function syncCommuteForm() {
+    $('c-date').value = form.c.date;
+    $('c-wd').value = form.c.work;
+    form.c.t.forEach(function (v, i) { cInputs[i].value = v; });
+    $('c-num').value = form.c.num;
+    $('c-chk').checked = form.c.ticked;
+    refreshCommuteHints();
+    var eb = $('c-editing');
+    if (form.c.editing) {
+      var cur = entries.find(function (e) { return e.id === form.c.editing; });
+      eb.hidden = false;
+      eb.textContent = cur && isDate(cur.date) ? '正在編輯 ' + md(parseDate(cur.date)) + ' ' + wd(parseDate(cur.date)) + ' 這一趟' : '正在編輯這一趟';
+    } else eb.hidden = true;
+  }
+  function loadCommute(e) {
+    form.c = { editing: e.id, date: e.date, work: e.work, workAuto: e.work === e.date, t: e.t.slice(), num: e.num || '', ticked: false };
+    syncCommuteForm();
+  }
+
+  /* ---------- sleep form ---------- */
+  function refreshSleep() {
+    var s = form.s;
+    $('s-hint1').textContent = s.sleep && isDate(s.date) ? wd(parseDate(s.date)) : '';
+    var r = isDate(s.date) ? sResolve(s.date, s.sleep, s.wake) : { wakeDate: null, dur: null };
+    $('s-hint2').textContent = s.wake && r.wakeDate ? wd(r.wakeDate) + (r.wakeNext ? ' · 隔天' : '') : '';
+    $('s-sum').textContent = r.dur != null ? '睡了 ' + fmtDur(r.dur) : '';
+    refreshVerify('s');
+  }
+  function syncSleepForm() {
+    $('s-date').value = form.s.date;
+    $('s-sleep').value = form.s.sleep;
+    $('s-wake').value = form.s.wake;
+    $('s-num').value = form.s.num;
+    $('s-chk').checked = form.s.ticked;
+    refreshSleep();
+    var eb = $('s-editing');
+    if (form.s.editing) {
+      var cur = entries.find(function (e) { return e.id === form.s.editing; });
+      eb.hidden = false;
+      eb.textContent = cur && isDate(cur.date) ? '正在編輯 ' + md(parseDate(cur.date)) + ' ' + wd(parseDate(cur.date)) + ' 這筆睡眠' : '正在編輯這筆睡眠';
+    } else eb.hidden = true;
+  }
+  function loadSleep(e) {
+    form.s = { editing: e.id, date: e.date, sleep: e.sleep, wake: e.wake, num: e.num || '', ticked: false };
+    syncSleepForm();
+  }
+
+  /* ---------- saving ---------- */
+  function setMsg(kind, text) { $(kind + '-msg').textContent = text; }
+  function touch(kind) {
+    form[kind].ticked = false;
+    $(kind + '-chk').checked = false;
+    refreshVerify(kind);
+    formDirty[kind] = true;
+    clearTimeout(timers[kind]);
+    setMsg(kind, '輸入中…');
+    timers[kind] = setTimeout(function () { save(kind, false); }, 600);
+  }
+  function upsert(e) {
+    var i = entries.findIndex(function (x) { return x.id === e.id; });
+    var prev = i >= 0 ? entries[i] : null;
+    e.updatedAt = Math.max(Date.now(), prev ? prev.updatedAt + 1 : 0);
+    e.dirty = true;
+    if (i >= 0) entries[i] = e; else entries.push(e);
+    pendingDel.delete(e.id);
+    delete deletedAt[e.id];
+    persist();
+    return e;
+  }
+  function save(kind, manual, doVerify) {
+    clearTimeout(timers[kind]);
+    var f = form[kind], e;
+    if (!isDate(f.date)) { setMsg(kind, '請先選日期'); return; }
+    var prev = f.editing ? entries.find(function (x) { return x.id === f.editing; }) : null;
+    if (kind === 'c') {
+      if (!isDate(f.work)) { setMsg(kind, '請先選工作日'); return; }
+      if (!f.t.some(Boolean)) { setMsg(kind, manual ? '請先輸入至少一個時間' : '輸入後會自動儲存。'); return; }
+      e = { id: f.editing || newId('c'), type: 'commute', date: f.date, work: f.work, t: f.t.slice(), num: f.num };
+    } else {
+      if (!f.sleep && !f.wake) { setMsg(kind, manual ? '請先輸入入睡或起床時間' : '輸入後會自動儲存。'); return; }
+      e = { id: f.editing || newId('s'), type: 'sleep', date: f.date, sleep: f.sleep, wake: f.wake, num: f.num };
+    }
+    e.ver = prev ? prev.ver || '' : '';
+    e.verAt = prev ? prev.verAt || 0 : 0;
+    if (doVerify) { e.ver = sig(e); e.verAt = Date.now(); }
+    e = upsert(e);
+    f.editing = e.id;
+    formDirty[kind] = false;
+    renderLists();
+    if (kind === 'c') syncCommuteForm(); else syncSleepForm();
+    setMsg(kind, doVerify ? '已核對 ✓ 編號 ' + f.num : '已儲存 ✓ ' + nowHM());
+    push(e);
+    renderStatus();
+  }
+  function flushForms() {
+    ['c', 's'].forEach(function (k) { if (formDirty[k]) save(k, false); });
+  }
+
+  /* ---------- cloud sync ---------- */
+  var FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyC5oYfE0rMpPkibjV4Rcmh6qQbO4cUfw10',
+    authDomain: 'dicky-quota-tracker-2026.firebaseapp.com',
+    projectId: 'dicky-quota-tracker-2026',
+    storageBucket: 'dicky-quota-tracker-2026.firebasestorage.app',
+    messagingSenderId: '842127145324',
+    appId: '1:842127145324:web:9fa42fb22d04a9d9c59b49'
+  };
+  var FIREBASE_SDK = '12.19.0';
+  var SYNC_FLAG = 'commute-log-temp-sync-on';
+  var TOMBSTONE_MS = 30 * 24 * 3600 * 1000;
+
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      if (document.querySelector('script[src="' + src + '"]')) { resolve(); return; }
+      var s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  async function ensureFirebase() {
+    if (fb) return;
+    var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK;
+    await loadScript(base + '/firebase-app-compat.js');
+    await loadScript(base + '/firebase-auth-compat.js');
+    await loadScript(base + '/firebase-firestore-compat.js');
+    fb = window.firebase;
+    firebaseApp = fb.apps.find(function (a) { return a.name === 'commute-log-temp'; }) ||
+      fb.initializeApp(FIREBASE_CONFIG, 'commute-log-temp');
+    auth = firebaseApp.auth();
+    fbDb = firebaseApp.firestore();
+    await auth.setPersistence(fb.auth.Auth.Persistence.LOCAL);
+    auth.onAuthStateChanged(onAuthState);
+  }
+
+  function cleanDeleted(raw) {
+    var out = {}, now = Date.now();
+    if (!raw || typeof raw !== 'object') return out;
+    Object.keys(raw).forEach(function (id) {
+      var at = Number(raw[id]) || 0;
+      if (at && now - at < TOMBSTONE_MS) out[id] = at;
+    });
+    return out;
+  }
+
+  function normalizedPayload(raw) {
+    var list = raw && Array.isArray(raw.entries) ? raw.entries : [];
+    var dels = cleanDeleted(raw && raw.deletedAt);
+    var map = new Map();
+    list.map(clean).filter(Boolean).forEach(function (e) {
+      var old = map.get(e.id);
+      if (!old || e.updatedAt >= old.updatedAt) {
+        e.dirty = false;
+        map.set(e.id, e);
+      }
+    });
+    map.forEach(function (e, id) {
+      if ((dels[id] || 0) >= (e.updatedAt || 0)) map.delete(id);
+    });
+    return {
+      version: 1,
+      entries: Array.from(map.values()).map(strip).sort(function (a, b) { return a.id.localeCompare(b.id); }),
+      deletedAt: dels
+    };
+  }
+
+  function localPayload() {
+    return normalizedPayload({ entries: entries.map(strip), deletedAt: deletedAt });
+  }
+
+  function mergePayload(a, b) {
+    a = normalizedPayload(a); b = normalizedPayload(b);
+    var dels = Object.assign({}, a.deletedAt);
+    Object.keys(b.deletedAt).forEach(function (id) {
+      dels[id] = Math.max(dels[id] || 0, b.deletedAt[id] || 0);
+    });
+    var map = new Map();
+    a.entries.concat(b.entries).forEach(function (e) {
+      var old = map.get(e.id);
+      if (!old || (e.updatedAt || 0) > (old.updatedAt || 0)) map.set(e.id, e);
+    });
+    map.forEach(function (e, id) {
+      if ((dels[id] || 0) >= (e.updatedAt || 0)) map.delete(id);
+    });
+    return normalizedPayload({ entries: Array.from(map.values()), deletedAt: dels });
+  }
+
+  function payloadKey(p) {
+    p = normalizedPayload(p);
+    return JSON.stringify(p);
+  }
+
+  function parseCloud(snap) {
+    var body = snap && snap.exists ? (snap.data() || {}) : {};
+    try {
+      if (typeof body.json === 'string') return normalizedPayload(JSON.parse(body.json));
+      return normalizedPayload(body);
+    } catch (e) {
+      return normalizedPayload({});
+    }
+  }
+
+  function applyCloudPayload(payload, syncedPayload) {
+    payload = normalizedPayload(payload);
+    var old = new Map(entries.map(function (e) { return [e.id, e]; }));
+    entries = payload.entries.map(function (raw) {
+      var e = clean(raw), prev = old.get(raw.id);
+      if (!e) return null;
+      var synced = syncedPayload && syncedPayload.entries &&
+        syncedPayload.entries.find(function (x) { return x.id === e.id && (x.updatedAt || 0) >= (e.updatedAt || 0); });
+      e.dirty = synced ? false : !!(prev && prev.dirty && prev.updatedAt >= e.updatedAt);
+      return e;
+    }).filter(Boolean);
+    deletedAt = cleanDeleted(payload.deletedAt);
+    if (syncedPayload) {
+      var sd = cleanDeleted(syncedPayload.deletedAt);
+      pendingDel.forEach(function (id) {
+        if ((sd[id] || 0) >= (deletedAt[id] || 0)) pendingDel.delete(id);
+      });
+    }
+    persist();
+    renderLists();
+    renderStatus();
+  }
+
+  function cloudDocument() {
+    return fbDb.collection('users').doc(currentUser.uid).collection('apps').doc('commute-log-temp');
+  }
+
+  async function pushCloud(force) {
+    if (!currentUser || !cloudRef || !fbDb) return;
+    if (pushingCloud) { pushAgain = true; return; }
+    if (!force && !dirtyCount()) return;
+    pushingCloud = true;
+    var startLocal = localPayload();
+    try {
+      var merged = startLocal;
+      await fbDb.runTransaction(async function (tx) {
+        var snap = await tx.get(cloudRef);
+        var remote = parseCloud(snap);
+        merged = mergePayload(startLocal, remote);
+        var json = JSON.stringify(merged);
+        if (json.length > 950000) throw Object.assign(new Error('full'), { code: 'full' });
+        tx.set(cloudRef, {
+          json: json,
+          app: 'Commute Log (Claude) Temp',
+          updatedAt: fb.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      var current = localPayload();
+      var finalLocal = mergePayload(current, merged);
+      applyCloudPayload(finalLocal, merged);
+      dbState = 'on';
+      $('b-smsg').textContent = '全部都已經同步 ✓';
+    } catch (e) {
+      dbState = navigator.onLine === false ? 'offline' : 'error';
+      $('b-smsg').textContent = e && e.code === 'permission-denied'
+        ? 'Firebase 拒絕存取，請檢查 Firestore 規則'
+        : e && e.code === 'full'
+          ? '雲端資料太大，請先備份再清理舊記錄'
+          : '同步失敗，資料仍安全存在這部裝置';
+    } finally {
+      pushingCloud = false;
+      renderStatus();
+      if (pushAgain) { pushAgain = false; pushCloud(false); }
+    }
+  }
+
+  function scheduleCloudPush() {
+    if (!currentUser) return;
+    clearTimeout(cloudPushTimer);
+    cloudPushTimer = setTimeout(function () { pushCloud(false); }, 700);
+  }
+
+  async function connectCloud() {
+    if (!currentUser || !fbDb) return;
+    if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
+    cloudRef = cloudDocument();
+    dbState = 'loading';
+    renderStatus();
+    try {
+      var snap = await cloudRef.get();
+      if (snap.exists) {
+        var remote = parseCloud(snap);
+        var merged = mergePayload(localPayload(), remote);
+        var needPush = payloadKey(merged) !== payloadKey(remote);
+        applyCloudPayload(merged, remote);
+        if (needPush) await pushCloud(true);
+      } else {
+        await pushCloud(true);
+      }
+      cloudUnsub = cloudRef.onSnapshot(function (s) {
+        if (!s.exists || s.metadata.hasPendingWrites) return;
+        var remote = parseCloud(s);
+        var merged = mergePayload(localPayload(), remote);
+        var needPush = payloadKey(merged) !== payloadKey(remote);
+        applyCloudPayload(merged, remote);
+        dbState = 'on';
+        renderStatus();
+        if (needPush) scheduleCloudPush();
+      }, function () {
+        dbState = 'error';
+        renderStatus();
+      });
+      dbState = 'on';
+      renderStatus();
+    } catch (e) {
+      dbState = navigator.onLine === false ? 'offline' : 'error';
+      renderStatus();
+    }
+  }
+
+  async function onAuthState(u) {
+    currentUser = u || null;
+    if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
+    cloudRef = null;
+    if (!currentUser) {
+      dbState = 'signin';
+      renderStatus();
+      return;
+    }
+    try { localStorage.setItem(SYNC_FLAG, '1'); } catch (e) {}
+    await connectCloud();
+  }
+
+  async function signInGoogle() {
+    dbState = 'loading';
+    renderStatus();
+    try {
+      await ensureFirebase();
+      var provider = new fb.auth.GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      try {
+        await auth.signInWithPopup(provider);
+      } catch (e) {
+        if (['auth/popup-blocked','auth/cancelled-popup-request','auth/operation-not-supported-in-environment'].indexOf(e && e.code) >= 0) {
+          await auth.signInWithRedirect(provider);
+        } else if (e && e.code === 'auth/popup-closed-by-user') {
+          dbState = currentUser ? 'on' : 'signin';
+          renderStatus();
+        } else throw e;
+      }
+    } catch (e) {
+      dbState = 'error';
+      $('b-smsg').textContent = e && e.code === 'auth/unauthorized-domain'
+        ? '這個 GitHub Pages 網址未加入 Firebase 授權網域'
+        : 'Google 登入失敗，請再試';
+      renderStatus();
+    }
+  }
+
+  async function signOutGoogle() {
+    try { if (auth) await auth.signOut(); } catch (e) {}
+    try { localStorage.removeItem(SYNC_FLAG); } catch (e) {}
+    currentUser = null;
+    cloudRef = null;
+    dbState = 'signin';
+    renderStatus();
+  }
+
+  function renderAuthUi() {
+    var user = $('b-user'), sin = $('b-signin'), sout = $('b-signout');
+    if (!user || !sin || !sout) return;
+    if (currentUser) {
+      user.textContent = '已登入：' + (currentUser.email || currentUser.displayName || 'Google 帳戶');
+      sin.hidden = true; sout.hidden = false;
+    } else {
+      user.textContent = '未登入 Google。登入後可在不同裝置同步。';
+      sin.hidden = false; sout.hidden = true;
+    }
+  }
+
+  function dirtyCount() { return entries.filter(function (e) { return e.dirty; }).length + pendingDel.size; }
+  function renderStatus() {
+    var s = $('status'), t = $('statusText'), n = dirtyCount();
+    renderAuthUi();
+    if (dbState === 'loading' || dbState === 'init') {
+      s.dataset.s = 'pending'; t.textContent = '正在連接 Firebase…';
+    } else if (dbState === 'signin') {
+      s.dataset.s = 'off'; t.textContent = '未登入 Google · 資料已存在這部裝置';
+    } else if (dbState === 'offline') {
+      s.dataset.s = 'pending'; t.textContent = '目前離線 · 連線後會自動同步';
+    } else if (dbState === 'error') {
+      s.dataset.s = 'off'; t.textContent = 'Firebase 暫時連不上 · 本機資料不受影響';
+    } else if (n > 0) {
+      s.dataset.s = 'pending'; t.textContent = n + ' 筆還沒同步到 Firebase';
+    } else {
+      s.dataset.s = 'on'; t.textContent = '已同步到 Firebase ✓';
+    }
+  }
+
+  function initFirebaseSync() {
+    renderStatus();
+    var on = false;
+    try { on = localStorage.getItem(SYNC_FLAG) === '1'; } catch (e) {}
+    if (on && navigator.onLine !== false) {
+      ensureFirebase().catch(function () { dbState = 'error'; renderStatus(); });
+    }
+  }
+
+  /* ---------- lists ---------- */
+  var armed = { id: null, timer: null };
+  function onDelete(e, btn) {
+    if (armed.id === e.id) { doDelete(e.id); return; }
+    armed.id = e.id;
+    btn.textContent = '再按一次刪除';
+    btn.classList.add('danger');
+    clearTimeout(armed.timer);
+    armed.timer = setTimeout(function () {
+      armed.id = null; btn.textContent = '刪除'; btn.classList.remove('danger');
+    }, 3500);
+  }
+  function doDelete(id) {
+    armed.id = null;
+    entries = entries.filter(function (e) { return e.id !== id; });
+    pendingDel.add(id);
+    deletedAt[id] = Date.now();
+    if (form.c.editing === id) { form.c = blankC(); syncCommuteForm(); setMsg('c', '已刪除'); }
+    if (form.s.editing === id) { form.s = blankS(); syncSleepForm(); setMsg('s', '已刪除'); }
+    persist();
+    renderLists();
+    flushDeletes();
+    renderStatus();
+  }
+  function sortKey(e) {
+    var first = e.type === 'commute' ? (e.t.find(Boolean) || '') : (e.sleep || e.wake || '');
+    return e.date + ' ' + first;
+  }
+  function byDesc(a, b) { return sortKey(a) < sortKey(b) ? 1 : sortKey(a) > sortKey(b) ? -1 : b.updatedAt - a.updatedAt; }
+
+  function verBadge(e) {
+    return isVer(e)
+      ? h('span', { class: 'badge ok', text: '已核對 ✓ 編號 ' + e.num })
+      : h('span', { class: 'badge', text: e.ver ? '未核對（內容改過）' : '未核對' });
+  }
+  function commuteCard(e) {
+    var d0 = parseDate(e.date), r = cResolve(e.date, e.t), facts = [];
+    if (r[0] && r[3]) facts.push(['去程', fmtDur(r[3].abs - r[0].abs)]);
+    if (r[3] && r[4]) facts.push(['上班', fmtDur(r[4].abs - r[3].abs)]);
+    if (r[4] && r[6]) facts.push(['回程', fmtDur(r[6].abs - r[4].abs)]);
+    var cells = e.t.map(function (v, i) {
+      return h('div', { class: 'cell' + (i === 3 || i === 4 ? ' work' : '') },
+        h('span', { class: 'cl', text: LABELS[i] }),
+        h('b', { text: v || '—' }),
+        h('span', { class: 'cd', text: r[i] ? wd(r[i].date) : '' }));
+    });
+    var del = h('button', { class: 'btn', type: 'button', text: '刪除' });
+    del.addEventListener('click', function () { onDelete(e, del); });
+    var w0 = parseDate(e.work);
+    return h('div', { class: 'card' },
+      h('div', { class: 'ch' }, h('strong', { text: '工作日 ' + md(w0) + ' ' + wd(w0) }), verBadge(e), e.dirty ? h('span', { class: 'tag', text: '未同步' }) : null),
+      h('div', { class: 'sub', text: '實際日期 ' + md(d0) + ' ' + wd(d0) + '（出門）' }),
+      facts.length ? h('div', { class: 'facts' }, facts.map(function (f) { return h('span', null, f[0] + ' ', h('b', { text: f[1] })); })) : null,
+      h('div', { class: 'cells' }, cells),
+      h('div', { class: 'cardactions' },
+        h('button', { class: 'btn', type: 'button', text: '編輯', onclick: function () { flushForms(); showTab('c'); loadCommute(e); setMsg('c', '已載入，修改後會自動儲存'); window.scrollTo(0, 0); } }),
+        del));
+  }
+  function sleepCard(e) {
+    var d0 = parseDate(e.date), r = sResolve(e.date, e.sleep, e.wake);
+    var del = h('button', { class: 'btn', type: 'button', text: '刪除' });
+    del.addEventListener('click', function () { onDelete(e, del); });
+    return h('div', { class: 'card' },
+      h('div', { class: 'ch' }, h('strong', { text: md(d0) + ' ' + wd(d0) }), verBadge(e), e.dirty ? h('span', { class: 'tag', text: '未同步' }) : null),
+      h('div', { class: 'cells' },
+        h('div', { class: 'cell' }, h('span', { class: 'cl', text: '入睡' }), h('b', { text: e.sleep || '—' }), h('span', { class: 'cd', text: e.sleep ? wd(d0) : '' })),
+        h('div', { class: 'cell' }, h('span', { class: 'cl', text: '起床' }), h('b', { text: e.wake || '—' }), h('span', { class: 'cd', text: e.wake && r.wakeDate ? wd(r.wakeDate) : '' })),
+        h('div', { class: 'cell work' }, h('span', { class: 'cl', text: '睡眠' }), h('b', { text: r.dur != null ? fmtDur(r.dur) : '—' }), h('span', { class: 'cd', text: '' }))),
+      h('div', { class: 'cardactions' },
+        h('button', { class: 'btn', type: 'button', text: '編輯', onclick: function () { flushForms(); showTab('s'); loadSleep(e); setMsg('s', '已載入，修改後會自動儲存'); window.scrollTo(0, 0); } }),
+        del));
+  }
+  function renderLists() {
+    var c = entries.filter(function (e) { return e.type === 'commute'; }).sort(byDesc);
+    var s = entries.filter(function (e) { return e.type === 'sleep'; }).sort(byDesc);
+    var cl = $('c-list'), sl = $('s-list');
+    cl.textContent = ''; sl.textContent = '';
+    if (!c.length) cl.append(h('div', { class: 'empty', text: '還沒有通勤記錄。在上面輸入時間，就會出現在這裡。' }));
+    c.forEach(function (e) { cl.append(commuteCard(e)); });
+    if (!s.length) sl.append(h('div', { class: 'empty', text: '還沒有睡眠記錄。' }));
+    s.forEach(function (e) { sl.append(sleepCard(e)); });
+    renderCal();
+  }
+
+  /* ---------- calendar ---------- */
+  var cal = { y: new Date().getFullYear(), m: new Date().getMonth(), sel: today() };
+  function actualDates(e) {
+    var out = {};
+    if (e.type === 'commute') {
+      cResolve(e.date, e.t).forEach(function (x) { if (x) out[fmtDate(x.date)] = 1; });
+      if (!e.t.some(Boolean)) out[e.date] = 1;
+    } else out[e.date] = 1;
+    return out;
+  }
+  function renderCal() {
+    var box = $('cal-grid');
+    box.textContent = '';
+    $('cal-title').textContent = cal.y + ' 年 ' + (cal.m + 1) + ' 月';
+    var work = {}, actual = {}, sleep = {};
+    entries.forEach(function (e) {
+      if (e.type === 'commute') work[e.work] = 1;
+      var a = actualDates(e);
+      Object.keys(a).forEach(function (k) { if (e.type === 'sleep') sleep[k] = 1; else actual[k] = 1; });
+    });
+    WD.split('').forEach(function (w) { box.append(h('div', { class: 'dow', text: '週' + w })); });
+    var start = new Date(cal.y, cal.m, 1).getDay();
+    var days = new Date(cal.y, cal.m + 1, 0).getDate();
+    for (var i = 0; i < start; i++) box.append(h('div', { class: 'day blank' }));
+    var td = today();
+    var mk = function (key) { return function () { cal.sel = key; renderCal(); }; };
+    for (var d = 1; d <= days; d++) {
+      var key = cal.y + '-' + pad(cal.m + 1) + '-' + pad(d);
+      var btn = h('button', {
+        class: 'day' + (key === td ? ' today' : '') + (key === cal.sel ? ' sel' : ''), type: 'button',
+        'aria-label': (cal.m + 1) + '月' + d + '日' + (key === cal.sel ? '（已選）' : '')
+      },
+        h('span', { class: 'dn', text: String(d) }),
+        h('span', { class: 'dots' }, work[key] ? h('i', { class: 'd w' }) : null, actual[key] ? h('i', { class: 'd a' }) : null, sleep[key] ? h('i', { class: 'd s' }) : null));
+      btn.addEventListener('click', mk(key));
+      box.append(btn);
+    }
+    renderDayList();
+  }
+  function renderDayList() {
+    var sel = cal.sel, d0 = parseDate(sel);
+    $('cal-daytitle').textContent = md(d0) + ' ' + wd(d0) + ' 的記錄';
+    var list = $('cal-daylist');
+    list.textContent = '';
+    var hit = entries.filter(function (e) {
+      return (e.type === 'commute' && e.work === sel) || actualDates(e)[sel];
+    }).sort(byDesc);
+    if (!hit.length) list.append(h('div', { class: 'empty', text: '這天沒有記錄。' }));
+    hit.forEach(function (e) { list.append(e.type === 'commute' ? commuteCard(e) : sleepCard(e)); });
+  }
+
+  /* ---------- resume unfinished entry ---------- */
+  function maybeResume() {
+    if (!entries.length) return;
+    resumed = true;
+    var recent = 48 * 3600 * 1000;
+    if (!form.c.editing && !form.c.t.some(Boolean)) {
+      var c = entries.filter(function (e) { return e.type === 'commute'; }).sort(byDesc)[0];
+      if (c && c.t.some(Boolean) && !c.t[6] && Date.now() - c.updatedAt < recent) loadCommute(c);
+    }
+    if (!form.s.editing && !form.s.sleep && !form.s.wake) {
+      var s = entries.filter(function (e) { return e.type === 'sleep'; }).sort(byDesc)[0];
+      if (s && s.sleep && !s.wake && Date.now() - s.updatedAt < recent) loadSleep(s);
+    }
+  }
+
+  /* ---------- backup ---------- */
+  function exportJson() {
+    return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), entries: entries.map(strip) }, null, 1);
+  }
+  function exportText() {
+    var out = [];
+    var c = entries.filter(function (e) { return e.type === 'commute'; }).sort(byDesc).reverse();
+    var s = entries.filter(function (e) { return e.type === 'sleep'; }).sort(byDesc).reverse();
+    out.push('【通勤】');
+    c.forEach(function (e) {
+      var r = cResolve(e.date, e.t);
+      out.push('工作日 ' + e.work + ' ' + wd(parseDate(e.work)) + '｜實際 ' + e.date + ' ' + wd(parseDate(e.date)) + (isVer(e) ? '  [已核對 編號 ' + e.num + ']' : '  [未核對]'));
+      e.t.forEach(function (v, i) { if (v) out.push('  ' + LABELS[i] + ' ' + v + ' ' + wd(r[i].date)); });
+    });
+    out.push('');
+    out.push('【睡眠】');
+    s.forEach(function (e) {
+      var r = sResolve(e.date, e.sleep, e.wake);
+      var line = e.date + ' ' + wd(parseDate(e.date)) + '  入睡 ' + (e.sleep || '—') + '  起床 ' + (e.wake || '—');
+      if (e.wake && r.wakeDate) line += ' ' + wd(r.wakeDate);
+      if (r.dur != null) line += '  共 ' + fmtDur(r.dur);
+      line += isVer(e) ? '  [已核對 編號 ' + e.num + ']' : '  [未核對]';
+      out.push(line);
+    });
+    return out.join('\n');
+  }
+  function showOut(text) {
+    var ta = $('b-out');
+    ta.hidden = false; $('b-copy').hidden = false;
+    ta.value = text;
+    $('b-msg').textContent = '';
+  }
+  function copyOut() {
+    var ta = $('b-out');
+    var fallback = function () { ta.focus(); ta.select(); $('b-msg').textContent = '已選取全部文字，請長按或按 Ctrl+C 複製'; };
+    try {
+      navigator.clipboard.writeText(ta.value).then(function () { $('b-msg').textContent = '已複製 ✓'; }, fallback);
+    } catch (e) { fallback(); }
+  }
+  function doImport() {
+    var msg = $('b-imsg');
+    try {
+      var d = JSON.parse($('b-in').value);
+      var list = Array.isArray(d) ? d : d && d.entries;
+      if (!Array.isArray(list)) throw new Error('bad');
+      var n = 0;
+      list.map(clean).filter(Boolean).forEach(function (inc) {
+        var cur = entries.find(function (x) { return x.id === inc.id; });
+        if (cur && cur.updatedAt >= inc.updatedAt) return;
+        inc.dirty = true;
+        pendingDel.delete(inc.id);
+        delete deletedAt[inc.id];
+        if (cur) entries[entries.indexOf(cur)] = inc; else entries.push(inc);
+        n++;
+      });
+      persist(); renderLists(); renderStatus(); flushDirty();
+      msg.textContent = n ? '已匯入 ' + n + ' 筆 ✓' : '沒有需要匯入的新資料';
+    } catch (e) {
+      msg.textContent = '看不懂這段內容，請貼上完整的「備份資料」';
+    }
+  }
+  function syncNow() {
+    flushForms();
+    if (!currentUser) {
+      $('b-smsg').textContent = '請先使用 Google 登入，再同步到 Firebase。';
+      return;
+    }
+    $('b-smsg').textContent = '同步中…';
+    pushCloud(true);
+  }
+
+  /* ---------- tabs ---------- */
+  function showTab(k) {
+    ['c', 's', 'b'].forEach(function (x) {
+      $('tab-' + x).setAttribute('aria-selected', x === k ? 'true' : 'false');
+      $('panel-' + x).hidden = x !== k;
+    });
+  }
+
+  /* ---------- wire up ---------- */
+  buildCommuteRows();
+  ['c', 's', 'b'].forEach(function (k) { $('tab-' + k).addEventListener('click', function () { flushForms(); showTab(k); }); });
+
+  $('c-date').addEventListener('input', function () {
+    form.c.date = $('c-date').value;
+    if (form.c.workAuto) { form.c.work = form.c.date; $('c-wd').value = form.c.work; }
+    refreshCommuteHints(); touch('c');
+  });
+  $('c-wd').addEventListener('input', function () {
+    form.c.work = $('c-wd').value;
+    form.c.workAuto = form.c.work === form.c.date;
+    refreshCommuteHints(); touch('c');
+  });
+  $('c-save').addEventListener('click', function () { save('c', true); });
+  $('c-new').addEventListener('click', function () {
+    flushForms();
+    form.c = blankC();
+    syncCommuteForm(); setMsg('c', '新的一趟，輸入後會自動儲存');
+  });
+  $('c-num').addEventListener('input', function () { form.c.num = cleanNum($('c-num').value); if ($('c-num').value !== form.c.num) $('c-num').value = form.c.num; touch('c'); });
+  $('c-chk').addEventListener('change', function () { form.c.ticked = $('c-chk').checked; refreshVerify('c'); });
+  $('c-verify').addEventListener('click', function () { verify('c'); });
+
+  $('s-date').addEventListener('input', function () { form.s.date = $('s-date').value; refreshSleep(); touch('s'); });
+  $('s-sleep').addEventListener('input', function () { form.s.sleep = $('s-sleep').value; refreshSleep(); touch('s'); });
+  $('s-wake').addEventListener('input', function () { form.s.wake = $('s-wake').value; refreshSleep(); touch('s'); });
+  $('s-now1').addEventListener('click', function () { form.s.sleep = nowHM(); $('s-sleep').value = form.s.sleep; refreshSleep(); touch('s'); });
+  $('s-now2').addEventListener('click', function () { form.s.wake = nowHM(); $('s-wake').value = form.s.wake; refreshSleep(); touch('s'); });
+  $('s-clr1').addEventListener('click', function () { form.s.sleep = ''; $('s-sleep').value = ''; refreshSleep(); touch('s'); });
+  $('s-clr2').addEventListener('click', function () { form.s.wake = ''; $('s-wake').value = ''; refreshSleep(); touch('s'); });
+  $('s-save').addEventListener('click', function () { save('s', true); });
+  $('s-new').addEventListener('click', function () {
+    flushForms();
+    form.s = blankS();
+    syncSleepForm(); setMsg('s', '新的一筆，輸入後會自動儲存');
+  });
+  $('s-num').addEventListener('input', function () { form.s.num = cleanNum($('s-num').value); if ($('s-num').value !== form.s.num) $('s-num').value = form.s.num; touch('s'); });
+  $('s-chk').addEventListener('change', function () { form.s.ticked = $('s-chk').checked; refreshVerify('s'); });
+  $('s-verify').addEventListener('click', function () { verify('s'); });
+
+  $('cal-prev').addEventListener('click', function () { cal.m--; if (cal.m < 0) { cal.m = 11; cal.y--; } renderCal(); });
+  $('cal-next').addEventListener('click', function () { cal.m++; if (cal.m > 11) { cal.m = 0; cal.y++; } renderCal(); });
+  $('cal-today').addEventListener('click', function () {
+    var n = new Date(); cal.y = n.getFullYear(); cal.m = n.getMonth(); cal.sel = today(); renderCal();
+  });
+  $('cal-addc').addEventListener('click', function () {
+    flushForms();
+    form.c = blankC(); form.c.date = cal.sel; form.c.work = cal.sel;
+    syncCommuteForm(); setMsg('c', '新的一趟，輸入後會自動儲存');
+    showTab('c'); window.scrollTo(0, 0);
+  });
+  $('cal-adds').addEventListener('click', function () {
+    flushForms();
+    form.s = blankS(); form.s.date = cal.sel;
+    syncSleepForm(); setMsg('s', '新的一筆，輸入後會自動儲存');
+    showTab('s'); window.scrollTo(0, 0);
+  });
+
+  $('b-json').addEventListener('click', function () { showOut(exportJson()); });
+  $('b-text').addEventListener('click', function () { showOut(exportText()); });
+  $('b-copy').addEventListener('click', copyOut);
+  $('b-import').addEventListener('click', doImport);
+  $('b-sync').addEventListener('click', syncNow);
+  $('b-signin').addEventListener('click', signInGoogle);
+  $('b-signout').addEventListener('click', signOutGoogle);
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) flushForms();
+    else { flushDirty(); flushDeletes(); }
+  });
+  window.addEventListener('pagehide', flushForms);
+  window.addEventListener('online', function () {
+    if (currentUser) pushCloud(true);
+    else {
+      var on = false;
+      try { on = localStorage.getItem(SYNC_FLAG) === '1'; } catch (e) {}
+      if (on) ensureFirebase().catch(function () {});
+    }
+  });
+  setInterval(function () { if (currentUser && dirtyCount()) pushCloud(false); }, 20000);
+
+  loadLocal();
+  syncCommuteForm();
+  syncSleepForm();
+  renderLists();
+  maybeResume();
+  renderStatus();
+  initFirebaseSync();
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js').catch(function () {});
+    });
+  }
+})();
+</script>
+</body>
+</html>
