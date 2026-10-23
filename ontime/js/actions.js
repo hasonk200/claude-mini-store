@@ -252,6 +252,7 @@ export function setRefTime(ref, t, extra = {}) {
     } else if (ref.type === 'sleep') {
       const s = d.sleeps.find((x) => x.id === ref.id);
       if (!s) return;
+      if (extra.mainSleep !== undefined) s.mainSleep = !!extra.mainSleep;
       if (ref.field === 'start') { if (s.start == null) s.planStart = t; else s.start = t; }
       if (ref.field === 'end') { if (s.start == null || s.end == null) s.planEnd = t; else s.end = t; }
     } else if (ref.type === 'meal') {

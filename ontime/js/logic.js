@@ -77,17 +77,22 @@ const boundaryCache = new WeakMap();
 // 主睡眠的起床時間（排序）；間隔少於 30 分鐘的睡眠先合併，再看是否滿 4 小時。
 export function dayBoundaries(data) {
   const sleeps = data.sleeps;
-  const sig = sleeps.reduce((n, x) => n + (x.start || 0) + (x.end || 0), sleeps.length);
+  const sig = sleeps.reduce((n, x) => n + (x.start || 0) + (x.end || 0) + (x.mainSleep ? 1 : 0), sleeps.length);
   const hit = boundaryCache.get(sleeps);
   if (hit && hit.sig === sig) return hit.out;
-  const done = sleeps.filter((x) => x.start != null && x.end != null && x.end > x.start).map((x) => [x.start, x.end]).sort((a, b) => a[0] - b[0]);
+  const done = sleeps.filter((x) => x.start != null && x.end != null && x.end > x.start)
+    .map((x) => [x.start, x.end, x.mainSleep === true])
+    .sort((a, b) => a[0] - b[0]);
   const merged = [];
-  for (const [a, b] of done) {
+  for (const [a, b, forced] of done) {
     const last = merged[merged.length - 1];
-    if (last && a - last[1] < 30 * MIN) last[1] = Math.max(last[1], b);
-    else merged.push([a, b]);
+    if (last && a - last[1] < 30 * MIN) {
+      last[1] = Math.max(last[1], b);
+      last[2] = last[2] || forced;
+    } else merged.push([a, b, forced]);
   }
-  const out = merged.filter(([a, b]) => b - a >= MAIN_SLEEP_MS).map(([, b]) => b);
+  // 使用者手動標「當作工作日分界」的睡眠，即使不到 4 小時也算。
+  const out = merged.filter(([a, b, forced]) => forced || b - a >= MAIN_SLEEP_MS).map(([, b]) => b);
   boundaryCache.set(sleeps, { sig, out });
   return out;
 }

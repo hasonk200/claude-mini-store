@@ -128,6 +128,10 @@ function refSheet(ctx) {
   const jr = isRideRef ? data.journeys.find((x) => x.id === ref.id) : null;
   const rideRef = isRideRef ? { mode: jr?.[`${ref.field}Mode`], from: jr?.[`${ref.field}From`] } : null;
   const canDelete = ['journey', 'session', 'sleep', 'meal', 'shift', 'rest'].includes(ref.type);
+  const sleep = ref.type === 'sleep' ? (data.sleeps || []).find((x) => x.id === ref.id) : null;
+  const mainSleepBox = sleep
+    ? `<label class="fine"><input type="checkbox" name="mainSleep" ${sleep.mainSleep ? 'checked' : ''}> 當作工作日分界（不到 4 小時也算）</label>`
+    : '';
   const canAcc = ref.type !== 'shift' && !ui.sheet.plan;
   const origT = `<input type="hidden" name="origT" value="${t}">`;
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>
@@ -140,6 +144,7 @@ function refSheet(ctx) {
       <label class="field field-strong"><span>時間</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
       ${canAcc ? accToggle(eventApprox(data, { ref, t })) : ''}
       ${rideRef ? rideFieldsHtml(ctx.data, rideRef.mode, rideRef.from) : ''}
+      ${mainSleepBox}
       <p class="fine">只會改這一個時間${rideRef ? '和交通工具、上車地點' : ''}；其他紀錄保持不變。</p>
       <button class="btn btn-ink btn-block btn-lg" type="submit">儲存</button>
       ${canDelete ? `<button type="button" class="btn btn-danger btn-block" data-action="delete-ref">刪除此紀錄</button>` : ''}
