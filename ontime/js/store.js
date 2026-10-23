@@ -139,6 +139,8 @@ export function stamp(prevFull, nextVisible, now = Date.now()) {
       kept.add(key);
       const old = before.get(key);
       if (old && !old.deletedAt && JSON.stringify({ ...old, updatedAt: 0 }) === JSON.stringify({ ...x, updatedAt: 0 })) return old;
+      // 匯入備份時，備份裡本來就標了「已刪除」的紀錄要維持已刪除，不能被當成新增而復活。
+      if (x.deletedAt) return old && old.deletedAt ? old : { ...x, photo: undefined, updatedAt: now };
       return { ...x, updatedAt: now, deletedAt: undefined };
     });
     for (const [key, old] of before) {
