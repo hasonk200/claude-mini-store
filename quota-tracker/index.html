@@ -66,6 +66,9 @@ select,input[type=text],input[type=number],input[type=time],input[type=datetime-
 .hero{padding:4px 0 6px}
 .hero-top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
 .kicker{font-size:15px;color:var(--muted);font-weight:500}
+.model-title{margin:2px 0 16px}
+.model-kicker{display:block;font-size:13px;color:var(--muted);font-weight:500;margin-bottom:2px}
+.model-title h2{font-family:var(--num);font-stretch:70%;font-weight:800;font-size:clamp(44px,13vw,72px);line-height:1;letter-spacing:-.01em;overflow-wrap:anywhere;color:var(--ink)}
 .big{font-family:var(--num);font-stretch:68%;font-weight:800;font-size:clamp(84px,24vw,148px);line-height:.86;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
 .big .pct{font-size:.42em;font-weight:700;margin-left:.04em;vertical-align:.95em}
 .hero-day{text-align:right}
@@ -126,6 +129,7 @@ details.more input{margin-top:8px}
 .lblrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
 .lblrow label{font-size:14px;font-weight:500}
 .modetag{font-size:13px;color:var(--muted);white-space:nowrap}
+.numrow input.locked,input[type=range].locked{background:var(--line-soft);color:var(--muted);cursor:not-allowed;opacity:.6}
 .conv{font-size:13.5px;color:var(--muted);min-height:1.4em;margin-top:4px}
 .conv b{color:var(--ink)}
 .check{display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:14.5px;cursor:pointer}
@@ -290,6 +294,7 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
   </div>
 
   <div id="detailView" hidden>
+  <div class="model-title"><span class="model-kicker">而家睇緊</span><h2 id="modelName"></h2></div>
   <div id="alert" class="alert" hidden></div>
 
   <section class="hero" id="hero" aria-live="polite"></section>
@@ -326,7 +331,7 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
           <input type="checkbox" id="inWeeklyReset">
           <span>
             <b>廠家啱啱重新重置咗每週額度</b><br>
-            <span class="c-muted">勾選後，可以直接填重置發生時間；如果每週用量留空，會由 0% 開始。</span>
+            <span class="c-muted">勾選後，每週用量會自動鎖定喺 0%（如果用剩低就係 100%），只需要填重置發生時間。</span>
           </span>
         </label>
         <div class="field" id="weeklyResetTimeWrap" hidden style="margin:12px 0 0">
@@ -712,7 +717,8 @@ function renderHeader(t){
   const sel=$('trackerSel');
   sel.innerHTML=state.trackers.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===t.id?' selected':'')+'>'+esc(x.name)+'</option>').join('');
   sel.hidden=state.trackers.length<2;
-  if(view==='detail')$('subLine').textContent=t.name+'：每週 '+fmtDay(weekStart(t,Date.now()))+' '+t.weekTime+' 重置，短期額度 '+t.sessionHours+' 小時';
+  $('modelName').textContent=t.name;
+  if(view==='detail')$('subLine').textContent='每週 '+fmtDay(weekStart(t,Date.now()))+' '+t.weekTime+' 重置 · 短期額度 '+t.sessionHours+' 小時';
   $('lblS').textContent=t.sessionHours+' 小時';
   $('lblR').textContent=t.sessionHours+' 小時窗口仲有幾耐重置（可以唔填）';
 }
@@ -962,12 +968,14 @@ function syncSeg(){
   const t=tr();
   $('modeTagW').textContent='設定：'+(t.modeW==='left'?'剩低':'已用');
   $('modeTagS').textContent='設定：'+(t.modeS==='left'?'剩低':'已用');
+  if($('inWeeklyReset').checked)syncWeeklyResetUI();
   updateConv();
 }
 function updateConv(){
   const t=tr();
   for(const k of ['W','S']){
     const v=num($('in'+k).value),m=t['mode'+k],el=$('conv'+k);
+    if(k==='W'&&$('inWeeklyReset').checked){el.innerHTML='廠家已重置，由 '+(m==='left'?'剩低 100%':'已用 0%')+' 開始';continue;}
     if(v===null){el.innerHTML=m==='left'?'填你個 App 顯示嘅「剩低」百分比':'';continue;}
     el.innerHTML=m==='left'?('即係已用 <b>'+f1(100-v)+'%</b>，會記低呢個數'):('即係剩低 '+f1(100-v)+'%');
   }
@@ -989,25 +997,33 @@ linkRange('inW','rgW');linkRange('inS','rgS');
 const resetBox=$('inWeeklyReset');
 const resetTimeWrap=$('weeklyResetTimeWrap');
 const resetTimeInput=$('inWeeklyResetAt');
+function setWeeklyLocked(on){
+  for(const id of ['inW','rgW']){
+    const el=$(id);el.disabled=on;el.classList.toggle('locked',on);
+  }
+}
 function syncWeeklyResetUI(){
   resetTimeWrap.hidden=!resetBox.checked;
   if(resetBox.checked){
     if(!resetTimeInput.value)resetTimeInput.value=toLocalInput(Date.now());
-    if($('inW').value===''){
-      const v=toInput(0,tr().modeW);
-      $('inW').value=f1(v);$('rgW').value=Math.round(v);updateConv();
-    }
+    const v=toInput(0,tr().modeW);
+    $('inW').value=f1(v);$('rgW').value=Math.round(v);
+    setWeeklyLocked(true);updateConv();
   }else{
     resetTimeInput.value='';
+    setWeeklyLocked(false);
+    const snap=snapshot(tr(),Date.now());
+    const cur=toInput(snap.has?snap.cur:null,tr().modeW);
+    $('inW').value=cur===null?'':f1(cur);$('rgW').value=cur===null?0:Math.round(cur);
+    updateConv();
   }
 }
 resetBox.addEventListener('change',syncWeeklyResetUI);
 function addRecord(){
   const t=tr();
   const weeklyReset=resetBox.checked;
-  let w=fromInput(num($('inW').value),t.modeW);
+  const w=weeklyReset?0:fromInput(num($('inW').value),t.modeW);
   const s=fromInput(num($('inS').value),t.modeS);
-  if(weeklyReset&&w===null)w=0;
   if(w===null&&s===null){toast('最少要填一個百分比');$('inW').focus();return;}
 
   let ts=recordTime();
