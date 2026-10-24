@@ -30,6 +30,10 @@ npm run format
 npm run format:check
 ```
 
+涉及 `mental-health-journal/` 或其 workflow 的 Pull Request（包括草稿）及 `main` 推送，會由 [Journal checks](../.github/workflows/mental-health-journal.yml) 在 Node.js 24 自動執行 `npm ci`、語法檢查、測試及格式檢查。這套 workflow 只檢查程式，不部署網頁；合併前可在 PR 的 Checks 查看結果。
+
+純格式化與邏輯修改請分開 commit，先提交格式整理，再提交重構或功能修改。日後有純格式化 commit，才建立 repo 根目錄的 `.git-blame-ignore-revs` 並記下完整 SHA；不要把同時改過邏輯的 commit 放入名單。本機 Git 如要使用該名單，需設定 `git config blame.ignoreRevsFile .git-blame-ignore-revs`。
+
 主要模組：
 
 | 檔案 | 職責 |
