@@ -72,8 +72,16 @@ function normalize(d){
   out.journey.adventure=window.IslandAdventure.campaign(out.journey.adventure);
   return out;
 }
-let unreadableLocal=false;
-function loadLocal(){try{const raw=localStorage.getItem(LS);if(!raw)return null;const d=JSON.parse(raw);window.JournalCore.validateBackup(d);return normalize(d);}catch(e){unreadableLocal=true;return null;}}
+let unreadableLocal=false,pendingLocalRaw=null;
+function readLocalState(raw){
+  const result=window.JournalCore.readLocal(raw);
+  unreadableLocal=result.repaired;pendingLocalRaw=result.repaired?raw:null;
+  return result.data?normalize(result.data):defaults();
+}
+function loadLocal(){
+  try{return readLocalState(localStorage.getItem(LS));}
+  catch(e){unreadableLocal=true;return normalize({_localRecovery:true});}
+}
 
 let S=loadLocal()||defaults();
 
@@ -91,7 +99,28 @@ function setSync(on,msg){
   const mail=$('#google-email');if(mail)mail.textContent=fbUser?(fbUser.email||'已登入'):'未登入';
 }
 let storageOK=true;
-function saveLocal(){try{if(unreadableLocal){const raw=localStorage.getItem(LS);if(raw)localStorage.setItem(LS+'-unreadable-backup',raw);unreadableLocal=false;}localStorage.setItem(LS,JSON.stringify(S));storageOK=true;}catch(e){storageOK=false;}const warning=$('#storage-warning');if(warning)warning.hidden=storageOK;return storageOK;}
+function renderRecoveryStatus(){
+  let original=unreadableLocal,edits=false;
+  try{original=original||!!localStorage.getItem(LS+'-unreadable-backup');edits=!!localStorage.getItem(LS+'-recovery-edits');}catch(e){}
+  $('#recovery-warning').hidden=!(S._localRecovery||original||edits);
+  $('#recovery-message').textContent=S._localRecovery
+    ?'本機部分資料未能讀取，已保留可用記錄。復原會優先保留雲端嘅證據簿、寵物同習慣；新打卡仍會合併，其他本機修改會留副本。請到設定下載復原資料。'
+    :'復原副本仍然保留。請到設定下載原始資料，以及復原前的本機修改。';
+  $('#bk-recovery').hidden=!original;
+  $('#bk-recovery-edits').hidden=!edits;
+}
+function saveLocal(){
+  try{
+    if(unreadableLocal){
+      const raw=pendingLocalRaw==null?localStorage.getItem(LS):pendingLocalRaw;
+      if(raw!=null)localStorage.setItem(LS+'-unreadable-backup',raw);
+      unreadableLocal=false;pendingLocalRaw=null;
+    }
+    localStorage.setItem(LS,JSON.stringify(S));storageOK=true;
+  }catch(e){storageOK=false;}
+  const warning=$('#storage-warning');if(warning)warning.hidden=storageOK;
+  renderRecoveryStatus();return storageOK;
+}
 function coreBody(){const years=Array.from(new Set(Object.keys(S.checkins).map(k=>k.slice(0,4))));return {journey:S.journey,evidence:S.evidence,ladders:S.ladders,plan:S.plan,phq:S.phq,weeks:S.weeks,settings:S.settings,favs:S.favs||[],pet:S.pet||null,habits:S.habits||[],miles:S.miles||{},milesInit:S.milesInit||0,cardNotes:S.cardNotes||{},drawMonths:Array.from(new Set(Object.keys(S.draws||{}).map(k=>k.slice(0,7)))),years,t:S.t};}
 function monthBody(m){const o={};Object.keys(S.draws||{}).forEach(k=>{if(k.slice(0,7)===m)o[k]=S.draws[k];});return {entries:o};}
 function yearBody(y){const o={};Object.keys(S.checkins).forEach(k=>{if(k.slice(0,4)===y)o[k]=S.checkins[k];});return {entries:o};}
@@ -105,7 +134,7 @@ function persist(opts){
   milesSoon();
 }
 async function flush(){
- if(!cloud||flushing)return;
+ if(!cloud||flushing||S._localRecovery)return;
  const session=cloud,epoch=authEpoch;flushing=true;
  const current=()=>cloud===session&&epoch===authEpoch;
  try{
@@ -124,16 +153,19 @@ async function loadCloudFor(user){
     const previous=localStorage.getItem(CLOUD_UID_KEY);
     if(previous && previous!==user.uid){
       // Keep previous account's data offline, never upload it to a different account.
+      if(!saveLocal())throw new Error('Cannot preserve previous account data');
       localStorage.setItem(LS+'-account-'+previous,JSON.stringify(S));
       const own=localStorage.getItem(LS+'-account-'+user.uid);
-      S=own?normalize(JSON.parse(own)):defaults();
+      S=readLocalState(own);
       saveLocal();render();
       dirty.core=false;dirty.years.clear();dirty.months.clear();
     }
     localStorage.setItem(CLOUD_UID_KEY,user.uid);
     const base='users/'+user.uid+'/mentalHealthJournal';
     const c={core:fbDb.doc(base+'/core'),year:y=>fbDb.doc(base+'/ci-'+y),month:m=>fbDb.doc(base+'/dr-'+m)};
-    const snap=await c.core.get();
+    // A cached "missing" document is not proof that the server has no data.
+    // Recovery remains quarantined offline, including after a page reload.
+    const snap=await c.core.get({source:'server'});
     if(run!==authEpoch)return;
     if(snap.exists){
       const remote=snap.data()||{};
@@ -141,13 +173,15 @@ async function loadCloudFor(user){
 
       merged.checkins={};
       for(const y of (remote.years||[])){
-        const ys=await c.year(y).get();if(run!==authEpoch)return;
+        const ys=await c.year(y).get({source:'server'});if(run!==authEpoch)return;
+        if(!ys.exists)throw new Error('Missing cloud check-in partition');
         if(ys.exists)Object.assign(merged.checkins,JSON.parse(JSON.stringify(ys.data().entries||{})));
       }
 
       merged.draws={};
       for(const m of (remote.drawMonths||[])){
-        const ms=await c.month(m).get();if(run!==authEpoch)return;
+        const ms=await c.month(m).get({source:'server'});if(run!==authEpoch)return;
+        if(!ms.exists)throw new Error('Missing cloud draw partition');
         if(ms.exists)Object.assign(merged.draws,JSON.parse(JSON.stringify(ms.data().entries||{})));
       }
       const localCk=S.checkins||{},localDr=S.draws||{};
@@ -160,16 +194,28 @@ async function loadCloudFor(user){
         const cur=merged.checkins[k];
         if(!cur||(localCk[k].t||0)>(cur.t||0)){merged.checkins[k]=localCk[k];newerYears.add(k.slice(0,4));}
       });
-      const localCoreNewer=(S.t||0)>(remote.t||0);
+      const recovering=!!S._localRecovery;
+      const localCoreNewer=window.JournalCore.localCoreMayReplace(S,remote);
+      if(recovering){
+        // Save all offline core edits before restoring the authoritative core.
+        // If preserving this copy fails, leave recovery pending and do not sync.
+        if(!saveLocal())throw new Error('Cannot preserve local recovery data');
+        localStorage.setItem(LS+'-recovery-edits',JSON.stringify(S));
+        dirty.core=false;dirty.years.clear();dirty.months.clear();
+      }
       if(localCoreNewer){
         try{localStorage.setItem(LS+'-remote-backup-'+user.uid,JSON.stringify(remote));}catch(e){}
         ['journey','evidence','ladders','plan','phq','weeks','settings','favs','pet','habits','miles','milesInit','cardNotes'].forEach(k=>merged[k]=S[k]);
+        merged.t=S.t;
       }
+      delete merged._localRecovery;
       S=merged;saveLocal();render();
       newerYears.forEach(y=>dirty.years.add(y));
       newerMonths.forEach(m=>dirty.months.add(m));
       if(localCoreNewer||newerYears.size||newerMonths.size)dirty.core=true;
     }else{
+      // Only a successful server read may release a new account from recovery.
+      if(S._localRecovery){if(!saveLocal())throw new Error('Cannot preserve local recovery data');delete S._localRecovery;saveLocal();}
       Object.keys(S.checkins||{}).forEach(k=>dirty.years.add(k.slice(0,4)));
       Object.keys(S.draws||{}).forEach(k=>dirty.months.add(k.slice(0,7)));
       dirty.core=true;
@@ -2139,7 +2185,7 @@ function renderPlan(){PL.forEach(k=>$('#pl-'+k).value=S.plan[k]||'');}
 $('#pl-save').addEventListener('click',()=>{PL.forEach(k=>S.plan[k]=$('#pl-'+k).value);persist();$('#pl-status').textContent='儲存咗。';});
 
 /* ---------- settings ---------- */
-function renderSettings(){try{$('#bk-recovery').hidden=!(unreadableLocal||localStorage.getItem(LS+'-unreadable-backup'));}catch(e){}$('#set-a').value=S.settings.a;$('#set-b').value=S.settings.b;segSet('theme',S.settings.theme);segSet('buddy',S.settings.buddy===false?'off':'on');}
+function renderSettings(){renderRecoveryStatus();$('#set-a').value=S.settings.a;$('#set-b').value=S.settings.b;segSet('theme',S.settings.theme);segSet('buddy',S.settings.buddy===false?'off':'on');}
 $('#set-save').addEventListener('click',()=>{S.settings.a=$('#set-a').value||'09:00';S.settings.b=$('#set-b').value||'16:30';S.settings.theme=segGet('theme')||'auto';S.settings.buddy=segGet('buddy')!=='off';applyTheme();updBuddy();persist();toast('設定儲存咗');});
 $('#bk-export').addEventListener('click',async()=>{
   const data=JSON.stringify(S,null,2);const name='dicky-心晴手帳-備份-'+keyOf(new Date())+'.json';
@@ -2167,6 +2213,7 @@ $('#import-confirm').addEventListener('click',()=>{
  if(flushing||cloudInitPending){toast('等同步完成再還原，避免資料交叉。');return;}
  try{localStorage.setItem(LS+'-before-import',JSON.stringify(S));}catch(e){toast('未能保留安全副本，原有資料未改動。');return;}
  const periods=window.JournalCore.backupPeriods(S,pendingImport);
+ if(S._localRecovery)pendingImport._localRecovery=true;
  stopGame();cancelTrip();stopHaven();clearOwnerDrafts();S=pendingImport;pendingImport=null;memory=null;
  periods.years.forEach(y=>dirty.years.add(y));periods.months.forEach(m=>dirty.months.add(m));
  persist();$('#import-dialog').close();render();go(PAGES.includes(location.hash.slice(1))?location.hash.slice(1):'island');toast(storageOK?'已還原備份，原資料有安全副本。':'本機儲存未成功，請先匯出備份。');
@@ -2176,7 +2223,8 @@ $('#bk-clear').addEventListener('click',async()=>{
   if(!clearArmed){clearArmed=true;$('#bk-clear').textContent='再撳一次確認清除（冇得還原）';setTimeout(()=>{clearArmed=false;$('#bk-clear').textContent='清除所有資料';},5000);return;}
   clearArmed=false;$('#bk-clear').textContent='清除所有資料';
   const periods=window.JournalCore.backupPeriods(S,{});
-  stopGame();cancelTrip();stopHaven();clearOwnerDrafts();memory=null;S=defaults();
+  const recovering=!!S._localRecovery;
+  stopGame();cancelTrip();stopHaven();clearOwnerDrafts();memory=null;S=defaults();if(recovering)S._localRecovery=true;
   periods.years.forEach(y=>dirty.years.add(y));periods.months.forEach(m=>dirty.months.add(m));
   persist();render();go('island');toast('清除咗');
 });
@@ -2254,7 +2302,9 @@ $('#page-today').addEventListener('click',e=>{if(e.target.closest('.seg'))setTim
 $('#dr-text').addEventListener('input',()=>writeDraft('draw',defaultDay(),{text:$('#dr-text').value}));
 $('#bk-previous').addEventListener('click',()=>{let raw;try{raw=localStorage.getItem(LS+'-before-import');}catch(e){}if(!raw){toast('未有匯入前嘅安全副本。');return;}const u=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='dicky-care-before-import.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),30000);});
 
-$('#bk-recovery').addEventListener('click',()=>{let raw;try{raw=localStorage.getItem(LS+'-unreadable-backup')||(unreadableLocal?localStorage.getItem(LS):null);}catch(e){}if(!raw){toast('未有需要救回嘅原始資料。');return;}const u=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='dicky-care-original-recovery.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),30000);});
+$('#bk-recovery').addEventListener('click',()=>{let raw=pendingLocalRaw;try{raw=raw||localStorage.getItem(LS+'-unreadable-backup')||(unreadableLocal?localStorage.getItem(LS):null);}catch(e){}if(!raw){toast('未有需要救回嘅原始資料。');return;}downloadRecovery(raw,'original');});
+$('#bk-recovery-edits').addEventListener('click',()=>{let raw;try{raw=localStorage.getItem(LS+'-recovery-edits');}catch(e){}if(!raw){toast('未有雲端復原前嘅本機修改副本。');return;}downloadRecovery(raw,'offline-edits');});
+function downloadRecovery(raw,kind){const u=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='dicky-care-'+kind+'-recovery.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),30000);}
 
 /* ---------- Starlight Trail: persistent, turn-based puzzle adventure ---------- */
 const AD=window.IslandAdventure;
@@ -2325,6 +2375,6 @@ render();
 const h=(location.hash||'').slice(1);
 go(PAGES.includes(h)?h:'island');
 connect();
-if(unreadableLocal){$('#storage-warning').hidden=false;toast('舊資料未能讀取，原檔仍然保留。');}
+if(unreadableLocal)toast('已保留可用資料，請到設定查看復原副本。');
 milesSoon();
 })();

@@ -16,6 +16,7 @@
 <body>
 <a class="skip-link" href="#main-content">跳到主要內容</a>
 <div id="storage-warning" role="alert" hidden>本機儲存未成功，請先到設定匯出備份，再離開頁面。<button data-goto="about">開啟備份</button></div>
+<div id="recovery-warning" role="status" hidden><span id="recovery-message"></span><button data-goto="about">開啟復原副本</button></div>
 <div class="app">
   <nav class="nav" aria-label="主選單">
     <div class="brand"><div class="brand-mark" aria-hidden="true">✦</div><b>心晴小島</b><span>DICKY’S LITTLE WORLD</span></div>
@@ -588,6 +589,7 @@
             <hr class="sep">
             <button class="btn ghost small" id="bk-previous">下載匯入前副本</button>
             <button class="btn ghost small" id="bk-recovery" hidden>下載未能讀取的原始資料</button>
+            <button class="btn ghost small" id="bk-recovery-edits" hidden>下載雲端復原前的本機修改</button>
             <button class="btn ghost small danger" id="bk-clear">清除所有資料</button>
           </div>
         </div>

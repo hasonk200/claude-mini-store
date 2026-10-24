@@ -27,6 +27,48 @@ function validateBackup(d,cardIds){
  }
  return d;
 }
+/* Local storage is a recoverable cache, not an all-or-nothing imported file.
+ * Keep unfamiliar fields and valid siblings; retain the original JSON in the
+ * application whenever repairs are needed. The recovery flag is local-only. */
+function readLocal(raw){
+ if(raw==null)return {data:null,repaired:false};
+ let repaired=false;
+ const clean=v=>{
+  if(Array.isArray(v))return v.map(clean);
+  if(!record(v))return v;
+  const out={};
+  for(const [k,value] of Object.entries(v)){
+   if(['__proto__','constructor','prototype'].includes(k)){repaired=true;continue;}
+   out[k]=clean(value);
+  }
+  return out;
+ };
+ try{
+  const d=clean(JSON.parse(raw));
+  if(!record(d))throw new Error('Invalid local root');
+  const valid=(key,value)=>{try{validateBackup({checkins:{},[key]:value});return true;}catch(e){return false;}};
+  for(const key of ['checkins','draws']){
+   if(!record(d[key])){
+    if(key==='checkins'||key in d)repaired=true;
+    d[key]={};continue;
+   }
+   for(const [date,value] of Object.entries(d[key]))if(!valid(key,{[date]:value})){delete d[key][date];repaired=true;}
+  }
+  for(const key of ['evidence','ladders','phq','favs','habits']){
+   if(!(key in d))continue;
+   if(!Array.isArray(d[key])){delete d[key];repaired=true;continue;}
+   d[key]=d[key].filter(value=>{if(valid(key,[value]))return true;repaired=true;return false;});
+  }
+  for(const key of ['settings','plan','weeks','miles','cardNotes','journey','pet']){
+   if(key in d&&!(key==='pet'&&d[key]===null)&&(!record(d[key])||!valid(key,d[key]))){delete d[key];repaired=true;}
+  }
+  if(d.t!=null&&!finite(d.t,0,Number.MAX_SAFE_INTEGER)){delete d.t;repaired=true;}
+  if(repaired||d._localRecovery)d._localRecovery=true;
+  else delete d._localRecovery;
+  return {data:d,repaired};
+ }catch(e){return {data:{_localRecovery:true},repaired:true};}
+}
+function localCoreMayReplace(local,remote){return !local._localRecovery&&(local.t||0)>(remote.t||0);}
 function journey(raw){const d=record(raw)?raw:{},discovered={},watered={},games={};for(const k of ['home','library','garden','lake','plaza'])if(day(d.discovered?.[k]))discovered[k]=d.discovered[k];for(const [k,v] of Object.entries(record(d.watered)?d.watered:{}))if(day(k)&&v===true)watered[k]=true;for(const [k,v] of Object.entries(record(d.games)?d.games:{}))if(day(k)&&Number.isInteger(v)&&v>=0)games[k]=v;return {version:1,discovered,watered,games,decor:['lantern','flowers','stars'].includes(d.decor)?d.decor:'lantern',best:finite(d.best,6,1e5)?d.best:null,adventure:record(d.adventure)?d.adventure:null};}
 function activeDays(s){const set=new Set([...Object.keys(s.checkins||{}),...Object.keys(s.draws||{})]);for(const h of s.habits||[])for(const [k,v] of Object.entries(h.log||{}))if(v)set.add(k);for(const e of s.evidence||[])if(!e.seed&&e.src!=='里程碑')set.add(e.date);return [...set].filter(day).sort();}
 const stages=[{at:0,name:'初到小島',next:'三葉草小徑'},{at:3,name:'三葉草小徑',next:'開花小園'},{at:7,name:'開花小園',next:'微光花房'},{at:14,name:'微光花房',next:'繁花小島'},{at:30,name:'繁花小島',next:null}];
@@ -38,5 +80,5 @@ function flipMemory(g,i){if(!g||g.complete||g.busy||!Number.isInteger(i)||i<0||i
 function closeMemory(g){g.open=[];g.busy=false;}
 function gameReward(j,k){j.games=j.games||{};const n=Number(j.games[k])||0;j.games[k]=n+1;return n<2?5:0;}
 function backupPeriods(before,after){const union=(k,n)=>[...new Set([...Object.keys(before[k]||{}),...Object.keys(after[k]||{})].map(d=>d.slice(0,n)))];return {years:union('checkins',4),months:union('draws',7)};}
-return {record,day,validateBackup,journey,activeDays,progress,tasks,stages,createMemory,flipMemory,closeMemory,gameReward,backupPeriods};
+return {record,day,validateBackup,readLocal,localCoreMayReplace,journey,activeDays,progress,tasks,stages,createMemory,flipMemory,closeMemory,gameReward,backupPeriods};
 });
