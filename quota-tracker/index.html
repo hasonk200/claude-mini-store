@@ -63,6 +63,9 @@ select,input[type=text],input[type=number],input[type=time],input[type=datetime-
 .hero{padding:4px 0 6px}
 .hero-top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
 .kicker{font-size:15px;color:var(--muted);font-weight:500}
+.model-title{margin:2px 0 16px}
+.model-kicker{display:block;font-size:13px;color:var(--muted);font-weight:500;margin-bottom:2px}
+.model-title h2{font-family:var(--num);font-stretch:70%;font-weight:800;font-size:clamp(44px,13vw,72px);line-height:1;letter-spacing:-.01em;overflow-wrap:anywhere;color:var(--ink)}
 .big{font-family:var(--num);font-stretch:68%;font-weight:800;font-size:clamp(84px,24vw,148px);line-height:.86;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
 .big .pct{font-size:.42em;font-weight:700;margin-left:.04em;vertical-align:.95em}
 .hero-day{text-align:right}
@@ -287,6 +290,7 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
   </div>
 
   <div id="detailView" hidden>
+  <div class="model-title"><span class="model-kicker">而家睇緊</span><h2 id="modelName"></h2></div>
   <div id="alert" class="alert" hidden></div>
 
   <section class="hero" id="hero" aria-live="polite"></section>
@@ -709,7 +713,8 @@ function renderHeader(t){
   const sel=$('trackerSel');
   sel.innerHTML=state.trackers.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===t.id?' selected':'')+'>'+esc(x.name)+'</option>').join('');
   sel.hidden=state.trackers.length<2;
-  if(view==='detail')$('subLine').textContent=t.name+'：每週 '+fmtDay(weekStart(t,Date.now()))+' '+t.weekTime+' 重置，短期額度 '+t.sessionHours+' 小時';
+  $('modelName').textContent=t.name;
+  if(view==='detail')$('subLine').textContent='每週 '+fmtDay(weekStart(t,Date.now()))+' '+t.weekTime+' 重置 · 短期額度 '+t.sessionHours+' 小時';
   $('lblS').textContent=t.sessionHours+' 小時';
   $('lblR').textContent=t.sessionHours+' 小時窗口仲有幾耐重置（可以唔填）';
 }
