@@ -126,6 +126,7 @@ details.more input{margin-top:8px}
 .lblrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
 .lblrow label{font-size:14px;font-weight:500}
 .modetag{font-size:13px;color:var(--muted);white-space:nowrap}
+.numrow input.locked,input[type=range].locked{background:var(--line-soft);color:var(--muted);cursor:not-allowed;opacity:.6}
 .conv{font-size:13.5px;color:var(--muted);min-height:1.4em;margin-top:4px}
 .conv b{color:var(--ink)}
 .check{display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:14.5px;cursor:pointer}
@@ -327,7 +328,7 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
           <input type="checkbox" id="inWeeklyReset">
           <span>
             <b>廠家啱啱重新重置咗每週額度</b><br>
-            <span class="c-muted">勾選後，可以直接填重置發生時間；如果每週用量留空，會由 0% 開始。</span>
+            <span class="c-muted">勾選後，每週用量會自動鎖定喺 0%（如果用剩低就係 100%），只需要填重置發生時間。</span>
           </span>
         </label>
         <div class="field" id="weeklyResetTimeWrap" hidden style="margin:12px 0 0">
@@ -964,12 +965,14 @@ function syncSeg(){
   const t=tr();
   $('modeTagW').textContent='設定：'+(t.modeW==='left'?'剩低':'已用');
   $('modeTagS').textContent='設定：'+(t.modeS==='left'?'剩低':'已用');
+  if($('inWeeklyReset').checked)syncWeeklyResetUI();
   updateConv();
 }
 function updateConv(){
   const t=tr();
   for(const k of ['W','S']){
     const v=num($('in'+k).value),m=t['mode'+k],el=$('conv'+k);
+    if(k==='W'&&$('inWeeklyReset').checked){el.innerHTML='廠家已重置，由 '+(m==='left'?'剩低 100%':'已用 0%')+' 開始';continue;}
     if(v===null){el.innerHTML=m==='left'?'填你個 App 顯示嘅「剩低」百分比':'';continue;}
     el.innerHTML=m==='left'?('即係已用 <b>'+f1(100-v)+'%</b>，會記低呢個數'):('即係剩低 '+f1(100-v)+'%');
   }
@@ -991,25 +994,33 @@ linkRange('inW','rgW');linkRange('inS','rgS');
 const resetBox=$('inWeeklyReset');
 const resetTimeWrap=$('weeklyResetTimeWrap');
 const resetTimeInput=$('inWeeklyResetAt');
+function setWeeklyLocked(on){
+  for(const id of ['inW','rgW']){
+    const el=$(id);el.disabled=on;el.classList.toggle('locked',on);
+  }
+}
 function syncWeeklyResetUI(){
   resetTimeWrap.hidden=!resetBox.checked;
   if(resetBox.checked){
     if(!resetTimeInput.value)resetTimeInput.value=toLocalInput(Date.now());
-    if($('inW').value===''){
-      const v=toInput(0,tr().modeW);
-      $('inW').value=f1(v);$('rgW').value=Math.round(v);updateConv();
-    }
+    const v=toInput(0,tr().modeW);
+    $('inW').value=f1(v);$('rgW').value=Math.round(v);
+    setWeeklyLocked(true);updateConv();
   }else{
     resetTimeInput.value='';
+    setWeeklyLocked(false);
+    const snap=snapshot(tr(),Date.now());
+    const cur=toInput(snap.has?snap.cur:null,tr().modeW);
+    $('inW').value=cur===null?'':f1(cur);$('rgW').value=cur===null?0:Math.round(cur);
+    updateConv();
   }
 }
 resetBox.addEventListener('change',syncWeeklyResetUI);
 function addRecord(){
   const t=tr();
   const weeklyReset=resetBox.checked;
-  let w=fromInput(num($('inW').value),t.modeW);
+  const w=weeklyReset?0:fromInput(num($('inW').value),t.modeW);
   const s=fromInput(num($('inS').value),t.modeS);
-  if(weeklyReset&&w===null)w=0;
   if(w===null&&s===null){toast('最少要填一個百分比');$('inW').focus();return;}
 
   let ts=recordTime();
