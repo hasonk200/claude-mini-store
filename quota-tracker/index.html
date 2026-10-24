@@ -972,7 +972,7 @@ function updateConv(){
   const t=tr();
   for(const k of ['W','S']){
     const v=num($('in'+k).value),m=t['mode'+k],el=$('conv'+k);
-    if(k==='W'&&$('inWeeklyReset').checked){el.innerHTML='廠家已重置，由 '+(m==='left'?'剩低 100%':'已用 0%')+' 開始';continue;}
+    if($('inWeeklyReset').checked){el.innerHTML='廠家已重置，由 '+(m==='left'?'剩低 100%':'已用 0%')+' 開始';continue;}
     if(v===null){el.innerHTML=m==='left'?'填你個 App 顯示嘅「剩低」百分比':'';continue;}
     el.innerHTML=m==='left'?('即係已用 <b>'+f1(100-v)+'%</b>，會記低呢個數'):('即係剩低 '+f1(100-v)+'%');
   }
@@ -995,7 +995,7 @@ const resetBox=$('inWeeklyReset');
 const resetTimeWrap=$('weeklyResetTimeWrap');
 const resetTimeInput=$('inWeeklyResetAt');
 function setWeeklyLocked(on){
-  for(const id of ['inW','rgW','inRh','inRm']){
+  for(const id of ['inW','rgW','inS','rgS','inRh','inRm']){
     const el=$(id);el.disabled=on;el.classList.toggle('locked',on);
   }
   if(on){$('inRh').value='';$('inRm').value='';}
@@ -1006,6 +1006,8 @@ function syncWeeklyResetUI(){
     if(!resetTimeInput.value)resetTimeInput.value=toLocalInput(Date.now());
     const v=toInput(0,tr().modeW);
     $('inW').value=f1(v);$('rgW').value=Math.round(v);
+    const sv=toInput(0,tr().modeS);
+    $('inS').value=f1(sv);$('rgS').value=Math.round(sv);
     setWeeklyLocked(true);updateConv();
   }else{
     resetTimeInput.value='';
@@ -1013,6 +1015,10 @@ function syncWeeklyResetUI(){
     const snap=snapshot(tr(),Date.now());
     const cur=toInput(snap.has?snap.cur:null,tr().modeW);
     $('inW').value=cur===null?'':f1(cur);$('rgW').value=cur===null?0:Math.round(cur);
+    const sl=tr().logs.filter(l=>l.s!==null);
+    const sCurUsed=sl.length?sl[sl.length-1].s:null;
+    const sv=toInput(sCurUsed,tr().modeS);
+    $('inS').value=sv===null?'':f1(sv);$('rgS').value=sv===null?0:Math.round(sv);
     updateConv();
   }
 }
