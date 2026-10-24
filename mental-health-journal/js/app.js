@@ -104,8 +104,8 @@ function renderRecoveryStatus(){
   try{original=original||!!localStorage.getItem(LS+'-unreadable-backup');edits=!!localStorage.getItem(LS+'-recovery-edits');}catch(e){}
   $('#recovery-warning').hidden=!(S._localRecovery||original||edits);
   $('#recovery-message').textContent=S._localRecovery
-    ?'本機部分資料未能讀取，已保留可用記錄。復原會優先保留雲端嘅證據簿、寵物同習慣；新打卡仍會合併，其他本機修改會留副本。請到設定下載復原資料。'
-    :'復原副本仍然保留。請到設定下載原始資料，以及復原前的本機修改。';
+    ?'有啲記錄暫時開唔到。可以先到設定下載備份，留返一份喺自己手上。'
+    :'之前嘅記錄有另外留底，需要時可以到設定下載。';
   $('#bk-recovery').hidden=!original;
   $('#bk-recovery-edits').hidden=!edits;
 }
@@ -139,16 +139,16 @@ async function flush(){
  const current=()=>cloud===session&&epoch===authEpoch;
  try{
   await window.JournalSync.drain({session,isCurrent:current,dirty,monthBody,yearBody,coreBody});
-  if(current())setSync(true,storageOK?'已同步 Google Firebase。':'已同步雲端；本機儲存仍未成功，請匯出備份。');
+  if(current())setSync(true,storageOK?'記錄已同步。':'雲端已儲存，呢部裝置暫時存唔到。可以先下載一份記錄。');
  }catch(e){if(current()){
-  setSync(false,storageOK?'雲端同步暫時失敗；本機記錄仍然保留。':'本機同雲端未儲存成功，請立即匯出備份。');
+  setSync(false,storageOK?'暫時同步唔到。記錄已留喺呢部裝置，連線後會再試。':'今次未儲存到。請先下載一份記錄，再離開頁面。');
   dirty.core=true;Object.keys(S.checkins).forEach(k=>dirty.years.add(k.slice(0,4)));Object.keys(S.draws||{}).forEach(k=>dirty.months.add(k.slice(0,7)));
  }}finally{flushing=false;if(!current()&&cloud&&(dirty.core||dirty.years.size||dirty.months.size))setTimeout(flush,0);}
 }
 async function loadCloudFor(user){
   const run=++authEpoch;
   cloud=null;
-  setSync(false,'正在讀取 Google 雲端資料…');
+  setSync(false,'正在載入你嘅手帳…');
   try{
     const previous=localStorage.getItem(CLOUD_UID_KEY);
     if(previous && previous!==user.uid){
@@ -223,20 +223,20 @@ async function loadCloudFor(user){
     if(run!==authEpoch)return;
     cloud=c;
     if(dirty.core||dirty.months.size||dirty.years.size){
-      setSync(false,'Google 登入成功，正在同步…');
+      setSync(false,'登入咗，正在同步記錄…');
       await flush();
-    }else setSync(true,'已連接 Google Firebase，資料已更新。');
+    }else setSync(true,'記錄已更新。');
     cloudInitPending=false;milesSoon();
   }catch(e){
     if(run!==authEpoch)return;
     cloud=null;cloudInitPending=false;milesSoon();
-    setSync(false,'Google 同步暫時失敗（'+(e.code||'網絡問題')+'）；本機記錄仍然保留。');
+    setSync(false,'暫時連唔到雲端。可以繼續記低，連線後再試。');
   }
 }
 async function connect(){
   if(!window.firebase||!window.FIREBASE_CONFIG){
     cloudInitPending=false;milesSoon();
-    setSync(false,'Google 同步暫時不可用；資料仍然儲存在本機。');
+    setSync(false,'暫時同步唔到。可以先喺呢個瀏覽器記低。');
     return;
   }
   try{
@@ -247,18 +247,18 @@ async function connect(){
       fbUser=user||null;
       if(!user){
         authEpoch++;cloud=null;cloudInitPending=false;milesSoon();
-        setSync(false,'未登入 Google，資料只儲存在呢個瀏覽器。');
+        setSync(false,'未登入，記錄留喺呢個瀏覽器。');
       }else{cloudInitPending=true;loadCloudFor(user);}
     });
-    fbAuth.getRedirectResult().catch(e=>setSync(false,'Google 登入未完成（'+(e.code||'')+'），請重試。'));
-  }catch(e){cloudInitPending=false;milesSoon();setSync(false,'Firebase 初始化失敗；仍可使用本機手帳。');}
+    fbAuth.getRedirectResult().catch(e=>setSync(false,'頭先未登入到，請再試一次。'));
+  }catch(e){cloudInitPending=false;milesSoon();setSync(false,'暫時連唔到 Google。可以先喺呢個瀏覽器記低。');}
 }
 $('#google-login').addEventListener('click',async()=>{
   if(!fbAuth)await connect();
-  if(!fbAuth){toast('Google 同步暫時不可用');return;}
+  if(!fbAuth){toast('暫時連唔到 Google，請稍後再試。');return;}
   if(fbAuth.currentUser){
-    try{await fbAuth.signOut();toast('已登出 Google；雲端同步暫停。');}
-    catch(e){toast('Google 登出失敗');}
+    try{await fbAuth.signOut();toast('已登出，之後嘅記錄會留喺呢個瀏覽器。');}
+    catch(e){toast('未登出到，請再試一次。');}
     return;
   }
   const provider=new firebase.auth.GoogleAuthProvider();
@@ -267,9 +267,9 @@ $('#google-login').addEventListener('click',async()=>{
   catch(e){
     if(e&&['auth/popup-blocked','auth/cancelled-popup-request'].includes(e.code)){
       try{await fbAuth.signInWithRedirect(provider);}
-      catch(err){setSync(false,'Google 登入失敗：'+(err.code||'請重試'));}
+      catch(err){setSync(false,'頭先未登入到，請再試一次。');}
     }else if(e&&e.code==='auth/popup-closed-by-user')toast('已取消 Google 登入');
-    else setSync(false,'Google 登入失敗：'+(e.code||'請重試'));
+    else setSync(false,'頭先未登入到，請再試一次。');
   }
 });
 window.addEventListener('online',()=>{
@@ -1016,7 +1016,7 @@ function readingHTML(d,showText){
     '<div class="kq" style="margin-top:0">「'+esc(c.quote[0])+'」<small>'+esc(c.quote[1])+'</small></div>'+
     (lv>=2?'<div class="r-block"><span class="tag">牌嘅故事</span><p>'+esc(c.story)+'</p></div>':'<div class="lock">再抽到呢張 '+(3-n)+' 次，解鎖牌背後嘅故事。</div>')+
     pastNotesHTML([c.id])+
-    '<div class="row"><button class="btn ghost small" data-addnext="'+d.date+'">將細步放入聽日打卡</button><button class="btn ghost small" data-notecard="'+c.id+'">寫低我對呢張牌嘅解讀</button>'+(d.by==='claude'?'<span class="muted">由 Claude 讀過你嘅說話之後揀</span>':'<span class="muted">由手帳按關鍵字揀</span>')+'</div>'+
+    '<div class="row"><button class="btn ghost small" data-addnext="'+d.date+'">將細步放入聽日打卡</button><button class="btn ghost small" data-notecard="'+c.id+'">寫低我對呢張牌嘅解讀</button>'+(d.by==='claude'?'<span class="muted">由 Claude 讀過你嘅說話之後揀</span>':'<span class="muted">由手帳按你寫嘅內容揀</span>')+'</div>'+
   '</div>';
 }
 let drawing=false,ritual=false,redoArmed=false;
@@ -1056,7 +1056,7 @@ function readingHTML3(d,showText){const cs=d.cards;const cnt=drawCounts();
     '<div class="r-body">'+esc(d.reading)+'</div>'+
     '<div class="grid g2"><div class="r-block"><span class="tag">問自己</span><p>'+esc(d.question)+'</p></div><div class="r-block"><span class="tag">聽日一細步</span><p>'+esc(d.action)+'</p></div></div>'+
     pastNotesHTML(cs.map(x=>x.card))+
-    '<div class="row"><button class="btn ghost small" data-addnext="'+d.date+'">將細步放入聽日打卡</button>'+(d.by==='claude'?'<span class="muted">由 Claude 讀過你嘅說話之後揀</span>':'<span class="muted">由手帳按關鍵字揀</span>')+'</div>'+
+    '<div class="row"><button class="btn ghost small" data-addnext="'+d.date+'">將細步放入聽日打卡</button>'+(d.by==='claude'?'<span class="muted">由 Claude 讀過你嘅說話之後揀</span>':'<span class="muted">由手帳按你寫嘅內容揀</span>')+'</div>'+
   '</div>';}
 function showReading(d){const r=$('#dr-reading');r.innerHTML=readingHTML(d,false)+'<hr class="sep"><div class="row"><button class="btn ghost small danger" id="dr-redo">'+(redoArmed?'再撳一次確認重抽':'改寫重抽')+'</button><span class="muted">每晚一次。想改寫就重抽，舊嗰次會被取代。</span></div>';r.hidden=false;}
 function renderDraw(){
@@ -1084,7 +1084,7 @@ $('#dr-go').addEventListener('click',async()=>{
   let res=await Promise.race([three?claudeSpread(text,k):claudePick(text,k),timeout]);
   if(S!==drawOwner||authEpoch!==drawEpoch){drawing=false;$('#dr-go').disabled=false;showDrawTab();return;}
   let note='';
-  if(!res||res.err){note=res&&res.err==='not_granted'?'你冇俾手帳問 Claude，今次由手帳按關鍵字揀。':'由手帳喺本機按關鍵字揀牌。';res=three?localSpread(text,k):localPick(text,k);}
+  if(!res||res.err){note=res&&res.err==='not_granted'?'今次由手帳按你寫嘅內容揀牌。':'呢張牌係按你寫嘅內容揀出嚟。';res=three?localSpread(text,k):localPick(text,k);}
   const d={date:k,text,card:res.card,rev:res.rev,reading:res.reading,question:res.question,action:res.action,by:res.by,t:Date.now()};
   if(res.cards){d.mode='three';d.cards=res.cards;}
   S.draws=S.draws||{};S.draws[k]=d;
@@ -1550,7 +1550,7 @@ function renderStatus(){const p=S.pet,st=petStage(p),nx=PET.STAGES[st+1];ensureP
  '<div class="love"><span>愛你嘅程度</span><b>∞</b><span class="muted">無條件，永遠唔會變</span></div>'+
  '<div class="meter"><span>羈絆</span><div class="bar"><i class="red" style="width:'+prog+'%"></i></div><span class="muted">'+(nx?p.xp+'／'+nx.xp:'滿級')+'</span></div>'+
  '<div class="coins">金幣 <b>'+p.coins+'</b></div><hr class="sep">'+meterHTML()+
- '<p class="muted" style="margin-top:10px">狀態最低會保留 20%，'+esc(p.name)+'唔會病，亦唔會嬲你。得閒先照顧佢就得。</p>';}
+ '<p class="muted" style="margin-top:10px">得閒返嚟，陪'+esc(p.name)+'食啲嘢、玩一陣。</p>';}
 function renderEarn(){const p=S.pet,k=keyOf(new Date()),done=(p.aw||{})[k]||[];const cnt=x=>done.filter(y=>y===x).length;
  const L=[['ci','今日打卡',10,1,'today'],['habit','完成習慣',3,3,'today'],['draw','收工抽卡',10,1,'draw'],['talk','同人傾咗偈（打卡時揀）',5,1,'today'],['move','有郁身（打卡時揀）',5,1,'today'],['ev','加一條證據',5,3,'evidence'],['lad','行一級細步階梯',15,2,'ladder'],['sos','用卡住急救',10,1,'sos'],['wk','寫每週三省',20,1,'review'],['phq','做 PHQ-4',15,1,'review'],['walk','帶'+p.name+'出街',5,3,null],['care','親手照顧（餵食、飲水、沖涼）',2,6,null]];
  $('#pet-earn').innerHTML='<h2>今日點樣加羈絆</h2><div class="sub">你照顧自己，同照顧'+esc(p.name)+'，佢都會長大。</div><ul class="list">'+L.map(([id,n,pt,cap,go])=>{const c=cnt(id);return '<li class="item" style="align-items:center"><span class="chip '+(c>=cap?'good':'')+'">'+(c>=cap?'完成':'+'+pt)+'</span><div class="txt">'+(go?'<button class="linkbtn" data-goto="'+go+'">'+n+'</button>':n)+(cap>1?'<span class="muted">　'+c+'／'+cap+'</span>':'')+'</div></li>';}).join('')+'</ul>';}
@@ -1949,7 +1949,7 @@ function feedbackFor(k,e){
   const fb=[];
   const hrs=sleepHours(e.ss,e.se);
   if(e.mood<=2)fb.push(['red','今日好低。唔使逼自己即刻好返。打開<a data-goto="plan">低潮應急卡</a>，照第 ② 步做一樣就得。']);
-  if(recentEntries(k,5).filter(x=>x.mood<=3).length>=3)fb.push(['warn','最近幾日心情都偏低。呢個唔係懶，係一個訊號。安省有免費 CBT，可以自己轉介，資料喺<a data-goto="plan">應急卡最底</a>。']);
+  if(recentEntries(k,5).filter(x=>x.mood<=3).length>=3)fb.push(['warn','最近幾日心情都偏低。如果想搵人一齊諗吓，安省有免費 CBT 可以自己轉介，資料喺<a data-goto="plan">應急卡最底</a>。']);
   if(e.anx>=7)fb.push(['calm','焦慮偏高。試吓<a data-goto="sos">卡住急救</a>第一步，一分鐘就得。']);
   if(e.seg==='3')fb.push(['warn','瞓眠斷咗三段或以上，就算加埋時數唔少都會好攰。聽日收工試吓一次過瞓，開工前小瞓控制喺 30 分鐘內。']);
   else if(e.ss&&circDiff(e.ss,S.settings.a)>2)fb.push(['warn','今日開始瞓嘅時間離錨點 '+S.settings.a+' 差咗 '+Math.round(circDiff(e.ss,S.settings.a)*10)/10+' 個鐘。休息日都盡量唔好差多過 2 個鐘。']);
@@ -1979,7 +1979,7 @@ $('#ci-save').addEventListener('click',()=>{
   persist({year:k.slice(0,4)});
   if(S.pet){petAward('ci',10,1,'打卡');if(e.contact==='2'||e.contact==='3')petAward('talk',5,1,'同人傾偈');if(e.move&&e.move!=='0')petAward('move',5,1,'郁身');}
   if(storageOK)removeDraft('checkin',k);
-  $('#ci-status').textContent=storageOK?'已儲存。':'本機儲存未成功，請先匯出備份。';
+  $('#ci-status').textContent=storageOK?'已儲存。':'今次未儲存到，請先下載一份記錄。';
   $('#ci-feedback').innerHTML=feedbackFor(k,e).map(([c,t])=>'<div class="fb '+c+'">'+t+'</div>').join('');
   renderBadge();
 });
@@ -2138,7 +2138,7 @@ $('#phq-save').addEventListener('click',()=>{
   S.phq.push({date:keyOf(new Date()),total,anx,dep});persist();petAward('phq',15,1,'PHQ-4');
   const [lv,c]=phqLevel(total);
   let msg='<div class="fb '+c+'">總分 '+total+'／12，'+lv+'。焦慮部分 '+anx+'／6，低落部分 '+dep+'／6。</div>';
-  msg+=(total>=6||anx>=3||dep>=3)?'<div class="fb">呢個分數值得同專業人士傾一次。唔代表有病，係想有人幫你睇清楚。最低門檻：安省免費 CBT 可以自己轉介，或者康福用廣東話傾。資料喺<a data-goto="plan">應急卡最底</a>。</div>':'<div class="fb">繼續照而家咁跟進，兩星期後再做一次睇趨勢。</div>';
+  msg+=(total>=6||anx>=3||dep>=3)?'<div class="fb">可以帶住今次嘅記錄，同專業人士傾吓最近點樣。安省免費 CBT 可以自己轉介，康福亦有廣東話服務。資料喺<a data-goto="plan">應急卡最底</a>。</div>':'<div class="fb">繼續照而家咁跟進，兩星期後再做一次睇趨勢。</div>';
   $('#phq-result').innerHTML=msg;renderPHQLast();renderPHQForm();renderBadge();
 });
 function renderWeek(){const w=weekKey();const d=S.weeks[w]||{};$('#week-label').textContent='由星期一 '+md(w)+' 開始嘅一星期';$('#wk-did').value=d.did||'';$('#wk-learn').value=d.learn||'';$('#wk-next').value=d.next||'';}
@@ -2194,33 +2194,33 @@ $('#bk-export').addEventListener('click',async()=>{
   const a=document.createElement('a');a.href=url;a.download=name;
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),30000);
-  toast('已開始下載 JSON 備份');
+  toast('備份開始下載喇。');
 });
 let pendingImport=null;
 $('#bk-file').addEventListener('change',e=>{
  const f=e.target.files[0];e.target.value='';if(!f)return;
- if(f.size>10*1024*1024){toast('備份超過 10 MB，請先檢查檔案。');return;}
- const r=new FileReader();r.onerror=()=>toast('讀唔到備份，原有資料未改動。');r.onload=()=>{try{
+ if(f.size>10*1024*1024){toast('呢個檔案太大，暫時只可以開 10 MB 以內嘅備份。');return;}
+ const r=new FileReader();r.onerror=()=>toast('讀唔到呢份備份，請再揀一次檔案。');r.onload=()=>{try{
   const d=JSON.parse(r.result);window.JournalCore.validateBackup(d,DECK.map(c=>c.id));pendingImport=normalize(d);
   $('#import-summary').textContent='備份包含 '+Object.keys(d.checkins).length+' 日打卡、'+Object.keys(d.draws||{}).length+' 晚抽卡'+(d.pet?'，以及寵物「'+d.pet.name+'」。':'。');
   $('#import-dialog').showModal();
- }catch(err){pendingImport=null;toast('備份未匯入：'+(err.message||'格式不正確'));}};r.readAsText(f);
+ }catch(err){pendingImport=null;toast('讀唔到呢份備份。請揀返由手帳下載嘅備份檔案。');}};r.readAsText(f);
 });
 $('#import-cancel').addEventListener('click',()=>{pendingImport=null;$('#import-dialog').close();});
 $('#import-dialog').addEventListener('cancel',()=>{pendingImport=null;});
 $('#import-confirm').addEventListener('click',()=>{
  if(!pendingImport)return;
- if(flushing||cloudInitPending){toast('等同步完成再還原，避免資料交叉。');return;}
- try{localStorage.setItem(LS+'-before-import',JSON.stringify(S));}catch(e){toast('未能保留安全副本，原有資料未改動。');return;}
+ if(flushing||cloudInitPending){toast('記錄仲同步緊，完成後就可以還原。');return;}
+ try{localStorage.setItem(LS+'-before-import',JSON.stringify(S));}catch(e){toast('暫時存唔到現有記錄，今次先唔還原。請下載一份備份，再試一次。');return;}
  const periods=window.JournalCore.backupPeriods(S,pendingImport);
  if(S._localRecovery)pendingImport._localRecovery=true;
  stopGame();cancelTrip();stopHaven();clearOwnerDrafts();S=pendingImport;pendingImport=null;memory=null;
  periods.years.forEach(y=>dirty.years.add(y));periods.months.forEach(m=>dirty.months.add(m));
- persist();$('#import-dialog').close();render();go(PAGES.includes(location.hash.slice(1))?location.hash.slice(1):'island');toast(storageOK?'已還原備份，原資料有安全副本。':'本機儲存未成功，請先匯出備份。');
+ persist();$('#import-dialog').close();render();go(PAGES.includes(location.hash.slice(1))?location.hash.slice(1):'island');toast(storageOK?'備份已還原。之前嘅記錄亦有留底。':'今次未儲存到，請先下載一份記錄。');
 });
 let clearArmed=false;
 $('#bk-clear').addEventListener('click',async()=>{
-  if(!clearArmed){clearArmed=true;$('#bk-clear').textContent='再撳一次確認清除（冇得還原）';setTimeout(()=>{clearArmed=false;$('#bk-clear').textContent='清除所有資料';},5000);return;}
+  if(!clearArmed){clearArmed=true;$('#bk-clear').textContent='再撳一次清除全部記錄';setTimeout(()=>{clearArmed=false;$('#bk-clear').textContent='清除所有資料';},5000);return;}
   clearArmed=false;$('#bk-clear').textContent='清除所有資料';
   const periods=window.JournalCore.backupPeriods(S,{});
   const recovering=!!S._localRecovery;
@@ -2248,7 +2248,7 @@ function gardenSVG(level,decor,watered){
  const tree=(x,y,r)=>'<g><path d="M'+x+' '+y+'v-50" stroke="#977959" stroke-width="9" stroke-linecap="round"/><circle cx="'+x+'" cy="'+(y-67)+'" r="'+r+'" fill="#70926a"/><circle cx="'+(x-18)+'" cy="'+(y-51)+'" r="'+(r*.7)+'" fill="#819f74"/><circle cx="'+(x+17)+'" cy="'+(y-53)+'" r="'+(r*.7)+'" fill="#567d61"/></g>';
  return '<svg viewBox="0 0 500 280" role="img" aria-label="'+['剛播種的小花園','小徑旁開始長出葉子','花朵逐漸盛開','溫室亮起暖燈','繁花盛開的小島花園'][level]+'"><defs><linearGradient id="garden-sky" x2="0" y2="1"><stop stop-color="#d7e6db"/><stop offset="1" stop-color="#fcf3d6"/></linearGradient></defs><rect width="500" height="280" fill="url(#garden-sky)"/><circle cx="415" cy="53" r="25" fill="#fff4c6"/><path d="M0 145Q110 83 235 143T500 125V280H0" fill="#c2d2a8"/><path d="M0 185Q130 124 260 184T500 166V280H0" fill="#a8bf90"/><ellipse cx="255" cy="240" rx="204" ry="31" fill="#97b083"/><path d="M265 280Q210 240 270 210T265 139" stroke="#e9ddbd" stroke-width="27" fill="none"/>'+tree(75,173,30)+(level>=1?tree(430,174,35):'')+'<g fill="#b58860" stroke="#9f7857" stroke-width="2"><path d="M134 204l65 -17 39 17 -65 20z"/><path d="M134 204v14l39 20v-14M173 238l65 -20v-14"/></g><g fill="#6c8350">'+[0,1,2].map(i=>'<path d="M'+(166+i*19)+' '+(205-i*3)+'q-13 -22 -20 -12q10 13 20 12q1 -21 12 -17q4 14 -12 17"/>').join('')+'</g>'+(level>=2?'<g fill="#e9ead8" stroke="#729787" stroke-width="3"><path d="M315 170V105l44 -31 44 31v65z"/><path d="M315 105h88M359 74v96M337 90v80M381 90v80" fill="none"/><path d="M349 170v-39h20v39" fill="#f5d99d"/></g>':'')+flowers(level*5+(decor==='flowers'?7:1))+(decor==='lantern'?'<path d="M302 208v-55q0 -12 13 -12" stroke="#7d7959" stroke-width="3" fill="none"/><rect x="308" y="139" width="14" height="22" rx="4" fill="#ffe4a2" stroke="#b1995d"/><circle cx="315" cy="150" r="24" fill="#ffe9ad" opacity=".22"/>':'')+(decor==='stars'?'<g fill="#fff6be"><path d="M100 39l3 7 7 3-7 3-3 7-3-7-7-3 7-3zM215 69l3 7 7 3-7 3-3 7-3-7-7-3 7-3zM355 35l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/></g>':'')+(watered?'<g fill="#649fa2" opacity=".8"><path d="M150 164q-9 13 0 13t0 -13M180 155q-9 13 0 13t0 -13M210 163q-9 13 0 13t0 -13"/></g>':'')+'</svg>';
 }
-function renderGarden(){const p=JC.progress(S),j=S.journey,k=defaultDay(),watered=!!j.watered[k];$('#garden-stage').textContent=p.name;$('#garden-title').textContent=p.days+' 日照顧自己嘅足跡';$('#garden-description').textContent='打卡、日記、習慣同你寫低嘅小成就，每日都可以幫花園長大。休息幾日，花園都會保留。';$('#garden-progress-text').textContent=p.next?'再記錄 '+p.remaining+' 日，就會到「'+p.next+'」。':'花園已經盛開，之後嘅每一日仍會繼續記低。';$('#garden-progress').value=p.percent;$('#garden-progress').setAttribute('aria-label','下一個花園階段進度');$('#garden-art').innerHTML=gardenSVG(p.level,j.decor,watered);$('#garden-water').disabled=watered;$('#garden-water').textContent=watered?'今日淋過喇 ✓':'淋一淋花';$('#garden-water-note').textContent=watered?'花園收到你嘅心意，今日隨時可以休息。':'淋花係小小儀式；花園成長按你留下記錄嘅日子計。';$$('[data-decor]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.decor===j.decor)));}
+function renderGarden(){const p=JC.progress(S),j=S.journey,k=defaultDay(),watered=!!j.watered[k];$('#garden-stage').textContent=p.name;$('#garden-title').textContent=p.days+' 日照顧自己嘅足跡';$('#garden-description').textContent='每記錄一日心情、日記、習慣或小成就，花園就會長大一點。';$('#garden-progress-text').textContent=p.next?'再記錄 '+p.remaining+' 日，就會到「'+p.next+'」。':'花園已經盛開，之後嘅每一日仍會繼續記低。';$('#garden-progress').value=p.percent;$('#garden-progress').setAttribute('aria-label','下一個花園階段進度');$('#garden-art').innerHTML=gardenSVG(p.level,j.decor,watered);$('#garden-water').disabled=watered;$('#garden-water').textContent=watered?'今日淋過喇 ✓':'淋一淋花';$('#garden-water-note').textContent=watered?'今日淋過水喇。':'淋一淋花，留低今日到訪嘅足跡。';$$('[data-decor]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.decor===j.decor)));}
 function renderIsland(){
  const p=JC.progress(S),k=defaultDay(),cnt=drawCounts(),owned=Object.keys(cnt).length;
  $('#quiet-toggle').setAttribute('aria-pressed',String(!!S.settings.quiet));$('#quiet-toggle').textContent=S.settings.quiet?'減少動態：開':'減少動態';
@@ -2264,10 +2264,10 @@ const MEMORY_PALS=[['cat','milktea','奶茶貓'],['dog','mint','薄荷柴'],['cl
 function renderMemory(){if(!memory||memoryOwner!==S.journey){clearTimeout(memoryTimer);memoryOwner=S.journey;memory=JC.createMemory();$('#memory-status').textContent='準備好，就揀一張。';}$('#memory-moves').textContent=memory.moves+' 次翻牌 · '+memory.matched.length/2+'/6 對';$('#memory-grid').innerHTML=memory.cards.map((v,i)=>{const open=memory.open.includes(i),matched=memory.matched.includes(i),pal=MEMORY_PALS[v];return '<button class="memory-tile '+(open?'open ':'')+(matched?'matched':'')+'" data-memory="'+i+'" aria-label="第 '+(i+1)+' 張，'+(open||matched?pal[2]+(matched?'，已配對':''):'未揭開')+'" aria-disabled="'+(matched||open||memory.busy)+'">'+(open||matched?PET.svg({sp:pal[0],color:pal[1],stage:1,expr:matched?'love':'happy'})+'<small>'+pal[2]+'</small>':'<span aria-hidden="true">✦</span>')+'</button>';}).join('');$('#memory-buddy').innerHTML=companionArt('happy');const played=Number(S.journey.games[defaultDay()])||0;$('#memory-reward').textContent=(S.pet?'每日頭兩局完成各有 5 金幣。今日已玩 '+played+' 局。':'可以隨時玩。領養伙伴後，每日頭兩局完成各有 5 金幣。')+(S.journey.best?' 最少翻牌紀錄：'+S.journey.best+' 次。':'');}
 function resetMemory(){clearTimeout(memoryTimer);memoryOwner=S.journey;memory=JC.createMemory();$('#memory-status').textContent='準備好，就揀一張。';renderMemory();}
 function memoryFlip(i){if(memoryOwner!==S.journey){renderMemory();return;}const outcome=JC.flipMemory(memory,i);if(outcome==='ignored')return;if(outcome==='miss'){const current=memory;$('#memory-status').textContent='記低佢哋嘅位置，再試一對。';memoryTimer=setTimeout(()=>{if(memory!==current)return;JC.closeMemory(memory);renderMemory();},1100);}else if(outcome==='match')$('#memory-status').textContent='搵到一對喇！';else if(outcome==='complete'){const gain=JC.gameReward(S.journey,defaultDay());S.journey.best=Math.min(S.journey.best||Infinity,memory.moves);if(S.pet&&gain){S.pet.coins+=gain;need('fun',10);}persist();$('#memory-status').textContent='六對都搵到喇！'+(S.pet&&gain?' 金幣 +'+gain+'。':'')+' 想休息就返小島坐吓。';}renderMemory();const next=$('[data-memory="'+i+'"]');if(next)next.focus();}
-function renderHaven(){const h=worldHour();$('#haven-scene').innerHTML='<img class="haven-art" src="assets/lakeside.webp" width="1536" height="1024" alt="金色陽光下的湖畔碼頭、木椅與遠山">'+'<div class="haven-pet">'+companionArt('normal')+'</div>';$('#haven-copy').textContent='湖水慢慢流。你可以喺呢度坐一陣，唔使完成任何事。';}
+function renderHaven(){const h=worldHour();$('#haven-scene').innerHTML='<img class="haven-art" src="assets/lakeside.webp" width="1536" height="1024" alt="金色陽光下的湖畔碼頭、木椅與遠山">'+'<div class="haven-pet">'+companionArt('normal')+'</div>';$('#haven-copy').textContent='坐低一陣，望吓湖水同遠山。';}
 let havenTimer=null,havenEnd=0;
 function stopHaven(){clearInterval(havenTimer);havenTimer=null;const b=$('#haven-rest');if(b)b.textContent='陪我坐一分鐘';}
-function startHaven(){if(havenTimer){stopHaven();$('#haven-copy').textContent='想走就走，湖畔隨時都喺度。';return;}havenEnd=Date.now()+60000;$('#haven-rest').textContent='隨時結束';const tick=()=>{const left=Math.max(0,Math.ceil((havenEnd-Date.now())/1000));$('#haven-copy').textContent=left>0?'仲有 '+left+' 秒。望吓遠處，照平時咁呼吸就得。':'一分鐘過咗。多謝你留咗一點時間俾自己。';if(left===0)stopHaven();};tick();havenTimer=setInterval(tick,1000);}
+function startHaven(){if(havenTimer){stopHaven();$('#haven-copy').textContent='下次再嚟坐吓。';return;}havenEnd=Date.now()+60000;$('#haven-rest').textContent='隨時結束';const tick=()=>{const left=Math.max(0,Math.ceil((havenEnd-Date.now())/1000));$('#haven-copy').textContent=left>0?'仲有 '+left+' 秒。望吓遠處，照平時咁呼吸就得。':'一分鐘過咗。想繼續坐吓，定返小島行吓？';if(left===0)stopHaven();};tick();havenTimer=setInterval(tick,1000);}
 document.addEventListener('click',e=>{
  const d=e.target.closest('[data-destination]');if(d)chooseDestination(d.dataset.destination);
  const t=e.target.closest('[data-world-time]');if(t){worldTime=t.dataset.worldTime;renderWorldTime();}
@@ -2300,10 +2300,10 @@ function saveCheckinDraft(){const k=$('#ci-date').value||defaultDay(),fields={},
 $('#page-today').addEventListener('input',e=>{if(e.target.id!=='ci-date')saveCheckinDraft();});
 $('#page-today').addEventListener('click',e=>{if(e.target.closest('.seg'))setTimeout(saveCheckinDraft,0);});
 $('#dr-text').addEventListener('input',()=>writeDraft('draw',defaultDay(),{text:$('#dr-text').value}));
-$('#bk-previous').addEventListener('click',()=>{let raw;try{raw=localStorage.getItem(LS+'-before-import');}catch(e){}if(!raw){toast('未有匯入前嘅安全副本。');return;}const u=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='dicky-care-before-import.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),30000);});
+$('#bk-previous').addEventListener('click',()=>{let raw;try{raw=localStorage.getItem(LS+'-before-import');}catch(e){}if(!raw){toast('仲未有還原前嘅記錄可以下載。');return;}const u=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='dicky-care-before-import.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),30000);});
 
-$('#bk-recovery').addEventListener('click',()=>{let raw=pendingLocalRaw;try{raw=raw||localStorage.getItem(LS+'-unreadable-backup')||(unreadableLocal?localStorage.getItem(LS):null);}catch(e){}if(!raw){toast('未有需要救回嘅原始資料。');return;}downloadRecovery(raw,'original');});
-$('#bk-recovery-edits').addEventListener('click',()=>{let raw;try{raw=localStorage.getItem(LS+'-recovery-edits');}catch(e){}if(!raw){toast('未有雲端復原前嘅本機修改副本。');return;}downloadRecovery(raw,'offline-edits');});
+$('#bk-recovery').addEventListener('click',()=>{let raw=pendingLocalRaw;try{raw=raw||localStorage.getItem(LS+'-unreadable-backup')||(unreadableLocal?localStorage.getItem(LS):null);}catch(e){}if(!raw){toast('暫時冇另外留底嘅記錄。');return;}downloadRecovery(raw,'original');});
+$('#bk-recovery-edits').addEventListener('click',()=>{let raw;try{raw=localStorage.getItem(LS+'-recovery-edits');}catch(e){}if(!raw){toast('暫時冇未同步嘅修改可以下載。');return;}downloadRecovery(raw,'offline-edits');});
 function downloadRecovery(raw,kind){const u=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='dicky-care-'+kind+'-recovery.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),30000);}
 
 /* ---------- Starlight Trail: persistent, turn-based puzzle adventure ---------- */
@@ -2338,7 +2338,7 @@ function renderAdventure(){
  $('#adventure-undo').disabled=!adventureHistory.length||s.won;$$('[data-step]').forEach(x=>x.disabled=s.won);
  $('#adventure-win').hidden=!s.won;$('#adventure-next').textContent=s.level<AD.LEVELS.length-1?'下一個故事 →':'返小島收好回憶';
  $('#adventure-completed').textContent=Object.keys(c.best).length+' / 4';$('#adventure-levels').innerHTML=AD.LEVELS.map((l,i)=>'<button data-level="'+i+'" '+(i>=c.unlocked?'disabled':'')+' aria-pressed="'+(s.level===i)+'"><span class="trail-level-number">'+(i>=c.unlocked?'◇':String(i+1).padStart(2,'0'))+'</span><span><b>'+l.name+'</b><small>'+(c.best[i]?'個人最佳 '+c.best[i]+' 步':i<c.unlocked?'可以出發':'完成上一關後開放')+'</small></span><i>'+(c.best[i]?'✓':'→')+'</i></button>').join('');
- if(!$('#adventure-message').textContent)$('#adventure-message').textContent='方向鍵準備好。收集星光，陪伙伴行去出口。';
+ if(!$('#adventure-message').textContent)$('#adventure-message').textContent='收齊三點星光，再帶伙伴行去出口。';
 }
 function startAdventure(level){const c=getCampaign();if(!Number.isInteger(level)||level<0||level>=c.unlocked)return;adventureOwner=c;adventureRun=AD.create(level);adventureHistory=[];c.run=adventureRun;$('#adventure-message').textContent=AD.LEVELS[level].hint;persist();renderAdventure();$('#adventure-board').focus({preventScroll:true});}
 function moveAdventure(direction){
@@ -2346,7 +2346,7 @@ function moveAdventure(direction){
  // A cloud refresh/account change can replace the campaign while this page is open.
  if(adventureOwner!==getCampaign())renderAdventure();
  const previous=adventureRun,result=AD.step(previous,direction);if(result.event==='ignored')return;
- const messages={wall:'前面係樹叢，試吓另一邊。',locked:'木門鎖住喇，先搵金鎖匙。',plate:'藤門未開，將木箱推到圓形機關上。','crate-blocked':'木箱前面冇位。可以撤銷一步，試另一個方向。',push:'木箱推開咗。',key:'搵到金鎖匙！木門開咗。',star:'收好一點星光。','need-stars':'出口喺度！仲有星光未搵齊。'};
+ const messages={wall:'前面係樹叢，試吓另一邊。',locked:'木門鎖住喇，先搵金鎖匙。',plate:'藤門未開，將木箱推到圓形機關上。','crate-blocked':'木箱前面冇位。退返一步，試吓另一邊。',push:'木箱推開咗。',key:'搵到金鎖匙！木門開咗。',star:'收好一點星光。','need-stars':'出口喺度！仲有星光未搵齊。'};
  if(result.state!==previous){adventureHistory.push(previous);if(adventureHistory.length>150)adventureHistory.shift();adventureRun=result.state;if(direction==='left'||direction==='right')adventureFacing=direction;getCampaign().run=adventureRun;
   if(result.event==='win'){const gain=AD.finish(getCampaign(),adventureRun);if(S.pet&&gain){S.pet.coins+=gain;need('fun',12);}adventureHistory=[];$('#adventure-win-title').textContent=safeTrailName(adventureRun.level);$('#adventure-win-copy').textContent='三點星光都帶返嚟喇 · '+adventureRun.moves+' 步完成。'+(S.pet&&gain?' 伙伴金幣 +'+gain+'。':'今次嘅足跡已經留低。');}
   persist();
@@ -2375,6 +2375,6 @@ render();
 const h=(location.hash||'').slice(1);
 go(PAGES.includes(h)?h:'island');
 connect();
-if(unreadableLocal)toast('已保留可用資料，請到設定查看復原副本。');
+if(unreadableLocal)toast('有啲記錄暫時開唔到，可以到設定查看備份。');
 milesSoon();
 })();

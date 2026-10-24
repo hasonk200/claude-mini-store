@@ -15,8 +15,8 @@
 </head>
 <body>
 <a class="skip-link" href="#main-content">跳到主要內容</a>
-<div id="storage-warning" role="alert" hidden>本機儲存未成功，請先到設定匯出備份，再離開頁面。<button data-goto="about">開啟備份</button></div>
-<div id="recovery-warning" role="status" hidden><span id="recovery-message"></span><button data-goto="about">開啟復原副本</button></div>
+<div id="storage-warning" role="alert" hidden>今次未儲存到。離開前，請先下載一份記錄。<button data-goto="about">開啟備份</button></div>
+<div id="recovery-warning" role="status" hidden><span id="recovery-message"></span><button data-goto="about">查看備份</button></div>
 <div class="app">
   <nav class="nav" aria-label="主選單">
     <div class="brand"><div class="brand-mark" aria-hidden="true">✦</div><b>心晴小島</b><span>DICKY’S LITTLE WORLD</span></div>
@@ -32,9 +32,9 @@
       <button class="tab" id="tab-wisdom" data-page="wisdom"><span class="no">07</span>古今智慧</button>
       <button class="tab" id="tab-review" data-page="review"><span class="no">08</span>週回顧<span class="badge" id="phq-badge" hidden>到期</span></button>
       <button class="tab" id="tab-plan" data-page="plan"><span class="no">09</span>低潮應急卡</button>
-      <button class="tab" id="tab-about" data-page="about"><span class="no">10</span>設計理念・設定</button>
+      <button class="tab" id="tab-about" data-page="about"><span class="no">10</span>使用指南・設定</button>
     </div>
-    <div class="sync" id="sync"><i></i><span id="sync-txt">資料暫時存喺呢個瀏覽器。</span></div>
+    <div class="sync" id="sync"><i></i><span id="sync-txt">記錄暫時留喺呢個瀏覽器。</span></div>
   </nav>
 
   <main id="main-content" tabindex="-1"><div class="wrap">
@@ -54,17 +54,17 @@
               <button class="map-stop stop-plaza" data-destination="plaza"><span class="pin">◇</span><b>小遊戲廣場</b><small>慢慢玩</small></button>
               <div class="world-companion" id="world-companion" aria-hidden="true"></div>
             </div>
-            <div class="world-caption"><span><i class="live-dot"></i> 冇趕進度嘅鐘，只有你嘅步伐。</span><button class="linkbtn" data-goto="today">今日打卡 ↗</button></div>
+            <div class="world-caption"><span><i class="live-dot"></i> 探吓伙伴，或者揀個地方行吓。</span><button class="linkbtn" data-goto="today">今日打卡 ↗</button></div>
           </div>
           <div id="island-destination" class="destination-panel" aria-live="polite"></div>
           <div class="island-shortcuts"><button data-goto="today"><span>✎</span><div><b>記低今日</b><small>心情、睡眠、小事</small></div><i>↗</i></button><button data-goto="draw"><span>✦</span><div><b>收工抽張卡</b><small>每一晚，都值得收藏</small></div><i>↗</i></button><button data-goto="pet"><span>♡</span><div><b id="island-pet-link">探吓小伙伴</b><small>屋企一直喺度</small></div><i>↗</i></button></div>
         </div>
-        <aside class="island-sidebar"><section class="island-card passport" id="island-passport"></section><section class="island-card"><div class="section-kicker">TODAY’S LITTLE STEPS</div><h2>今日，揀一樣就好</h2><p class="sub" id="island-date"></p><div id="island-tasks"></div><p class="soft-note">做到幾多都得，聽日唔會扣分。</p></section><section class="island-card souvenir" id="island-souvenir"></section></aside>
+        <aside class="island-sidebar"><section class="island-card passport" id="island-passport"></section><section class="island-card"><div class="section-kicker">TODAY’S LITTLE STEPS</div><h2>今日，揀一樣就好</h2><p class="sub" id="island-date"></p><div id="island-tasks"></div><p class="soft-note">揀一件今日想做嘅事。</p></section><section class="island-card souvenir" id="island-souvenir"></section></aside>
       </div>
       <section class="island-card garden-section" id="garden-section"><div class="section-heading"><div><span class="section-kicker">THE GARDEN REMEMBERS</span><h2>每一個小步，都有留低。</h2></div><span class="chip" id="garden-stage"></span></div><div class="garden-body"><div id="garden-art" class="garden-art"></div><div class="garden-copy"><h3 id="garden-title"></h3><p id="garden-description"></p><div class="garden-progress"><span id="garden-progress-text"></span><progress id="garden-progress" max="100" value="0"></progress></div><div class="row"><button class="btn" id="garden-water">淋一淋花</button><button class="btn ghost" data-goto="review">睇返足跡</button></div><div class="decor-picker" role="group" aria-label="花園裝飾"><button data-decor="lantern">暖燈</button><button data-decor="flowers">花叢</button><button data-decor="stars">星光</button></div><p class="muted" id="garden-water-note" role="status"></p></div></div></section>
       <section class="island-card postcard-section"><div class="section-heading"><div><span class="section-kicker">POSTCARDS FROM YOUR ISLAND</span><h2>探索小島，收好風景。</h2></div><span class="muted" id="postcard-count"></span></div><p class="sub">五個地方，五張明信片。每次發現新地方，伙伴會收到 3 金幣。</p><div class="postcard-grid" id="island-postcards"></div></section><section class="island-card achievement-section"><div class="section-heading"><div><span class="section-kicker">YOUR STORY SO FAR</span><h2>小島紀念章</h2></div><span class="muted" id="achievement-count"></span></div><div class="achievement-grid" id="island-achievements"></div></section>
     </section>
-    <section class="page" id="page-arcade"><header class="island-heading"><div><span class="eyebrow">THE LITTLE PLAYGROUND</span><h1>小遊戲廣場</h1><p>冇時間限制，想停就停。玩一陣，鬆一鬆。</p></div><button class="btn ghost" data-goto="island">返小島</button></header><div class="adventure-banner"><div><span class="section-kicker">A PLAYABLE LITTLE ADVENTURE</span><h2>星光尋路</h2><p>帶小伙伴穿過森林，推木箱、搵鎖匙、解開機關。<br>四個手工設計關卡，收齊星光先到出口。</p><button class="btn" data-goto="adventure">出發去冒險 <span aria-hidden="true">→</span></button></div><div class="adventure-banner-art" aria-hidden="true"><span>✦</span><i></i><b>01—04</b></div></div><div class="arcade-layout"><section class="memory-room"><div class="memory-head"><div><h2>找找小伙伴</h2><p>揭開兩張，搵返相同嘅伙伴。</p></div><span id="memory-moves">0 次翻牌</span></div><div class="memory-grid" id="memory-grid"></div><div class="memory-bottom"><span id="memory-status" role="status" aria-live="polite">準備好，就揀一張。</span><button class="btn ghost" id="memory-restart">重新一局</button></div></section><aside><div class="island-card"><span class="section-kicker">A SMALL BREAK</span><h2>慢慢揭，冇輸贏。</h2><p class="sub">六對小伙伴，翻錯可以再試。離開廣場會保留今局，重新整理先會重開。</p><div id="memory-buddy"></div><p id="memory-reward" class="soft-note"></p></div><div class="island-card" style="margin-top:16px"><h2>想郁動吓？</h2><p class="sub">帶寵物去公園或者湖邊，可以玩拋波仔。</p><button class="btn ghost" id="arcade-walk">帶伙伴出街</button></div></aside></div></section>
+    <section class="page" id="page-arcade"><header class="island-heading"><div><span class="eyebrow">THE LITTLE PLAYGROUND</span><h1>小遊戲廣場</h1><p>揀個遊戲，陪小伙伴玩一陣。</p></div><button class="btn ghost" data-goto="island">返小島</button></header><div class="adventure-banner"><div><span class="section-kicker">A LITTLE FOREST ADVENTURE</span><h2>星光尋路</h2><p>帶小伙伴穿過森林，推木箱、搵鎖匙、解開機關。<br>四段小旅程，每關收齊三點星光，再搵出口。</p><button class="btn" data-goto="adventure">出發去冒險 <span aria-hidden="true">→</span></button></div><div class="adventure-banner-art" aria-hidden="true"><span>✦</span><i></i><b>01—04</b></div></div><div class="arcade-layout"><section class="memory-room"><div class="memory-head"><div><h2>找找小伙伴</h2><p>揭開兩張，搵返相同嘅伙伴。</p></div><span id="memory-moves">0 次翻牌</span></div><div class="memory-grid" id="memory-grid"></div><div class="memory-bottom"><span id="memory-status" role="status" aria-live="polite">準備好，就揀一張。</span><button class="btn ghost" id="memory-restart">重新一局</button></div></section><aside><div class="island-card"><span class="section-kicker">A SMALL BREAK</span><h2>試吓記住佢哋喺邊。</h2><p class="sub">搵齊六對就完成。可以暫時離開廣場，返嚟繼續；重新整理網頁會開新一局。</p><div id="memory-buddy"></div><p id="memory-reward" class="soft-note"></p></div><div class="island-card" style="margin-top:16px"><h2>想郁動吓？</h2><p class="sub">帶寵物去公園或者湖邊，可以玩拋波仔。</p><button class="btn ghost" id="arcade-walk">帶伙伴出街</button></div></aside></div></section>
     <section class="page" id="page-adventure">
       <header class="island-heading"><div><span class="eyebrow">THE STARLIGHT TRAIL</span><h1>星光尋路</h1><p>行一步，發現多一點。陪小伙伴行到星光盡頭。</p></div><button class="btn ghost" data-goto="arcade">返遊戲廣場</button></header>
       <div class="adventure-layout">
@@ -72,9 +72,9 @@
           <div class="adventure-land" id="adventure-land"><div class="adventure-board" id="adventure-board" tabindex="0" role="group" aria-label="星光尋路遊戲棋盤" aria-describedby="adventure-instructions"><div id="adventure-tiles" aria-hidden="true"></div><div id="adventure-objects" aria-hidden="true"></div><div id="adventure-player" class="trail-player" aria-hidden="true"></div></div>
           <div class="adventure-win" id="adventure-win" hidden><span class="win-star" aria-hidden="true">✦</span><span class="section-kicker">A LITTLE JOURNEY, COMPLETE</span><h2 id="adventure-win-title"></h2><p id="adventure-win-copy"></p><div class="row"><button class="btn" id="adventure-next">下一個故事 →</button><button class="btn ghost" id="adventure-replay">再行一次</button></div></div></div>
           <p class="adventure-message" id="adventure-message" role="status" aria-live="polite"></p>
-          <div class="adventure-controls"><div class="adventure-actions"><button class="btn ghost" id="adventure-undo">↶ 撤銷一步</button><button class="btn ghost" id="adventure-reset">重新開始</button><small>自動儲存位置 · 隨時離開</small></div><div class="dpad" role="group" aria-label="控制行路方向"><button data-step="up" aria-label="向上行">↑</button><button data-step="left" aria-label="向左行">←</button><span aria-hidden="true">✦</span><button data-step="right" aria-label="向右行">→</button><button data-step="down" aria-label="向下行">↓</button></div></div>
+          <div class="adventure-controls"><div class="adventure-actions"><button class="btn ghost" id="adventure-undo">↶ 退返一步</button><button class="btn ghost" id="adventure-reset">重新開始</button><small>行到邊都會記住 · 下次繼續</small></div><div class="dpad" role="group" aria-label="控制行路方向"><button data-step="up" aria-label="向上行">↑</button><button data-step="left" aria-label="向左行">←</button><span aria-hidden="true">✦</span><button data-step="right" aria-label="向右行">→</button><button data-step="down" aria-label="向下行">↓</button></div></div>
         </section>
-        <aside class="adventure-sidebar"><div class="island-card"><span class="section-kicker">YOUR NEXT LITTLE STEP</span><h2>今次嘅任務</h2><p id="adventure-hint"></p><div class="trail-legend"><span><i class="legend-star">✦</i>收齊三點星光</span><span><i class="legend-exit">⌂</i>行到發光出口</span><span><i class="legend-crate">◇</i>木箱只可以推</span><span><i class="legend-plate">○</i>木箱壓住機關開藤門</span></div><p class="soft-note" id="adventure-instructions">用方向掣、鍵盤方向鍵或 WASD 行路。冇限時，冇扣命。推錯箱可以撤銷；重新整理後仍可重開本關。</p></div>
+        <aside class="adventure-sidebar"><div class="island-card"><span class="section-kicker">YOUR NEXT LITTLE STEP</span><h2>今次嘅任務</h2><p id="adventure-hint"></p><div class="trail-legend"><span><i class="legend-star">✦</i>收齊三點星光</span><span><i class="legend-exit">⌂</i>行到發光出口</span><span><i class="legend-crate">◇</i>木箱只可以推</span><span><i class="legend-plate">○</i>木箱壓住機關開藤門</span></div><p class="soft-note" id="adventure-instructions">用畫面上嘅方向掣，或者鍵盤方向鍵／WASD 行路。推錯箱可以退一步，亦可以重新開始。</p></div>
         <div class="island-card"><div class="section-heading"><h2>四段小旅程</h2><span id="adventure-completed" class="muted"></span></div><div id="adventure-levels" class="trail-levels"></div><p class="soft-note">有寵物時，每關首次完成會送 12 金幣。重玩可以挑戰自己嘅最少步數。</p></div></aside>
       </div>
     </section>
@@ -84,7 +84,7 @@
       <div class="head">
         <span class="eyebrow" id="today-eyebrow"></span>
         <h1>Dicky，今日點呀？</h1>
-        <p>收工返到屋企、瞓之前花一分鐘記低就得。唔記得記都冇所謂，有記就算數。</p>
+        <p>收工返到屋企，花一分鐘記低今日過成點。</p>
       </div>
       <div class="motto"><span>今日一句</span>
         <div class="m-main">
@@ -125,7 +125,7 @@
 
         <div class="sheet">
           <h2>身體同人</h2>
-          <div class="sub">夜班最容易亂嘅兩樣嘢：瞓覺同孤獨。</div>
+          <div class="sub">記低瞓咗幾耐，同埋今日有冇同人傾過偈。</div>
           <div class="field">
             <div class="label">主睡眠 <span class="muted" id="sleep-calc">—</span></div>
             <div class="row"><input type="time" id="ci-sleep-start" aria-label="開始睡眠時間" style="flex:1"><span class="muted">至</span><input type="time" id="ci-sleep-end" aria-label="結束睡眠時間" style="flex:1"></div>
@@ -147,7 +147,7 @@
 
       <div class="sheet" style="margin-top:14px">
         <h2>收工三省</h2>
-        <div class="sub">你自己講過「吾日三省吾身」。呢度嘅三省唔係檢討自己差喺邊，係搵返今日嘅事實。</div>
+        <div class="sub">諗返今日做到咩、邊一刻舒服啲，同埋聽日想試嘅一小步。</div>
         <div class="grid g3">
           <div class="field"><div class="label">一件做到嘅事</div><textarea id="ci-mastery" aria-label="一件做到嘅事" placeholder="例如：凌晨爆單都撐完成班"></textarea></div>
           <div class="field"><div class="label">一件舒服／開心嘅事</div><textarea id="ci-pleasure" aria-label="一件舒服或開心嘅事" placeholder="例如：返到屋企煮咗碗麵加蛋"></textarea></div>
@@ -161,7 +161,7 @@
       </div>
 
       <div class="sheet" style="margin-top:14px">
-        <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:nowrap"><div><h2>我嘅習慣</h2><div class="sub">做咗就撳一下。強度慢慢升；冇做只會慢慢跌，唔會清零。</div></div><button class="btn ghost small" id="hb-edit">修改</button></div>
+        <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:nowrap"><div><h2>我嘅習慣</h2><div class="sub">做咗就撳一下，睇吓最近邊啲習慣做得多。</div></div><button class="btn ghost small" id="hb-edit">修改</button></div>
         <div id="habits"></div>
         <div id="hb-editor" hidden></div>
       </div>
@@ -172,8 +172,8 @@
       <div id="pet-adopt" hidden>
         <div class="head">
           <span class="eyebrow">ADOPT</span>
-          <h1>領養你嘅賽博寵物</h1>
-          <p>揀一隻同你一齊住嘅寵物。佢會永遠無條件鍾意你。你得閒嘅時候，可以餵佢食嘢、帶佢散步、影相、識朋友。</p>
+          <h1>領養你嘅小伙伴</h1>
+          <p>揀一隻小伙伴，幫佢改個名。之後可以一齊住、散步、影相同玩遊戲。</p>
         </div>
         <div class="adopt-grid" id="adopt-sp"></div>
         <div class="sheet" style="margin-top:14px">
@@ -199,7 +199,7 @@
           <div class="grid g2" style="margin-top:14px">
             <div class="sheet">
               <h2 id="chat-title">傾偈</h2>
-              <div class="sub">小伙伴嘅遊戲對話。網頁版使用預設回應。</div>
+              <div class="sub">同小伙伴講句嘢，佢會用準備好嘅小短句回應你。</div>
               <div class="chat-log" id="chat-log"></div>
               <form id="chat-form" class="row" style="margin-top:10px;flex-wrap:nowrap"><input type="text" id="chat-in" aria-label="同寵物講嘅說話" maxlength="300" placeholder="今日點呀……" style="flex:1"><button class="btn" id="chat-send" type="submit">講</button></form>
             </div>
@@ -243,7 +243,7 @@
       <div class="head">
         <span class="eyebrow">ARCANA · 22 主牌 ＋ 4 張隱藏牌</span>
         <h1>收工抽卡</h1>
-        <p>收工之後寫低今晚想講嘅說話，長短都得。手帳會按日記內容揀一張貼近今日嘅牌，再收入你嘅牌庫同書櫃。呢副牌唔係占卜，唔講運程，係借牌嘅畫面同你一齊睇返今日。</p>
+        <p>寫低今晚想講嘅說話，手帳會按內容揀牌，陪你睇返今日。抽過嘅牌同日記，都可以喺牌庫同書櫃搵返。</p>
       </div>
       <div class="seg" data-name="drawtab" style="margin-bottom:16px"><button data-v="draw" class="on">抽卡</button><button data-v="deck">牌庫圖鑑</button><button data-v="shelf">書櫃</button></div>
 
@@ -293,7 +293,7 @@
       <div class="head">
         <span class="eyebrow">STUCK · 20 MIN</span>
         <h1>卡住急救</h1>
-        <p>自己做嘢做到卡住、好緊張好無助嗰陣用。目標唔係逼自己搞掂，係唔好畀恐慌話事。</p>
+        <p>卡住咗、個腦好亂嗰陣，可以跟住呢四步，慢慢搵返下一步。</p>
       </div>
       <div class="sos-steps" id="sos-steps">
         <button data-s="1" class="on"><small>1 分鐘</small>停一停</button>
@@ -340,12 +340,12 @@
 
       <div class="sheet sos-pane" data-s="4">
         <h2>自己試 15 分鐘</h2>
-        <div class="sub">做嗰一小步。15 分鐘之後，繼續定搵人幫手都得，兩樣都係呢個計劃入面嘅正確答案。</div>
+        <div class="sub">先試嗰一小步。15 分鐘後，再決定繼續做，定搵人一齊諗。</div>
         <div class="timer" id="timer">15:00</div>
         <div class="row" style="justify-content:center"><button class="btn" id="t-start">開始</button><button class="btn ghost" id="t-pause">暫停</button><button class="btn ghost" id="t-reset">重設</button></div>
         <div class="feedback" id="t-after" hidden>
           <div class="fb good">你頂住咗唔舒服，自己試咗。呢個本身就係一條證據。</div>
-          <div class="fb calm">而家可以揀：繼續做多 15 分鐘；或者帶住你試過嘅嘢去問人，例如「我試咗 A 同 B，卡喺 C」。咁樣搵人唔係依賴，係有效率。</div>
+          <div class="fb calm">可以繼續做多 15 分鐘，或者帶住試過嘅方法去問人：「我試咗 A 同 B，仲卡喺 C，可以幫我睇吓嗎？」</div>
         </div>
         <div class="kq">「敏而好學，不恥下問。」<small>《論語》。孔子都讚肯問人嘅人。試完先問，係最好嘅問法。</small></div>
         <div class="row" style="justify-content:space-between;margin-top:16px"><button class="btn ghost small" data-go="3">上一步</button><button class="btn small" id="sos-log">記入證據簿</button></div>
@@ -357,7 +357,7 @@
       <div class="head">
         <span class="eyebrow">EVIDENCE</span>
         <h1>證據簿</h1>
-        <p>呢度唔係叫你自我感覺良好，係收集事實。個腦話「我係 0」嗰陣，就嚟翻呢本簿。打卡寫低嘅「做到」會自動放入嚟。</p>
+        <p>收好你做到過嘅事，低落嗰陣可以翻返嚟睇。打卡寫低嘅「做到」亦會放入呢度。</p>
         <div class="kq" style="border-top:0;padding-top:0">「騏驥一躍，不能十步；駑馬十駕，功在不舍。」<small>荀子。好馬跳一下都唔夠十步，普通馬拉十日車，靠嘅係唔停。</small></div>
       </div>
       <div class="grid g2">
@@ -497,7 +497,7 @@
 
       <div class="sheet" style="margin-top:14px">
         <h2>同 Claude 一齊跟進</h2>
-        <div class="sub">撳一下就整好最近 7 日摘要，貼返落對話度，我會根據數據同你傾下一步。</div>
+        <div class="sub">複製最近 7 日嘅摘要，貼去你同 Claude 嘅對話，再一齊諗下一步。</div>
         <div class="row"><button class="btn" id="sum-copy">複製本週摘要</button><span class="muted" id="sum-status"></span></div>
         <pre class="summary" id="sum-pre" hidden></pre>
       </div>
@@ -533,35 +533,31 @@
       </div>
     </section>
 
-    <!-- 07 設計理念・設定 -->
+    <!-- 07 使用指南・設定 -->
     <section class="page" id="page-about">
       <div class="head">
-        <span class="eyebrow">WHY IT WORKS</span>
-        <h1>設計理念・設定</h1>
-        <p>每個功能背後都有實證研究。針對你講過嘅怕失敗、逃避、同人比較、依賴、孤獨，同埋夜班作息亂。</p>
+        <span class="eyebrow">YOUR ISLAND GUIDE</span>
+        <h1>使用指南・設定</h1>
+        <p>想記低今日、玩一陣，定整理最近嘅生活？可以由下面揀個起點。</p>
       </div>
       <div class="grid g2">
         <div class="sheet">
-          <h2>每個部分對應咩方法</h2>
-          <div class="sub">由上而下，同左邊目錄一樣次序。</div>
+          <h2>喺小島可以做啲咩</h2>
+          <div class="sub">揀今日用得着嘅一兩樣就得。</div>
           <div class="theory">
-            <div><b>今日打卡：行為激活（Behavioral Activation）</b><span>抑鬱嘅實證療法之一。重點係行動行先、心情跟尾，所以記嘅係做到同舒服嘅事，唔係分析點解唔開心。</span></div>
-            <div><b>收工三省：正向事實記錄</b><span>保留你重視嘅「三省吾身」，但問題由「我錯喺邊」改成「今日有咩事實」，避免變成反覆自責。</span></div>
-            <div><b>卡住急救：ACT 認知脫鉤、生理嘆氣</b><span>「我有個念頭話……」係接納與承諾療法嘅核心技巧。生理嘆氣有 Stanford 2023 年嘅研究支持。15 分鐘規則針對「一卡住就搵人」。</span></div>
-            <div><b>證據簿：自我效能（Bandura）</b><span>相信自己得，最有效嘅來源係親身做到嘅經驗。所以要記低，唔係靠人講你好叻。</span></div>
-            <div><b>細步階梯：漸進式面對（Exposure）</b><span>由細到唔太驚開始，比較估計同實際，係處理社交焦慮同逃避嘅標準做法。</span></div>
-            <div><b>週回顧同 PHQ-4：以數據為本嘅跟進</b><span>定期用標準量表睇趨勢，係而家心理治療嘅主流做法，將來同專業人士講都清楚好多。</span></div>
-            <div><b>低潮應急卡：Stanley-Brown 安全計劃</b><span>醫院同急症室常用嘅實證工具。預先寫好，低潮時唔使靠意志力。</span></div>
-            <div><b>瞓眠記錄：社會節律、輪班睡眠</b><span>固定作息本身會穩定情緒。對夜班嚟講，固定錨點比瞓得多更重要。</span></div>
-            <div><b>收工抽卡：投射式反思（Expressive Writing）</b><span>收工寫幾句說話本身就係有研究支持嘅情緒整理方法。牌只係一個畫面，幫你由另一個角度睇今日，唔預測將來。收集同書櫃令你願意日日返嚟寫。</span></div>
-            <div><b>習慣強度：唔會清零</b><span>參考開源習慣 app Loop 嘅做法：強度係慢慢累積嘅分數，漏一兩日只會慢慢跌，唔會由零開始。研究發現一個習慣平均要兩個月左右先會變得自動，所以唔使急。</span></div>
-            <div><b>賽博寵物：照顧同陪伴</b><span>照顧寵物本身就係一種有規律嘅小行動，同行為激活同一個道理。佢永遠無條件鍾意你，但唔會令你內疚；你同人見面、傾偈，佢會替你開心。</span></div>
-            <div><b>古今智慧：東西合璧</b><span>中國經典同斯多葛哲學，好多同現代心理學講緊同一樣嘢。用自己文化入面熟悉嘅說話，比外國術語更容易記得、更容易喺低潮時諗返起。</span></div>
+            <div><b>記低今日</b><span>用「今日打卡」記低心情、睡眠，同一件做到嘅小事。想寫多幾句，可以去「收工抽卡」。</span></div>
+            <div><b>玩一陣</b><span>去小遊戲廣場，陪伙伴搵星光、推箱解謎，或者試吓翻牌配對。</span></div>
+            <div><b>同伙伴過日子</b><span>探吓佢、帶佢出街、影張相。賺到嘅金幣可以買傢俬同飾物。</span></div>
+            <div><b>收好小進步</b><span>「證據簿」放你做到過嘅事；「細步階梯」幫你將想試嘅事拆細，一步一步記低。</span></div>
+            <div><b>卡住嗰陣</b><span>打開「卡住急救」，先停一停，再揀一件細到可以開始嘅事。</span></div>
+            <div><b>睇返最近點樣</b><span>「週回顧」放埋心情、睡眠同習慣記錄，方便你睇返最近有咩變化。</span></div>
+            <div><b>預備低潮時用嘅卡</b><span>喺「低潮應急卡」寫低可以做嘅事、可以去嘅地方，同可以搵嘅人。</span></div>
+            <div><b>搵句想記住嘅說話</b><span>「古今智慧」有句子同小故事，睇啱可以收藏，之後喺應急卡度搵返。</span></div>
           </div>
         </div>
         <div class="grid" style="align-content:start">
           <div class="sheet">
-            <h2>點用最有效</h2>
+            <h2>可以點開始</h2>
             <div class="theory" style="margin-top:12px">
               <div><b>每日</b><span>收工返屋企、瞓之前打卡，一分鐘。</span></div>
               <div><b>卡住時</b><span>開「卡住急救」，跟四步行。</span></div>
@@ -571,25 +567,25 @@
           </div>
           <div class="sheet">
             <h2>設定</h2>
-            <div class="field" style="margin-top:12px"><div class="label">睡眠錨點（目標主睡眠）</div><div class="row"><input type="time" id="set-a" style="flex:1"><span class="muted">至</span><input type="time" id="set-b" style="flex:1"></div></div>
+            <div class="field" style="margin-top:12px"><div class="label">想幾點瞓、幾點起身</div><div class="row"><input type="time" id="set-a" style="flex:1"><span class="muted">至</span><input type="time" id="set-b" style="flex:1"></div></div>
             <div class="field"><div class="label">右下角細寵物</div><div class="seg" data-name="buddy"><button data-v="on">顯示</button><button data-v="off">收埋</button></div></div>
             <div class="field"><div class="label">外觀</div><div class="seg" data-name="theme"><button data-v="auto">跟系統</button><button data-v="light">淺色</button><button data-v="dark">深色</button></div></div>
             <button class="btn ghost" id="set-save">儲存設定</button>
           </div>
           <div class="sheet">
             <h2>Google 同步</h2>
-            <div class="sub">登入 Google 後，手帳會同步到 Firebase，同一個 Google 帳戶可以跨裝置使用；未登入都可以離線記錄。</div>
-            <p class="note" id="google-status" role="status" style="margin-bottom:12px">正在檢查同步狀態…</p>
+            <div class="sub">登入 Google，就可以喺另一部手機或電腦繼續用。同一個帳戶會見到同一份手帳。</div>
+            <p class="note" id="google-status" role="status" style="margin-bottom:12px">正在查看有冇新記錄…</p>
             <div class="row"><button class="btn" id="google-login" type="button">使用 Google 登入</button><span class="muted" id="google-email"></span></div>
             <hr class="sep">
             <h2>私隱同備份</h2>
-            <div class="sub" id="privacy-txt">記錄先儲存本機。雲端資料有 Firebase 登入及每個帳戶的存取限制，但雲端同步並非端對端加密，亦不屬醫療級保密服務。你可隨時匯出備份。</div>
-            <div class="row"><button class="btn ghost" id="bk-export">匯出備份</button><label class="btn ghost" for="bk-file">匯入備份</label><input type="file" id="bk-file" accept="application/json,.json" hidden></div>
+            <div class="sub" id="privacy-txt">未登入時，記錄只留喺呢個瀏覽器。登入後亦會存到雲端，服務管理者可能有權查看記錄。你可以選擇唔登入，亦可以隨時下載一份備份。</div>
+            <div class="row"><button class="btn ghost" id="bk-export">下載備份</button><label class="btn ghost" for="bk-file">從備份還原</label><input type="file" id="bk-file" accept="application/json,.json" hidden></div>
             <pre class="summary" id="bk-pre" hidden></pre>
             <hr class="sep">
-            <button class="btn ghost small" id="bk-previous">下載匯入前副本</button>
-            <button class="btn ghost small" id="bk-recovery" hidden>下載未能讀取的原始資料</button>
-            <button class="btn ghost small" id="bk-recovery-edits" hidden>下載雲端復原前的本機修改</button>
+            <button class="btn ghost small" id="bk-previous">下載上次還原前嘅記錄</button>
+            <button class="btn ghost small" id="bk-recovery" hidden>下載原本嘅記錄</button>
+            <button class="btn ghost small" id="bk-recovery-edits" hidden>下載未同步嘅修改</button>
             <button class="btn ghost small danger" id="bk-clear">清除所有資料</button>
           </div>
         </div>
@@ -607,7 +603,7 @@
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
 <script>window.FIREBASE_CONFIG = {"apiKey":"AIzaSyBpKFMUpZR64m3HinCE925foHM4wM09Nas","authDomain":"dicky-supplement-tracker-2026.firebaseapp.com","projectId":"dicky-supplement-tracker-2026","appId":"1:735935979151:web:626b644728e2d353af1afa","messagingSenderId":"735935979151"};</script>
-<dialog id="import-dialog" class="import-dialog" aria-labelledby="import-title"><h2 id="import-title">還原呢份備份？</h2><p id="import-summary"></p><p class="muted">目前資料會先留一份本機安全副本。登入中嘅話，還原結果亦會同步到同一帳戶。</p><div class="row"><button class="btn" id="import-confirm">確認還原</button><button class="btn ghost" id="import-cancel">取消</button></div></dialog>
+<dialog id="import-dialog" class="import-dialog" aria-labelledby="import-title"><h2 id="import-title">還原呢份備份？</h2><p id="import-summary"></p><p class="muted">還原後，會改用呢份備份入面嘅記錄。現有記錄會另留一份，喺設定可以下載。如果已登入，其他裝置亦會更新。</p><div class="row"><button class="btn" id="import-confirm">確認還原</button><button class="btn ghost" id="import-cancel">取消</button></div></dialog>
 <dialog id="postcard-dialog" class="postcard-dialog" aria-labelledby="postcard-title"><div id="postcard-picture"></div><div class="postcard-dialog-copy"><span class="section-kicker">A LITTLE KEEPSAKE</span><h2 id="postcard-title"></h2><p id="postcard-message"></p><button class="btn" id="postcard-close">收好風景</button></div></dialog>
 <script src="js/sync.js"></script>
 <script src="js/adventure.js"></script>
