@@ -995,9 +995,10 @@ const resetBox=$('inWeeklyReset');
 const resetTimeWrap=$('weeklyResetTimeWrap');
 const resetTimeInput=$('inWeeklyResetAt');
 function setWeeklyLocked(on){
-  for(const id of ['inW','rgW']){
+  for(const id of ['inW','rgW','inRh','inRm']){
     const el=$(id);el.disabled=on;el.classList.toggle('locked',on);
   }
+  if(on){$('inRh').value='';$('inRm').value='';}
 }
 function syncWeeklyResetUI(){
   resetTimeWrap.hidden=!resetBox.checked;
