@@ -1,0 +1,87 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { drain } = require('../js/sync.js');
+function harness() {
+  const writes = [],
+    dirty = { core: true, years: new Set(['2026']), months: new Set(['2026-10']) };
+  let current = true;
+  const session = {
+    month: (k) => ({ set: async (body) => writes.push(['month', k, body]) }),
+    year: (k) => ({ set: async (body) => writes.push(['year', k, body]) }),
+    core: { set: async (body) => writes.push(['core', body]) },
+  };
+  return {
+    writes,
+    dirty,
+    session,
+    isCurrent: () => current,
+    stop: () => (current = false),
+    monthBody: () => ({ entries: {} }),
+    yearBody: () => ({ entries: {} }),
+    coreBody: () => ({ t: 1 }),
+  };
+}
+test('flushes restored empty partitions before updating core index', async () => {
+  const h = harness();
+  await drain(h);
+  assert.deepEqual(
+    h.writes.map((x) => x[0]),
+    ['month', 'year', 'core'],
+  );
+  assert.deepEqual(h.writes[0][2], { entries: {} });
+  assert.equal(h.dirty.core, false);
+  assert.equal(h.dirty.months.size, 0);
+});
+test('failed deletion partition stays dirty even when no entries remain locally', async () => {
+  const h = harness();
+  h.session.month = () => ({
+    set: async () => {
+      throw Error('offline');
+    },
+  });
+  await assert.rejects(drain(h), /offline/);
+  assert(h.dirty.months.has('2026-10'));
+  assert(h.dirty.years.has('2026'));
+  assert(h.dirty.core);
+});
+test('new edits arriving during a write are drained again', async () => {
+  const h = harness();
+  let calls = 0;
+  h.session.month = () => ({
+    set: async () => {
+      calls++;
+      if (calls === 1) h.dirty.months.add('2026-10');
+    },
+  });
+  await drain(h);
+  assert.equal(calls, 2);
+  assert.equal(h.dirty.months.size, 0);
+});
+test('switching account stops the old session before another partition or core write', async () => {
+  const h = harness();
+  h.session.month = () => ({ set: async () => h.stop() });
+  await drain(h);
+  assert.equal(h.writes.length, 0);
+  assert(h.dirty.years.has('2026'));
+  assert(h.dirty.core);
+});
+test('old account failures cannot requeue partitions into a replacement account', async () => {
+  const h = harness();
+  h.session.month = () => ({
+    set: async () => {
+      h.stop();
+      h.dirty.months.clear();
+      throw Error('old request failed');
+    },
+  });
+  await assert.rejects(drain(h));
+  assert.equal(h.dirty.months.size, 0);
+});
+test('core failures remain dirty for retry', async () => {
+  const h = harness();
+  h.session.core.set = async () => {
+    throw Error('offline');
+  };
+  await assert.rejects(drain(h));
+  assert(h.dirty.core);
+});
