@@ -18,11 +18,14 @@
 純 HTML、CSS、JavaScript，執行網頁毋須編譯，沒有新增瀏覽器套件。開發時使用 Prettier 統一代碼格式。以靜態伺服器服務本資料夾，例如在本資料夾執行 `python3 -m http.server 8080`，再開啟 `http://localhost:8080`。直接部署時請保留 `index.html`、`css/`、`js/`、`assets/` 的相對位置。
 
 ```sh
+npm ci
 npm run check
 npm test
+npx playwright install --with-deps chromium
+npm run test:browser
 ```
 
-Node.js 18 或以上可執行語法檢查及測試，毋須先安裝套件。格式化工具只用於開發：
+開發與測試使用 Node.js 24。Firestore 規則測試另需 Java 21；詳見 [Firebase 設定與驗證](docs/FIREBASE.md)。這些套件只用於開發，網頁仍直接載入靜態檔案。格式整理：
 
 ```sh
 npm ci
@@ -30,23 +33,36 @@ npm run format
 npm run format:check
 ```
 
+涉及 `mental-health-journal/` 或其 workflow 的 Pull Request（包括草稿）及 `main` 推送，會由 [Journal checks](../.github/workflows/mental-health-journal.yml) 在 Node.js 24 自動執行 `npm ci`、語法及模組依賴檢查、單元測試、格式檢查、Chromium 操作測試，並以 Java 21 執行 Firestore 規則模擬器測試。這套 workflow 只檢查程式，不部署網頁；合併前可在 PR 的 Checks 查看結果。
+
+純格式化與邏輯修改請分開 commit，先提交格式整理，再提交重構或功能修改。日後有純格式化 commit，才建立 repo 根目錄的 `.git-blame-ignore-revs` 並記下完整 SHA；不要把同時改過邏輯的 commit 放入名單。本機 Git 如要使用該名單，需設定 `git config blame.ignoreRevsFile .git-blame-ignore-revs`。
+
 主要模組：
 
 | 檔案 | 職責 |
 | --- | --- |
-| `js/app.js` | 頁面、互動、繪圖及 Firebase 登入介面 |
+| `js/app.js` | 約 170 行的啟動入口；接好各頁面及生命週期，沒有繪圖或遊戲邏輯 |
+| `js/state.mjs`、`js/account.mjs` | 共用狀態與登入介面；換帳戶／還原後使用新的狀態 |
+| `js/navigation.mjs`、`js/lifecycle.mjs` | 頁面切換、離場與帳戶切換時的互動清理 |
+| `js/art/`、`js/data/` | SVG 插畫、牌卡／寵物／智慧文字資料 |
+| `js/cards/` | 抽卡儀式、牌庫、閱讀、書櫃 |
+| `js/pet/` | 領養、家居、照顧、外出、拋球、家庭、拍照、商店與移動 |
+| `js/games/` | 尋路、配對及湖畔頁面的顯示與操作 |
+| `js/checkin.mjs` 等頁面模組 | 打卡、習慣、證據、階梯、週回顧、應急卡、設定及小島 |
+| `js/shared/`、`js/model/` | DOM、日期、草稿、下載與共用計算 |
+| `js/auth.js` | Google 登入初始化、單一視窗、錯誤與登出流程 |
 | `js/storage.js` | 本機儲存、復原、備份還原及帳戶同步；透過注入介面直接測試 |
 | `js/core.js` | 共用核心欄位、資料檢查、成長及配對遊戲規則 |
 | `js/sync.js` | 按帳戶依序送出待同步分區 |
 | `js/adventure.js` | 解謎關卡、移動、存檔及獎勵規則 |
 
-測試涵蓋關卡可達性、碰撞／推箱／機關、存檔、一次性獎勵、配對遊戲、備份驗證、花園成長及雲端寫入佇列。
+測試涵蓋關卡可達性、碰撞／推箱／機關、存檔、一次性獎勵、配對遊戲、備份驗證、花園成長及雲端寫入佇列。另有 180 個 SVG 樣本比對，以及可在 CI 重跑的完整瀏覽器操作；拆分方式及驗證範圍見 [畫面模組重構](docs/UI_REFACTOR.md)。
 
 ## 資料與同步
 
 - 沿用 `dicky-care-v1` 本機儲存，新 `journey` 欄位會自動補上；舊 JSON 備份仍可匯入。
 - 打卡與抽卡草稿留在本瀏覽器，按帳戶及記錄日期分開。正式記錄同冒險進度可透過原有 Google 登入同步。
-- 原 Firebase 專案 `dicky-supplement-tracker-2026`、Web App、`users/{uid}/mentalHealthJournal` 路徑保留。此更新沒有更改 Firebase 規則或開新專案。
+- 手帳改用獨立專案 `dicky-heartland-journal-2026`，資料路徑仍為 `users/{uid}/mentalHealthJournal`。既有手帳帳戶保留原 UID，舊專案資料保留；正式切換前須重跑搬遷，步驟與已驗證範圍見 [Firebase 設定與搬遷](docs/FIREBASE.md)。
 - 匯入前驗證格式，顯示確認摘要，再建立本機安全副本；設定可下載匯入前副本。未能解析的舊資料亦會保留原始副本供下載。
 - 開啟本機資料時逐項保留有效記錄與未知欄位；損壞項目不會令整份手帳重設。復原標記會隨本機儲存保留，重新開啟或離線打卡不會解除保護。
 - 復原時須成功讀取伺服器及所有分區，才會合併打卡／抽卡並恢復雲端證據簿、寵物、習慣等資料。其餘本機修改先留副本，設定提供原始資料及復原前修改的下載入口；副本儲存失敗時不會覆寫或上傳預設資料。
@@ -55,7 +71,14 @@ npm run format:check
 - 原始資料、復原前修改、匯入前副本各有一個固定位置；雲端副本及帳戶暫存則每個帳戶各一份。重複操作會覆寫同一位置。帳戶暫存可能含未上傳記錄，因此不會自動刪除；大量舊資料或多個帳戶仍可能用盡瀏覽器空間。
 - 本機寫入失敗會顯示持續提示。請在設定匯出 JSON，避免未保存的內容隨頁面關閉而失去。
 - 雲端沿用 core 的時間戳合併策略，並非多人即時協作。避免同時開多個分頁或多部裝置修改同一份資料。
+- `core` 與每個分區各受 Firestore 單份文件 **1 MiB（1,048,576 bytes）** 上限限制。證據簿、寵物等目前共用 `core`；規則容許 10,000 條證據只代表數量上限，並不保證能全部裝入。容量提示及證據簿分區列為[後續工作](docs/FIREBASE.md#容量限制與後續工作)，尚未實作。
 - 資料不會上傳至 GitHub；原始碼中的預設示例仍是公開內容。Firebase 同步不是端對端加密。
+
+## 發佈順序
+
+**先部署規則，再部署網站。** `core` 的 `hasOnly` 會拒絕未列入規則的新欄位；新增欄位時，須先部署同時接受新舊資料的規則，確認生效後才發佈網站。新欄位應先設為可選，不能直接加入現有 `hasAll` 必需清單，否則仍在使用舊頁面的用戶會寫入失敗。完整步驟見 [Firebase 發佈順序](docs/FIREBASE.md#日後新增欄位的發佈順序)。
+
+首次切換獨立 Firebase 專案時，須先備份及完成可同步的本機記錄，再把舊專案的手帳路徑設為「只有本人可讀、禁止寫入」，完成最後搬遷後才切換網站，並保留舊路徑唯讀。只改手帳路徑，保留其他應用的權限；部署及驗證要求見 [正式切換流程](docs/FIREBASE.md#舊資料銜接與正式切換)。
 
 公開網頁的抽卡使用本機關鍵字選牌；寵物對話使用預設回應。遊戲和牌卡不是醫療評估，本工具不能取代專業評估或治療。
 
