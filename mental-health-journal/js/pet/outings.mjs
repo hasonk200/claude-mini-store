@@ -206,7 +206,7 @@ function stopGame() {
   const box = $('#game');
   if (box)
     box.innerHTML =
-      '<p>今局暫停咗，隨時再玩。</p><button class="btn ghost small" id="game-go">重新開始</button>';
+      '<p>今局暫停咗，隨時再玩。</p><button class="btn ghost small" data-start-ball>重新開始</button>';
 }
 
 function startGame() {
@@ -285,7 +285,7 @@ function finishBall(g, pts) {
     p.best +
     ' 分）。' +
     (gain ? '拋波獎勵 +' + gain + ' 金幣。' : '今日嘅金幣獎勵已領晒，可以繼續慢慢玩。') +
-    '</p><button class="btn ghost small" id="game-go">再玩一次</button>';
+    '</p><button class="btn ghost small" data-start-ball>再玩一次</button>';
   ballGame = null;
 }
 
@@ -394,7 +394,7 @@ function initializePetOutings() {
       openPhoto(trip.place, trip.npc);
       return;
     }
-    if (e.target.id === 'game-go') {
+    if (e.target.id === 'game-go' || e.target.closest('[data-start-ball]')) {
       startGame();
       return;
     }

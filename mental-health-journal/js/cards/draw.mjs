@@ -25,6 +25,36 @@ let ritual = false;
 
 let redoArmed = false;
 
+let drawGeneration = 0;
+const drawTimers = new Set();
+
+function resetDrawSession() {
+  drawGeneration++;
+  for (const timer of drawTimers) clearTimeout(timer);
+  drawTimers.clear();
+  drawing = false;
+  ritual = false;
+  redoArmed = false;
+  $('#dr-text').value = '';
+  $('#dr-text').disabled = false;
+  $('#dr-go').disabled = false;
+  $('#dr-go').hidden = false;
+  $('#dr-reading').hidden = true;
+}
+
+// Animation callbacks belong to the same journal session as the reading they display.
+function afterDrawDelay(callback, delay) {
+  const owner = state,
+    epoch = journalStore.epoch,
+    generation = drawGeneration;
+  const timer = setTimeout(() => {
+    drawTimers.delete(timer);
+    if (owner === state && epoch === journalStore.epoch && generation === drawGeneration)
+      callback();
+  }, delay);
+  drawTimers.add(timer);
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function stageMsg(t) {
@@ -88,7 +118,7 @@ function setStage(state, d) {
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         fan.classList.add('open');
-        setTimeout(() => fan.classList.remove('opening'), 900);
+        afterDrawDelay(() => fan.classList.remove('opening'), 900);
       }),
     );
     stageMsg(
@@ -136,8 +166,8 @@ function showFace(d, animate) {
     return;
   }
   stageMsg('翻牌……');
-  setTimeout(() => fl.classList.add('flipped'), 180);
-  setTimeout(done, 1250);
+  afterDrawDelay(() => fl.classList.add('flipped'), 180);
+  afterDrawDelay(done, 1250);
 }
 
 function showReading(d) {
@@ -164,7 +194,7 @@ function renderDraw() {
     setStage('shown', d);
   } else {
     const draft = readDraft('draw', k);
-    if (draft) $('#dr-text').value = draft.text || '';
+    $('#dr-text').value = draft?.text || '';
     $('#dr-text').disabled = false;
     $('#dr-go').hidden = false;
     setStage('empty');
@@ -217,8 +247,8 @@ function showFace3(d, animate) {
     return;
   }
   stageMsg('翻牌……');
-  fls.forEach((f, i) => setTimeout(() => f.classList.add('flipped'), 200 + i * 520));
-  setTimeout(done, 200 + 2 * 520 + 1200);
+  fls.forEach((f, i) => afterDrawDelay(() => f.classList.add('flipped'), 200 + i * 520));
+  afterDrawDelay(done, 200 + 2 * 520 + 1200);
 }
 
 function isDrawBusy() {
@@ -239,7 +269,15 @@ function initializeDraw() {
     if (drawing) return;
     drawing = true;
     const drawOwner = state,
-      drawEpoch = journalStore.epoch;
+      drawEpoch = journalStore.epoch,
+      generation = drawGeneration;
+    const isCurrent = () =>
+      state === drawOwner && journalStore.epoch === drawEpoch && generation === drawGeneration;
+    const discardStaleDraw = () => {
+      if (generation !== drawGeneration) return;
+      resetDrawSession();
+      showDrawTab();
+    };
     $('#dr-go').disabled = true;
     $('#dr-text').disabled = true;
     $('#dr-reading').hidden = true;
@@ -253,13 +291,15 @@ function initializeDraw() {
     } catch (e) {}
     const k = defaultDay();
     const minShuffle = sleep(prefersReducedMotion() ? 400 : 3000);
-    const timeout = new Promise((r) => setTimeout(() => r(null), 30000));
+    let timeoutHandle;
+    const timeout = new Promise((r) => {
+      timeoutHandle = setTimeout(() => r(null), 30000);
+    });
     const three = segGet('drawmode') === 'three';
     let res = await Promise.race([three ? claudeSpread(text, k) : claudePick(text, k), timeout]);
-    if (state !== drawOwner || journalStore.epoch !== drawEpoch) {
-      drawing = false;
-      $('#dr-go').disabled = false;
-      showDrawTab();
+    clearTimeout(timeoutHandle);
+    if (!isCurrent()) {
+      discardStaleDraw();
       return;
     }
     let note = '';
@@ -291,10 +331,8 @@ function initializeDraw() {
     if (journalStore.storageOK) removeDraft('draw', k);
     petAward('draw', 10, 1, '收工抽卡');
     await minShuffle;
-    if (state !== drawOwner || journalStore.epoch !== drawEpoch) {
-      drawing = false;
-      $('#dr-go').disabled = false;
-      showDrawTab();
+    if (!isCurrent()) {
+      discardStaleDraw();
       return;
     }
     drawing = false;
@@ -322,13 +360,13 @@ function initializeDraw() {
       fan.dataset.picked = '1';
       fan.querySelectorAll('.fc:not(.chosen)').forEach((x) => x.classList.add('gone'));
       stageMsg('三張都揀好喇。');
-      setTimeout(() => showFace3(d, true), prefersReducedMotion() ? 0 : 800);
+      afterDrawDelay(() => showFace3(d, true), prefersReducedMotion() ? 0 : 800);
       return;
     }
     fan.dataset.picked = '1';
     fan.querySelectorAll('.fc').forEach((x) => x.classList.add(x === b ? 'picked' : 'gone'));
     stageMsg('就係佢。');
-    setTimeout(() => showFace(d, true), prefersReducedMotion() ? 0 : 650);
+    afterDrawDelay(() => showFace(d, true), prefersReducedMotion() ? 0 : 650);
   });
   document.addEventListener('click', (e) => {
     const b = e.target.closest('#dr-redo');
@@ -336,7 +374,7 @@ function initializeDraw() {
       if (!redoArmed) {
         redoArmed = true;
         showReading(state.draws[defaultDay()]);
-        setTimeout(() => {
+        afterDrawDelay(() => {
           redoArmed = false;
         }, 5000);
         return;
@@ -388,4 +426,4 @@ function initializeDraw() {
   );
 }
 
-export { isDrawBusy, renderDraw, initializeDraw };
+export { isDrawBusy, renderDraw, resetDrawSession, initializeDraw };

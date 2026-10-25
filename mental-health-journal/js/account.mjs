@@ -45,7 +45,7 @@ function storageStatus(ok) {
   renderRecoveryStatus();
 }
 
-function initializeAccount() {
+function initializeAccount({ onSessionChange }) {
   googleLogin = window.JournalAuth.createController({
     getFirebase: () => window.firebase,
     getConfig: () => window.FIREBASE_CONFIG,
@@ -53,7 +53,9 @@ function initializeAccount() {
       fbDb = database;
     },
     onUser: (user) => {
+      const changed = fbUser?.uid !== user?.uid;
       fbUser = user || null;
+      if (changed) onSessionChange();
       if (user) journalStore.loadCloudFor(user);
       else {
         journalStore.disconnect();

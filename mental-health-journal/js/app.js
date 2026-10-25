@@ -46,7 +46,7 @@ import { initializeCelebration } from './shared/celebration.mjs';
 import { initializeLightbox } from './shared/lightbox.mjs';
 import { initializePetChat } from './pet/chat.mjs';
 import { initializeSos } from './sos.mjs';
-import { initializeLifecycle } from './lifecycle.mjs';
+import { initializeLifecycle, resetTransientViews } from './lifecycle.mjs';
 
 function render() {
   applyTheme();
@@ -77,6 +77,7 @@ function render() {
 initializeState({
   getDatabase: () => fbDb,
   onChange: render,
+  onReplace: resetTransientViews,
   onStatus: setSync,
   onStorage: storageStatus,
   onSettled: milesSoon,
@@ -158,7 +159,12 @@ initializeMemory();
 initializeHaven();
 initializeAdventure();
 initializeLifecycle();
-initializeAccount();
+initializeAccount({
+  onSessionChange() {
+    resetTransientViews();
+    render();
+  },
+});
 render();
 go(PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'island');
 googleLogin.start();

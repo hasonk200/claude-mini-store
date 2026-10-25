@@ -33,4 +33,4 @@ function initializeLightbox() {
   });
 }
 
-export { initializeLightbox };
+export { closeLB, initializeLightbox };
