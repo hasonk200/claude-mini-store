@@ -142,9 +142,9 @@
 
   /* UI adapters for local persistence and cloud synchronization. */
   const CLOUD_UID_KEY = window.JournalStorage.CLOUD_UID_KEY;
-  let fbAuth = null,
-    fbDb = null,
-    fbUser = null;
+  let fbDb = null,
+    fbUser = null,
+    authBusy = false;
   let S;
   const journalStore = window.JournalStorage.createStore({
     storage: {
@@ -176,7 +176,10 @@
     const status = $('#google-status');
     if (status) status.textContent = msg;
     const btn = $('#google-login');
-    if (btn) btn.textContent = fbUser ? '登出 Google' : '使用 Google 登入';
+    if (btn) {
+      btn.disabled = authBusy;
+      btn.textContent = authBusy ? '請稍候…' : fbUser ? '登出 Google' : '使用 Google 登入';
+    }
     const mail = $('#google-email');
     if (mail) mail.textContent = fbUser ? fbUser.email || '已登入' : '未登入';
   }
@@ -194,64 +197,36 @@
     renderRecoveryStatus();
     toast(saved ? '提示已收起，備份仍然可以喺設定下載。' : '暫時記唔低呢個選擇，請稍後再試。');
   }
-  async function connect() {
-    if (!window.firebase || !window.FIREBASE_CONFIG) {
-      journalStore.setInitialLoadPending(false);
-      setSync(false, '暫時同步唔到。可以先喺呢個瀏覽器記低。');
-      return;
-    }
-    try {
-      if (!firebase.apps.length) firebase.initializeApp(window.FIREBASE_CONFIG);
-      fbAuth = firebase.auth();
-      fbDb = firebase.firestore();
-      await fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-      fbAuth.onAuthStateChanged((user) => {
-        fbUser = user || null;
-        if (!user) {
-          journalStore.disconnect();
-          setSync(false, '未登入，記錄留喺呢個瀏覽器。');
-        } else {
-          journalStore.loadCloudFor(user);
-        }
-      });
-      fbAuth.getRedirectResult().catch((e) => setSync(false, '頭先未登入到，請再試一次。'));
-    } catch (e) {
-      journalStore.setInitialLoadPending(false);
-      setSync(false, '暫時連唔到 Google。可以先喺呢個瀏覽器記低。');
-    }
-  }
-  $('#google-login').addEventListener('click', async () => {
-    if (!fbAuth) await connect();
-    if (!fbAuth) {
-      toast('暫時連唔到 Google，請稍後再試。');
-      return;
-    }
-    if (fbAuth.currentUser) {
-      try {
-        await fbAuth.signOut();
-        toast('已登出，之後嘅記錄會留喺呢個瀏覽器。');
-      } catch (e) {
-        toast('未登出到，請再試一次。');
+  const googleLogin = window.JournalAuth.createController({
+    getFirebase: () => window.firebase,
+    getConfig: () => window.FIREBASE_CONFIG,
+    onDatabase: (database) => {
+      fbDb = database;
+    },
+    onUser: (user) => {
+      fbUser = user || null;
+      if (user) journalStore.loadCloudFor(user);
+      else {
+        journalStore.disconnect();
+        setSync(false, '未登入，記錄留喺呢個瀏覽器。');
       }
-      return;
-    }
-    const provider = new firebase.auth.GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    try {
-      await fbAuth.signInWithPopup(provider);
-    } catch (e) {
-      if (e && ['auth/popup-blocked', 'auth/cancelled-popup-request'].includes(e.code)) {
-        try {
-          await fbAuth.signInWithRedirect(provider);
-        } catch (err) {
-          setSync(false, '頭先未登入到，請再試一次。');
-        }
-      } else if (e && e.code === 'auth/popup-closed-by-user') toast('已取消 Google 登入');
-      else setSync(false, '頭先未登入到，請再試一次。');
-    }
+    },
+    onBusy: (busy) => {
+      authBusy = busy;
+      const button = $('#google-login');
+      button.disabled = busy;
+      button.textContent = busy ? '請稍候…' : fbUser ? '登出 Google' : '使用 Google 登入';
+    },
+    onNotice: (message) => {
+      setSync(false, message);
+      toast(message);
+    },
+    onUnavailable: () => journalStore.setInitialLoadPending(false),
+    onError: (code) => console.warn('Google sign-in:', code),
   });
+  $('#google-login').addEventListener('click', () => googleLogin.toggle());
   window.addEventListener('online', () => {
-    journalStore.reconnect(fbAuth && fbAuth.currentUser);
+    journalStore.reconnect(googleLogin.currentUser);
   });
 
   function toast(msg) {
@@ -11845,7 +11820,7 @@
   render();
   const h = (location.hash || '').slice(1);
   go(PAGES.includes(h) ? h : 'island');
-  connect();
+  googleLogin.start();
   if (journalStore.unreadableLocal) toast('有啲記錄暫時開唔到，可以到設定查看備份。');
   milesSoon();
 })();

@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.cjs",
-    "check": "node --check js/app.js && node --check js/core.js && node --check js/adventure.js && node --check js/sync.js && node --check js/storage.js",
+    "check": "node --check js/app.js && node --check js/core.js && node --check js/adventure.js && node --check js/sync.js && node --check js/storage.js && node --check js/auth.js",
     "format": "prettier --write \"js/*.js\" \"tests/*.cjs\" \"*.json\"",
     "format:check": "prettier --check \"js/*.js\" \"tests/*.cjs\" \"*.json\""
   },
