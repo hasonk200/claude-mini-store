@@ -18,11 +18,12 @@
 純 HTML、CSS、JavaScript，執行網頁毋須編譯，沒有新增瀏覽器套件。開發時使用 Prettier 統一代碼格式。以靜態伺服器服務本資料夾，例如在本資料夾執行 `python3 -m http.server 8080`，再開啟 `http://localhost:8080`。直接部署時請保留 `index.html`、`css/`、`js/`、`assets/` 的相對位置。
 
 ```sh
+npm ci
 npm run check
 npm test
 ```
 
-Node.js 18 或以上可執行語法檢查及測試，毋須先安裝套件。格式化工具只用於開發：
+開發與測試使用 Node.js 24。Firestore 規則測試另需 Java 21；詳見 [Firebase 設定與驗證](docs/FIREBASE.md)。這些套件只用於開發，網頁仍直接載入靜態檔案。格式整理：
 
 ```sh
 npm ci
@@ -30,7 +31,7 @@ npm run format
 npm run format:check
 ```
 
-涉及 `mental-health-journal/` 或其 workflow 的 Pull Request（包括草稿）及 `main` 推送，會由 [Journal checks](../.github/workflows/mental-health-journal.yml) 在 Node.js 24 自動執行 `npm ci`、語法檢查、測試及格式檢查。這套 workflow 只檢查程式，不部署網頁；合併前可在 PR 的 Checks 查看結果。
+涉及 `mental-health-journal/` 或其 workflow 的 Pull Request（包括草稿）及 `main` 推送，會由 [Journal checks](../.github/workflows/mental-health-journal.yml) 在 Node.js 24 自動執行 `npm ci`、語法檢查、測試及格式檢查，並以 Java 21 執行 Firestore 規則模擬器測試。這套 workflow 只檢查程式，不部署網頁；合併前可在 PR 的 Checks 查看結果。
 
 純格式化與邏輯修改請分開 commit，先提交格式整理，再提交重構或功能修改。日後有純格式化 commit，才建立 repo 根目錄的 `.git-blame-ignore-revs` 並記下完整 SHA；不要把同時改過邏輯的 commit 放入名單。本機 Git 如要使用該名單，需設定 `git config blame.ignoreRevsFile .git-blame-ignore-revs`。
 
@@ -38,7 +39,8 @@ npm run format:check
 
 | 檔案 | 職責 |
 | --- | --- |
-| `js/app.js` | 頁面、互動、繪圖及 Firebase 登入介面 |
+| `js/app.js` | 頁面、互動、繪圖及登入介面接線 |
+| `js/auth.js` | Google 登入初始化、單一視窗、錯誤與登出流程 |
 | `js/storage.js` | 本機儲存、復原、備份還原及帳戶同步；透過注入介面直接測試 |
 | `js/core.js` | 共用核心欄位、資料檢查、成長及配對遊戲規則 |
 | `js/sync.js` | 按帳戶依序送出待同步分區 |
@@ -50,7 +52,7 @@ npm run format:check
 
 - 沿用 `dicky-care-v1` 本機儲存，新 `journey` 欄位會自動補上；舊 JSON 備份仍可匯入。
 - 打卡與抽卡草稿留在本瀏覽器，按帳戶及記錄日期分開。正式記錄同冒險進度可透過原有 Google 登入同步。
-- 原 Firebase 專案 `dicky-supplement-tracker-2026`、Web App、`users/{uid}/mentalHealthJournal` 路徑保留。此更新沒有更改 Firebase 規則或開新專案。
+- 手帳改用獨立專案 `dicky-heartland-journal-2026`，資料路徑仍為 `users/{uid}/mentalHealthJournal`。既有手帳帳戶保留原 UID，舊專案資料保留；正式切換前須重跑搬遷，步驟與已驗證範圍見 [Firebase 設定與搬遷](docs/FIREBASE.md)。
 - 匯入前驗證格式，顯示確認摘要，再建立本機安全副本；設定可下載匯入前副本。未能解析的舊資料亦會保留原始副本供下載。
 - 開啟本機資料時逐項保留有效記錄與未知欄位；損壞項目不會令整份手帳重設。復原標記會隨本機儲存保留，重新開啟或離線打卡不會解除保護。
 - 復原時須成功讀取伺服器及所有分區，才會合併打卡／抽卡並恢復雲端證據簿、寵物、習慣等資料。其餘本機修改先留副本，設定提供原始資料及復原前修改的下載入口；副本儲存失敗時不會覆寫或上傳預設資料。

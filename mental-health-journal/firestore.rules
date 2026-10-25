@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Private journal: core holds the fields in JournalCore.CORE_SCHEMA,
+    // plus years/drawMonths. ci-YYYY and dr-YYYY-MM contain an entries map.
+    // Dates/t are client-authored to support offline edits and backup imports.
+    // Dynamic nested records are checked by the client; these rules enforce
+    // account isolation, the document envelope and bounded top-level collections.
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    function boundedMap(value, maximum) {
+      return value is map && value.size() <= maximum;
+    }
+    function boundedList(value, maximum) {
+      return value is list && value.size() <= maximum;
+    }
+    function text(value) {
+      return value is string && value.size() <= 10000;
+    }
+    function isValidPlan(plan) {
+      return plan is map
+        && plan.keys().hasAll(['warn', 'self', 'place', 'people', 'safe', 'reason'])
+        && plan.keys().hasOnly(['warn', 'self', 'place', 'people', 'safe', 'reason'])
+        && text(plan.warn) && text(plan.self) && text(plan.place)
+        && text(plan.people) && text(plan.safe) && text(plan.reason);
+    }
+    function isValidSettings(settings) {
+      return settings is map
+        && settings.keys().hasAll(['a', 'b', 'theme', 'buddy'])
+        && settings.keys().hasOnly(['a', 'b', 'theme', 'buddy', 'quiet'])
+        && settings.a is string && settings.a.size() <= 5
+        && settings.b is string && settings.b.size() <= 5
+        && settings.theme in ['auto', 'light', 'dark']
+        && settings.buddy is bool
+        && settings.get('quiet', false) is bool;
+    }
+    function isValidCore(data) {
+      let fields = ['journey', 'evidence', 'ladders', 'plan', 'phq', 'weeks',
+        'settings', 'favs', 'pet', 'habits', 'miles', 'milesInit', 'cardNotes',
+        't', 'years', 'drawMonths'];
+      return data.keys().hasAll(fields) && data.keys().hasOnly(fields)
+        && boundedMap(data.journey, 20)
+        && boundedList(data.evidence, 10000)
+        && boundedList(data.ladders, 200)
+        && isValidPlan(data.plan)
+        && boundedList(data.phq, 10000)
+        && boundedMap(data.weeks, 5200)
+        && isValidSettings(data.settings)
+        && boundedList(data.favs, 100)
+        && (data.pet == null || boundedMap(data.pet, 100))
+        && boundedList(data.habits, 200)
+        && boundedMap(data.miles, 1000)
+        && data.milesInit is number && data.milesInit >= 0 && data.milesInit <= 1
+        && boundedMap(data.cardNotes, 100)
+        && data.t is number && data.t >= 0 && data.t <= 9007199254740991
+        && boundedList(data.years, 300)
+        && boundedList(data.drawMonths, 3600);
+    }
+    function isValidPartition(data, maximum) {
+      return data.keys().hasAll(['entries']) && data.keys().hasOnly(['entries'])
+        && boundedMap(data.entries, maximum);
+    }
+    function isValidJournal(document, data) {
+      return (document == 'core' && isValidCore(data))
+        || (document.matches('ci-[0-9]{4}') && isValidPartition(data, 366))
+        || (document.matches('dr-[0-9]{4}-(0[1-9]|1[0-2])') && isValidPartition(data, 31));
+    }
+    match /users/{userId}/mentalHealthJournal/{document} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidJournal(document, request.resource.data);
+      // The app clears records by writing empty partitions, not deleting documents.
+      allow delete: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
