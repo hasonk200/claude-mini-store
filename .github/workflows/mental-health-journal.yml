@@ -16,7 +16,8 @@ permissions:
 
 jobs:
   journal:
-    runs-on: ubuntu-latest
+    # Keep the OS aligned with the pinned Playwright version's supported browser dependencies.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
