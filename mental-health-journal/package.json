@@ -3,14 +3,17 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.cjs",
-    "check": "node --check js/app.js && node --check js/core.js && node --check js/adventure.js && node --check js/sync.js && node --check js/storage.js && node --check js/auth.js && node --check scripts/migrate-firebase.cjs",
-    "format": "prettier --write \"js/*.js\" \"tests/**/*.cjs\" \"scripts/*.cjs\" \"*.json\"",
-    "format:check": "prettier --check \"js/*.js\" \"tests/**/*.cjs\" \"scripts/*.cjs\" \"*.json\"",
+    "check": "node scripts/check.cjs",
+    "format": "prettier --write \"js/**/*.{js,mjs}\" \"tests/**/*.{cjs,json}\" \"scripts/*.cjs\" \"*.cjs\" \"*.json\"",
+    "format:check": "prettier --check \"js/**/*.{js,mjs}\" \"tests/**/*.{cjs,json}\" \"scripts/*.cjs\" \"*.cjs\" \"*.json\"",
     "test:rules": "firebase emulators:exec --only firestore --project demo-heartland-journal \"node --test tests/firestore/*.test.cjs\"",
-    "migrate:firebase": "node scripts/migrate-firebase.cjs"
+    "migrate:firebase": "node scripts/migrate-firebase.cjs",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.0",
+    "@playwright/test": "1.58.2",
+    "acorn": "8.15.0",
     "firebase": "12.19.0",
     "firebase-tools": "15.32.1",
     "prettier": "3.9.10"
