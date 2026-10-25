@@ -21,6 +21,8 @@
 npm ci
 npm run check
 npm test
+npx playwright install --with-deps chromium
+npm run test:browser
 ```
 
 開發與測試使用 Node.js 24。Firestore 規則測試另需 Java 21；詳見 [Firebase 設定與驗證](docs/FIREBASE.md)。這些套件只用於開發，網頁仍直接載入靜態檔案。格式整理：
@@ -31,7 +33,7 @@ npm run format
 npm run format:check
 ```
 
-涉及 `mental-health-journal/` 或其 workflow 的 Pull Request（包括草稿）及 `main` 推送，會由 [Journal checks](../.github/workflows/mental-health-journal.yml) 在 Node.js 24 自動執行 `npm ci`、語法檢查、測試及格式檢查，並以 Java 21 執行 Firestore 規則模擬器測試。這套 workflow 只檢查程式，不部署網頁；合併前可在 PR 的 Checks 查看結果。
+涉及 `mental-health-journal/` 或其 workflow 的 Pull Request（包括草稿）及 `main` 推送，會由 [Journal checks](../.github/workflows/mental-health-journal.yml) 在 Node.js 24 自動執行 `npm ci`、語法及模組依賴檢查、單元測試、格式檢查、Chromium 操作測試，並以 Java 21 執行 Firestore 規則模擬器測試。這套 workflow 只檢查程式，不部署網頁；合併前可在 PR 的 Checks 查看結果。
 
 純格式化與邏輯修改請分開 commit，先提交格式整理，再提交重構或功能修改。日後有純格式化 commit，才建立 repo 根目錄的 `.git-blame-ignore-revs` 並記下完整 SHA；不要把同時改過邏輯的 commit 放入名單。本機 Git 如要使用該名單，需設定 `git config blame.ignoreRevsFile .git-blame-ignore-revs`。
 
@@ -39,14 +41,22 @@ npm run format:check
 
 | 檔案 | 職責 |
 | --- | --- |
-| `js/app.js` | 頁面、互動、繪圖及登入介面接線 |
+| `js/app.js` | 約 170 行的啟動入口；接好各頁面及生命週期，沒有繪圖或遊戲邏輯 |
+| `js/state.mjs`、`js/account.mjs` | 共用狀態與登入介面；換帳戶／還原後使用新的狀態 |
+| `js/navigation.mjs`、`js/lifecycle.mjs` | 頁面切換、離場與帳戶切換時的互動清理 |
+| `js/art/`、`js/data/` | SVG 插畫、牌卡／寵物／智慧文字資料 |
+| `js/cards/` | 抽卡儀式、牌庫、閱讀、書櫃 |
+| `js/pet/` | 領養、家居、照顧、外出、拋球、家庭、拍照、商店與移動 |
+| `js/games/` | 尋路、配對及湖畔頁面的顯示與操作 |
+| `js/checkin.mjs` 等頁面模組 | 打卡、習慣、證據、階梯、週回顧、應急卡、設定及小島 |
+| `js/shared/`、`js/model/` | DOM、日期、草稿、下載與共用計算 |
 | `js/auth.js` | Google 登入初始化、單一視窗、錯誤與登出流程 |
 | `js/storage.js` | 本機儲存、復原、備份還原及帳戶同步；透過注入介面直接測試 |
 | `js/core.js` | 共用核心欄位、資料檢查、成長及配對遊戲規則 |
 | `js/sync.js` | 按帳戶依序送出待同步分區 |
 | `js/adventure.js` | 解謎關卡、移動、存檔及獎勵規則 |
 
-測試涵蓋關卡可達性、碰撞／推箱／機關、存檔、一次性獎勵、配對遊戲、備份驗證、花園成長及雲端寫入佇列。
+測試涵蓋關卡可達性、碰撞／推箱／機關、存檔、一次性獎勵、配對遊戲、備份驗證、花園成長及雲端寫入佇列。另有 180 個 SVG 樣本比對，以及可在 CI 重跑的完整瀏覽器操作；拆分方式及驗證範圍見 [畫面模組重構](docs/UI_REFACTOR.md)。
 
 ## 資料與同步
 
