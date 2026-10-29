@@ -396,7 +396,7 @@ const handlers = {
   },
   'meal-open': (el) => { ui.sheet = { type: 'meal', id: el.dataset.id }; render(); },
   'sleep-open': (el) => { ui.sheet = { type: 'sleep', id: el.dataset.id }; render(); },
-  'draft-clear': (el) => { clearDraft(el.dataset.key); lastView = ''; lastSheet = ''; render(); },
+  'draft-clear': (el) => { clearDraft(el.dataset.key); lastView = ''; lastSheet = null; render(); },
   // 補登先選班次：之後所有時間都扣在這一班上。
   'rec-shift': (el) => { ui.sheet.sid = el.dataset.sid; ui.sheet.newShift = false; delete ui.sheet.t; render(); },
   'rec-newshift': () => { ui.sheet.newShift = true; render(); },
@@ -537,7 +537,7 @@ const handlers = {
     captureDraft(form);
     ui.drafts[form.dataset.draft] = { ...ui.drafts[form.dataset.draft], photo: null };
     persistDrafts();
-    lastView = ''; lastSheet = '';
+    lastView = ''; lastSheet = null;
     render();
   },
   'stats-shift': (el) => { ui.statsOffset += Number(el.dataset.dir); render(); },
@@ -747,7 +747,7 @@ const forms = {
     clearDraft(key);
     if (f.closest('.sheet') && e?.submitter?.value !== 'stay') ui.sheet = null;
     flash(`meal:${id}`);
-    lastView = ''; lastSheet = '';
+    lastView = ''; lastSheet = null;
     const data = store.get();
     const wk = mealWorkdayOf(data, id);
     toast(`已儲存這一餐${wk ? ` · 歸屬 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日` : ''}`);
@@ -765,7 +765,7 @@ const forms = {
     if (inSheet && e?.submitter?.value !== 'stay') ui.sheet = null;
     if (!inSheet) ui.sleepSaved = r.id;
     flash(`sleep:${r.id}`);
-    lastView = ''; lastSheet = '';
+    lastView = ''; lastSheet = null;
     toastUndo(`${id ? '已更新' : '已補記'} ${fmtDur(r.ms)} · 歸屬 ${wdOfKey(r.wd)} ${fmtMD(r.wd)} 工作日`);
     render();
   },
@@ -942,7 +942,7 @@ function bind() {
       try {
         const photo = await compressPhoto(el.files[0]);
         if (form) { ui.drafts[form.dataset.draft] = { ...ui.drafts[form.dataset.draft], photo }; persistDrafts(); }
-        lastView = ''; lastSheet = '';
+        lastView = ''; lastSheet = null;
         render();
       } catch {
         toast('這張相片太大或無法讀取，請換一張');

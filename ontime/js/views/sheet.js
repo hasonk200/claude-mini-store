@@ -20,7 +20,7 @@ export const CATS = [
 ];
 const CAT_STEPS = Object.fromEntries(CATS.map(([k, , , , steps]) => [k, steps]));
 export const catOf = (step) => CATS.find(([, , , , steps]) => steps.includes(step))?.[0] ?? null;
-const LABEL = { ...STEP_LABEL, ride: '搭車', ride2: '搭車', break: '休息', meal: '用餐', sleepStart: '只補入睡', sleepEnd: '只補起床', sleepPair: '一段睡眠' };
+const LABEL = { ...STEP_LABEL, ride: '搭車', ride2: '搭車', break: '休息', meal: '用餐', sleepStart: '入睡', sleepEnd: '起床', sleepPair: '整段' };
 const ICON = { ...STEP_ICON, break: 'cup', meal: 'meal', sleepStart: 'moon', sleepEnd: 'sun', sleepPair: 'moon' };
 const KINDS = { ...STEP_KIND, break: 'commute', meal: 'meal', sleepStart: 'sleep', sleepEnd: 'sleep', sleepPair: 'sleep' };
 
@@ -173,7 +173,7 @@ function stepChips(data, wd, sid, steps, step, sess) {
     const v = val[k];
     const on = k === step;
     const needShift = SHIFT_BOUND_STEPS.has(k) && !sess;
-    const note = k === 'sleepPair' ? '入睡＋起床' : needShift ? '先選班次' : v != null ? fmtTime(v) : '未記錄';
+    const note = k === 'sleepPair' ? '入睡＋起床' : needShift ? '先選班次' : v != null ? fmtTime(v) : k === 'sleepStart' || k === 'sleepEnd' ? '只補這一個' : '未記錄';
     return `<button type="button" class="step-chip${on ? ' is-on' : ''}${v == null && k !== 'sleepPair' ? ' is-missing' : ''}" data-action="rec-step" data-step="${k}" aria-pressed="${on}" ${needShift ? 'disabled' : ''}>
       ${bubble(ICON[k], KINDS[k], { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${LABEL[k]}</strong><small>${note}</small></span></button>`;
   }).join('')}</div>`;
@@ -208,14 +208,14 @@ function recordForm(ctx, { wd, step, sid, sess, title }) {
       <label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
       <div class="cross-note" id="rec-preview" data-wd="${wd}" aria-live="polite">${freePreviewText(t, wd)}</div>`;
   return `<form class="form" data-form="record" id="record-form" ${anchored ? `data-anchored="1" data-s-start="${sess.start}" data-s-end="${sess.end ?? ''}"` : ''}><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="step" value="${step}"><input type="hidden" name="sid" value="${anchored ? esc(sess.id) : ''}">
-      ${title(`「${LABEL[step].replace('只補', '')}」在什麼時候？`)}
+      ${title(`「${LABEL[step]}」在什麼時候？`)}
       ${timeBlock}
       ${isBreak ? `<div class="field-pair"><label class="field"><span>結束日期</span><input type="date" name="endDate" value="${toDateInput(breakEnd)}"></label><label class="field"><span>結束時間（可空白）</span><input type="time" name="endTime" value="${toTimeInput(breakEnd)}"></label></div>` : ''}
       ${verifyToggle(stepFlag(tg, step, t, 'verified'))}
       ${rideFields}
       ${replaceable ? `<label class="fine"><input type="checkbox" name="replace"> 取代這天最後一筆的入睡時間（不勾就新增一筆）</label>` : ''}
       <div class="btn-wrap"><button type="button" class="btn btn-soft btn-sm" data-action="rec-now">現在</button><button type="button" class="btn btn-soft btn-sm" data-action="rec-minus">−15 分</button>${plan[step] ? `<button type="button" class="btn btn-line btn-sm" data-action="rec-plan" data-t="${plan[step]}">用預計 ${fmtTime(plan[step])}</button>` : ''}</div>
-      <p class="fine">只會修改「${LABEL[step].replace('只補', '')}」這一個時間；其他打卡、收入、休息、備註都保持不變。</p>
+      <p class="fine">只會修改「${LABEL[step]}」這一個時間；其他打卡、收入、休息、備註都保持不變。</p>
       <div class="sheet-foot btn-pair"><button class="btn btn-line btn-lg" type="submit" name="after" value="stay">儲存並繼續</button><button class="btn btn-ink btn-lg" type="submit" name="after" value="close">儲存並關閉</button></div>
       <p class="fine">「儲存並繼續」會留在這裡，接著補下一項。</p>
     </form>`;

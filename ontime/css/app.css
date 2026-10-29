@@ -604,6 +604,11 @@ details.more .form { padding: 0 14px 14px; }
 .step-chip.is-missing small { color: var(--work-deep); }
 .wd-field { max-width: 260px; }
 .cross-note { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sleep-deep); background: var(--sleep-tint); border-radius: 14px; padding: 10px 12px; }
+/* 睡眠、用餐的預覽是一段句子（可能兩行），不要排成一欄欄。 */
+.cross-note[data-sleep-preview], .cross-note[data-meal-preview] { display: block; line-height: 1.6; }
+.cross-note[data-meal-preview]:empty { display: none; }
+/* 「要補什麼？」四個類別：兩欄兩行。 */
+.step-chips.cat-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sheet-foot { position: sticky; bottom: -20px; background: var(--surface); padding: 8px 0 4px; }
 .sheet-note { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; background: var(--surface-2); padding: 14px; border-radius: 16px; font-size: 14px; }
 
