@@ -659,6 +659,39 @@ export function nextSleepPlan(data, now) {
     .sort((a, b) => a.planStart - b.planStart)[0] || null;
 }
 
+// 新表單的預設時間：看的是現在這個工作日就用現在；
+// 切到別的工作日（例如今天頁往回看週六）就沿用那一天的日期，時間先用現在的時：分。
+export function timeOnWorkday(data, wd, now) {
+  if (!wd || wd === currentWorkday(data, now)) return now;
+  return at(wd, `${String(new Date(now).getHours()).padStart(2, '0')}:${String(new Date(now).getMinutes()).padStart(2, '0')}`);
+}
+
+// 新增班次：開工日期要落在工作日當天，或者隔天（午夜後才開工的夜班）。
+// 不在這範圍就回傳開工那天的日期，讓畫面問清楚要歸到哪一個工作日。
+export function shiftDateMismatch(wd, start) {
+  const k = dateKey(start);
+  return k === wd || k === addDays(wd, 1) ? null : k;
+}
+
+// 進行中那一班估計幾點收工（只用來估算，不是收工紀錄）。
+// 次序：你填的預計收工（expectedEnd）→ 排班的下班時間；已經過了的不算。
+export function workEndEstimate(data, s, now) {
+  if (s.expectedEnd != null && s.expectedEnd > now) return { at: s.expectedEnd, source: 'expected' };
+  const sh = shiftOf(data, s);
+  if (sh && sh.end > now) return { at: sh.end, source: 'shift' };
+  return { at: null, reason: sh ? 'overtime' : 'no-shift' };
+}
+
+// 最近 16 小時內收工的一班（用來估回程）。
+function latestEndedSession(data, now) {
+  let best = null;
+  for (const x of data.sessions) {
+    if (x.end == null || x.end > now || now - x.end > 16 * HOUR) continue;
+    if (!best || x.end > best.end) best = x;
+  }
+  return best;
+}
+
 export function beforeBedBudget(data, now) {
   if (data.sleeps.some((s) => s.start != null && s.end == null)) return { state: 'sleeping' };
   const plan = nextSleepPlan(data, now);
@@ -668,18 +701,25 @@ export function beforeBedBudget(data, now) {
   const goMs = (st.commuteOutMin ?? 45) * MIN;
   const backMs = (st.commuteBackMin ?? 45) * MIN;
   const busy = [];
+  let workEnd = null;
   const s = activeSession(data);
   if (s) {
-    const sh = shiftOf(data, s);
-    if (sh && sh.end > now) {
-      busy.push([now, sh.end]);
-      const j = journeyOfSession(data, s);
-      if (!j || j.home == null) busy.push([sh.end, sh.end + backMs]);
+    // 正在上班：要知道幾點收工才估得到。先用你填的「預計收工」，再用排班；
+    // 兩樣都沒有（或排班已過、仍未收工）就講明估算不到，不把整段當成自由時間。
+    const end = workEndEstimate(data, s, now);
+    if (end.at == null) {
+      return { state: 'unknown-end', reason: end.reason, session: s, target, plan, countdown: target - now };
     }
+    workEnd = { ...end, session: s };
+    busy.push([now, end.at]);
+    const j = journeyOfSession(data, s);
+    if (!j || j.home == null) busy.push([end.at, end.at + backMs]);
   } else {
-    const cyc = currentCycle(data, now);
-    if (cyc.session && cyc.session.end != null && cyc.journey && cyc.journey.home == null) {
-      busy.push([now, Math.max(now, (cyc.journey.leave ?? cyc.session.end) + backMs)]);
+    // 收了工但還沒記到家（包括完全沒有行程紀錄）：回程時間也要扣。
+    const last = latestEndedSession(data, now);
+    if (last) {
+      const j = journeyOfSession(data, last);
+      if (!j || j.home == null) busy.push([now, Math.max(now, (j?.leave ?? last.end) + backMs)]);
     }
   }
   const used = new Set(data.sessions.map((x) => x.shiftId));
@@ -696,7 +736,7 @@ export function beforeBedBudget(data, now) {
     busy.push([sl.planStart, sl.planEnd]);
   }
   const occupied = totalOf(clip(busy, now, target));
-  return { state: 'ok', target, plan, countdown: target - now, free: Math.max(0, target - now - occupied) };
+  return { state: 'ok', target, plan, countdown: target - now, free: Math.max(0, target - now - occupied), workEnd };
 }
 
 // ---------- 睡眠統計 ----------

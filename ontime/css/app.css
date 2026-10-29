@@ -147,6 +147,21 @@ kbd { font-family: inherit; font-size: 11px; font-weight: 800; color: #111418; b
 .btn-soft { background: var(--line-soft); color: var(--ink); }
 .btn-ghost-dark { background: transparent; border: 1.5px solid #3A4049; color: #fff; }
 .btn-danger { background: var(--danger-tint); color: var(--danger); }
+/* 次要動作：文字按鈕（例如修改面板底部的刪除）。 */
+.btn-text, .btn-text-danger { background: transparent; border: 0; box-shadow: none; font-weight: 700; }
+.btn-text { color: var(--muted); }
+.btn-text-danger { color: var(--danger); }
+
+/* 列表：點整筆就修改。 */
+.row-click { cursor: pointer; }
+.row-click:hover { background: var(--surface-2); }
+tr.row-click:focus-visible, li.row-click:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+/* 剛儲存的那一筆：留在原位，短暫亮一下。 */
+@keyframes flash-row { 0%, 35% { background: color-mix(in srgb, var(--lime) 45%, transparent); } 100% { background: transparent; } }
+.is-flash, tr.is-flash td { animation: flash-row 2.4s ease-out; }
+@media (prefers-reduced-motion: reduce) { .is-flash, tr.is-flash td { animation: none; outline: 2px solid var(--ink); outline-offset: -2px; } }
+.saved-note { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 14px; background: var(--sleep-tint-2); color: var(--sleep-deep); font-size: 13px; }
+.saved-note strong { font-size: 15px; }
 .btn-night { background: var(--night-btn); color: #fff; min-height: 54px; font-size: 16px; font-weight: 800; }
 .btn-soft-night { background: var(--sleep-tint); color: var(--sleep-deep); font-weight: 800; }
 .btn-meal { background: var(--meal); color: #2A0610; font-weight: 800; min-height: 54px; font-size: 16px; }
@@ -241,6 +256,10 @@ button.chip { cursor: pointer; min-height: 30px; }
 .metric-value { font-size: 30px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
 .num small { font-size: 13px; font-weight: 700; margin-left: 1px; letter-spacing: 0; }
 .metric-note { font-size: 11px; color: var(--muted); line-height: 1.45; }
+/* 估算不到或沒有紀錄時：用文字代替大數字，不顯示誤導的 0。 */
+.metric-value.metric-text { font-size: 20px; letter-spacing: -.01em; }
+.metric-btn { align-self: flex-start; margin-top: 4px; }
+.link-inline { background: none; border: 0; padding: 0 2px; font: inherit; font-weight: 700; color: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .budget-unset { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
 .budget-unset > div { display: flex; flex-direction: column; gap: 2px; }
 .budget-unset strong { font-size: 17px; }
@@ -393,6 +412,7 @@ details.more .form { padding: 0 14px 14px; }
 .tl-divider { display: flex; align-items: center; gap: 10px; margin: 2px 0 12px; }
 .tl-divider span { font-size: 11px; font-weight: 800; color: var(--sleep-deep); background: var(--sleep-tint-2); padding: 3px 10px; border-radius: 999px; }
 .tl-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.tl-divider.is-warn span { color: var(--danger); background: var(--danger-tint); }
 .summary-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .mini { padding: 14px; gap: 4px; }
 .mini span { font-size: 12px; color: var(--muted); }
@@ -584,6 +604,11 @@ details.more .form { padding: 0 14px 14px; }
 .step-chip.is-missing small { color: var(--work-deep); }
 .wd-field { max-width: 260px; }
 .cross-note { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sleep-deep); background: var(--sleep-tint); border-radius: 14px; padding: 10px 12px; }
+/* 睡眠、用餐的預覽是一段句子（可能兩行），不要排成一欄欄。 */
+.cross-note[data-sleep-preview], .cross-note[data-meal-preview] { display: block; line-height: 1.6; }
+.cross-note[data-meal-preview]:empty { display: none; }
+/* 「要補什麼？」四個類別：兩欄兩行。 */
+.step-chips.cat-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sheet-foot { position: sticky; bottom: -20px; background: var(--surface); padding: 8px 0 4px; }
 .sheet-note { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; background: var(--surface-2); padding: 14px; border-radius: 16px; font-size: 14px; }
 
@@ -848,3 +873,6 @@ details.more .form { padding: 0 14px 14px; }
 .shift-add { border-style: dashed; background: transparent; }
 .shift-add.is-on { background: var(--solid); border-style: solid; }
 #rec-preview strong { font-weight: 800; }
+.c-danger { color: var(--danger); font-weight: 700; }
+.status-now-note { font-size: 13px; line-height: 1.5; color: #E7EBEF; background: rgba(255, 255, 255, .08); border-radius: 12px; padding: 10px 12px; }
+.status-now-note strong { color: var(--lime); }

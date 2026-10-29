@@ -2,7 +2,7 @@ import { esc, icon, bubble, durHTML, STEP_ICON, STEP_KIND, seg } from '../ui.js'
 import { dateKey, fmtTime, wdOf, fmtDayMD, wdOfKey, fmtMD, MIN, HOUR, fmtDur, fmtDurLong, toDateInput, toTimeInput } from '../time.js';
 import {
   STEPS, STEP_LABEL, lastMeal, awakeSince, sleepLast24h, currentCycle, nextStep, statusOf, beforeBedBudget, shiftOf, sessionWorkMs,
-  workdaySpan, workdayEvents, jobOf, shiftsOfWorkday
+  workdaySpan, workdayEvents, jobOf, shiftsOfWorkday, currentWorkday
 } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
 import { ribbon, legend, crossBadge } from './shared.js';
@@ -29,7 +29,8 @@ export function heroFor(data, wd, cycle, now, compact = false) {
   const upcoming = data.shifts.filter((x) => x.start > now).sort((x, y) => x.start - y.start)[0];
   let line = '';
   if (b.state === 'ok') line = `睡前還有 ${fmtDur(b.free)} 未安排`;
-  else if (b.state === 'unset' && awakeSince(data, now)) line = `已清醒 ${fmtDur(awakeSince(data, now).ms)}`;
+  else if (b.state === 'unknown-end') line = `距離入睡 ${fmtDur(b.countdown)} · 收工時間未知`;
+  else if (b.state === 'unset' && awakeSince(data, now)) line = `距離上次記錄起床 ${fmtDur(awakeSince(data, now).ms)}`;
   else if (st.key === 'sleep') line = `入睡 ${fmtTime(st.since)} · 已睡 ${fmtDur(now - st.since)}`;
   else if (upcoming) line = `下一班 ${wdOf(upcoming.start)} ${fmtTime(upcoming.start)}`;
   return heroHTML({ state: st.key, now, headline: H[st.key] || '', line, eyebrow: `ONTIME · ${wdOfKey(wd)}工作日`, compact });
@@ -75,7 +76,7 @@ function stepper(data, wd, cycle, now) {
   return `<ol class="stepper" style="--prog:${prog.toFixed(1)}%">${items}</ol>`;
 }
 
-function statusCard(data, wd, cycle, now) {
+function statusCard(data, wd, cycle, now, manual = false) {
   const st = statusOf(cycle, data, now);
   const s = cycle.session;
   const sh = s ? shiftOf(data, s) : null;
@@ -108,19 +109,23 @@ function statusCard(data, wd, cycle, now) {
     if (ns === 'ride') alt.push(['arrive', '步行直接抵達']);
     if (ns === 'arrive') alt.push(['clockIn', '直接上班']);
     if (ns === 'ride2') alt.push(['home', '直接到家']);
-    const altHTML = alt.map(([k, l]) => `<button type="button" class="btn btn-ghost-dark" data-action="step" data-step="${k}">${l}</button>`).join('');
+    const nowTag = manual ? ' · 現在' : '';
+    const altHTML = alt.map(([k, l]) => `<button type="button" class="btn btn-ghost-dark" data-action="step" data-step="${k}">${l}${nowTag}</button>`).join('');
     // 休息一律可以按：上班中記的是班內休息，沒班時記獨立休息。
     const resting = st.key === 'break' || st.key === 'rest';
-    const brk = `<button type="button" class="btn btn-ghost-dark" data-action="break">${resting ? '結束休息' : '開始休息'}</button>`;
+    const brk = `<button type="button" class="btn btn-ghost-dark" data-action="break">${resting ? '結束休息' : '開始休息'}${nowTag}</button>`;
     const sleepBtn = ['free', 'off'].includes(st.key) || ns === 'out' ? '<button type="button" class="btn btn-ghost-dark" data-action="sleep-start">現在入睡</button>' : '';
     if (altHTML || brk || sleepBtn) buttons.push(`<div class="btn-row">${altHTML}${brk}${sleepBtn}</div>`);
   }
+  // 切到別的工作日時，這張卡的按鈕仍然是「記錄現在」；講清楚，補舊日請用補登。
+  const nowNote = manual ? `<div class="status-now-note">這裡的按鈕記錄的是<strong>現在 ${wdOf(now)} ${fmtMD(dateKey(now))} ${fmtTime(now)}</strong>，不是 ${wdOfKey(wd)} ${fmtMD(wd)}。</div>` : '';
   return `<section class="card card-ink status-card" aria-label="現在狀態">
     <div class="status-top"><span class="live-dot"></span>現在狀態<span class="spacer"></span><span class="muted-ink">${esc(s ? jobOf(data, s.jobId)?.name ?? '' : '')}</span></div>
     <div class="status-main"><div class="status-title">${esc(st.title)}</div><div class="status-sub">${sub}</div></div>
     ${progress}
+    ${nowNote}
     ${buttons.join('')}
-    <button type="button" class="link-ink" data-action="open-record">補登其他時間</button>
+    <button type="button" class="link-ink" data-action="open-record">${manual ? `補登 ${wdOfKey(wd)} ${fmtMD(wd)} 的時間` : '補登其他時間'}</button>
   </section>`;
 }
 
@@ -129,19 +134,36 @@ function budgetCards(data, now) {
   if (b.state === 'sleeping') {
     return `<section class="metric-pair"><div class="card metric"><span class="metric-label">睡前未安排</span><span class="metric-value">—</span><span class="metric-note">正在睡眠</span></div><div class="card metric"><span class="metric-label">距離預計入睡</span><span class="metric-value">—</span><span class="metric-note">起床後重新計算</span></div></section>`;
   }
+  const countdown = `<div class="card metric"><span class="metric-label">距離預計入睡</span>${durHTML(b.countdown, 'metric-value')}<span class="metric-note">${wdOf(b.target)} ${fmtTime(b.target)} · 仍含工作</span></div>`;
+  if (b.state === 'unknown-end') {
+    // 正在上班但不知道幾點收工：不估空檔，只保留倒數，讓你補一個預計收工時間。
+    const why = b.reason === 'overtime' ? '已過排班的下班時間，還沒收工' : '這一班沒有排班，不知道幾點收工';
+    return `<section class="metric-pair">
+    <div class="card metric"><span class="metric-label">睡前未安排</span><span class="metric-value metric-text">收工時間未知</span><span class="metric-note">${why}</span><button type="button" class="btn btn-soft btn-sm metric-btn" data-action="expected-end-open" data-id="${esc(b.session.id)}">填預計收工</button></div>
+    ${countdown}
+  </section>`;
+  }
   if (b.state === 'unset') {
+    // 睡眠紀錄不齊時，不顯示「已清醒很久」或「睡了 0 小時」這種誤導的大數字。
     const aw = awakeSince(data, now);
     const sl = sleepLast24h(data, now);
     const span = 24 * HOUR;
     const bars = sl.parts.map(([x, y]) => `<i style="left:${(((x - sl.from) / span) * 100).toFixed(1)}%;width:${(((y - x) / span) * 100).toFixed(1)}%"></i>`).join('');
+    const addSleep = '<button type="button" class="btn btn-soft btn-sm metric-btn" data-action="open-record" data-step="sleepPair">補記睡眠</button>';
+    const unknown = '<span class="metric-value metric-text">未記錄</span>';
+    const awNote = !aw ? '還沒有起床紀錄' : `上次記錄起床 ${wdOf(aw.since)} ${fmtMD(dateKey(aw.since))} ${fmtTime(aw.since)}${aw.ms > 20 * HOUR ? ' · 可能漏記了睡眠' : ''}`;
     return `<section class="metric-pair">
-    <div class="card metric"><span class="metric-label">已清醒</span>${aw ? durHTML(aw.ms, 'metric-value') : '<span class="metric-value">—</span>'}<span class="metric-note">${aw ? `${wdOf(aw.since)} ${fmtTime(aw.since)} 起床` : '還沒有起床紀錄'}</span></div>
-    <div class="card metric k-sleep-soft"><span class="metric-label">過去 24 小時睡了</span>${durHTML(sl.ms, 'metric-value c-sleep')}<span class="sleep24" aria-hidden="true">${bars}</span><span class="metric-note">${sl.parts.length ? `分 ${sl.parts.length} 段` : '沒有睡眠紀錄'}</span></div>
+    <div class="card metric"><span class="metric-label">距離上次記錄起床</span>${aw ? durHTML(aw.ms, 'metric-value') : unknown}<span class="metric-note">${awNote}</span>${!aw || aw.ms > 20 * HOUR ? addSleep : ''}</div>
+    <div class="card metric k-sleep-soft"><span class="metric-label">過去 24 小時睡了</span>${sl.parts.length ? `${durHTML(sl.ms, 'metric-value c-sleep')}<span class="sleep24" aria-hidden="true">${bars}</span><span class="metric-note">分 ${sl.parts.length} 段 · 只計有記錄的睡眠</span>` : `${unknown}<span class="metric-note">這 24 小時沒有睡眠紀錄</span>${addSleep}`}</div>
   </section>`;
   }
+  const we = b.workEnd;
+  const workNote = we?.source === 'expected'
+    ? `已扣工作（預計 ${fmtTime(we.at)} 收工）、通勤、已確認用餐 <button type="button" class="link-inline" data-action="expected-end-open" data-id="${esc(we.session.id)}">改</button>`
+    : '已扣工作、通勤、已確認用餐';
   return `<section class="metric-pair">
-    <div class="card metric"><span class="metric-label">睡前未安排</span>${durHTML(b.free, 'metric-value c-sleep')}<span class="metric-note">已扣工作、通勤、已確認用餐</span></div>
-    <div class="card metric"><span class="metric-label">距離預計入睡</span>${durHTML(b.countdown, 'metric-value')}<span class="metric-note">${wdOf(b.target)} ${fmtTime(b.target)} · 仍含工作</span></div>
+    <div class="card metric"><span class="metric-label">睡前未安排</span>${durHTML(b.free, 'metric-value c-sleep')}<span class="metric-note">${workNote}</span></div>
+    ${countdown}
   </section>`;
 }
 
@@ -244,12 +266,12 @@ export function todayView(ctx) {
   if (isDesktop) {
     return `${head}
       <div class="grid-today">
-        ${statusCard(data, wd, cycle, now)}
+        ${statusCard(data, wd, cycle, now, wd !== currentWorkday(data, now))}
         <div class="today-side">${budgetCards(data, now)}${stepCard}</div>
       </div>
       ${ribbonCard}
       ${eventTable(data, wd, now, ui)}
       <div class="grid-2">${nextMealCard(data, now)}${quickTiles(cycle, data, now)}</div>`;
   }
-  return `${head}${statusCard(data, wd, cycle, now)}${budgetCards(data, now)}${ribbonCard}${stepCard}${quickTiles(cycle, data, now)}${nextMealCard(data, now)}`;
+  return `${head}${statusCard(data, wd, cycle, now, wd !== currentWorkday(data, now))}${budgetCards(data, now)}${ribbonCard}${stepCard}${quickTiles(cycle, data, now)}${nextMealCard(data, now)}`;
 }
