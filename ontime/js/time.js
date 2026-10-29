@@ -75,6 +75,16 @@ export function at(key, hhmm) {
   return fromInputs(key, hhmm);
 }
 
+// 只填了結束「時：分」：結束早於開始就代表隔天。
+// 用「下一個日曆日的同一時間」計，不是固定加 24 小時——夏令時間轉換那晚兩者會差一小時。
+// allowSame = true 時，結束等於開始不算隔天（例如用餐只記開始）。
+export function endOnOrAfter(dateStr, start, endHHMM, { allowSame = false } = {}) {
+  if (start == null || !endHHMM) return null;
+  const end = fromInputs(dateStr, endHHMM);
+  if (end > start || (allowSame && end === start)) return end;
+  return fromInputs(addDays(dateStr, 1), endHHMM);
+}
+
 export function weekStartKey(key) {
   const d = fromKey(key);
   const diff = (d.getDay() + 6) % 7; // 週一開始

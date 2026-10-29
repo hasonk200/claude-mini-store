@@ -68,7 +68,7 @@ function stepFlag(tg, step, t, key) {
 }
 
 // 班次的一行說明，例如「07:13–15:29」。
-const shiftRange = (x) => `${fmtTime(x.start)}–${x.end != null ? fmtTime(x.end) : '進行中'}`;
+const shiftRange = (x) => `${fmtTime(x.start)}–${x.end != null ? fmtTime(x.end) : x.endPending ? '待補收工' : '進行中'}`;
 
 function shiftChips(data, sessions, sid, newShift) {
   const chips = sessions.map((x) => {
@@ -186,14 +186,16 @@ function refSheet(ctx) {
     : '';
   const canVerify = ref.type !== 'shift' && !ui.sheet.plan;
   const origT = `<input type="hidden" name="origT" value="${t}">`;
+  // 上次儲存失敗時，顯示你剛填的時間，不要跳回原本的時間。
+  const shown = ui.sheet.draftT ?? t;
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>
   <section class="sheet sheet-small" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2 id="sheet-title">修改「${esc(title)}」</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button></div>
     <div class="sheet-body"><form class="form" data-form="ref-time">
       <input type="hidden" name="type" value="${esc(ref.type)}"><input type="hidden" name="id" value="${esc(ref.id)}"><input type="hidden" name="field" value="${esc(ref.field || '')}">${origT}
-      <div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
-      <label class="field field-strong"><span>時間</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
+      <div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(shown)}" required></label>
+      <label class="field field-strong"><span>時間</span><input type="time" name="time" value="${toTimeInput(shown)}" required></label></div>
       ${canVerify ? verifyToggle(eventVerified(data, { ref, t })) : ''}
       ${rideRef ? rideFieldsHtml(ctx.data, rideRef.mode, rideRef.from) : ''}
       ${mainSleepBox}

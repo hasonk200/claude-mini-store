@@ -4,7 +4,7 @@ import { mergeData } from './sync.js';
 import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
-  currentCycle, activeSession, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
+  currentCycle, activeSession, OPEN_LIMIT, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
   journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys, markFlag,
   sleepWorkdayChanges, activeRest
 } from './logic.js';
@@ -68,7 +68,7 @@ export function recordStep(step, t = Date.now()) {
 
 export function toggleBreak(t = Date.now()) {
   update((d) => {
-    const s = d.sessions.find((x) => x.end == null);
+    const s = activeSession(d);
     if (!s) return;
     const open = s.breaks.find((b) => b.end == null);
     if (open) open.end = t;
@@ -102,13 +102,15 @@ export function findWorkdayTargets(d, wd) {
 }
 
 // 新增班次：先建立一班出勤（開工、收工可以先空著收工），之後的時間都扣在這一班上。
-export function createShift(wd, start, end = null) {
+// 補很久以前的班又不填收工：標成「待補收工」，不當作現在還在上班。
+export function createShift(wd, start, end = null, now = Date.now()) {
   let id = null;
   update((d) => {
     const s = newSession(d, start, wd);
     s.workdayDate = wd;
     s.workdayManual = true;
     s.end = end;
+    if (end == null && now - start > OPEN_LIMIT) s.endPending = true;
     id = s.id;
   });
   return { ok: true, id };
@@ -132,12 +134,17 @@ export function setStepTime(wd, step, t, extra = {}) {
       : tg.journey ? d.journeys.find((x) => x.id === tg.journey.id) : null;
     if (anchored && !s) { result = { ok: false, reason: 'no-session' }; return; }
     if (step === 'clockIn') {
+      if (s && s.end != null && t >= s.end) { result = { ok: false, reason: 'after-clock-out' }; return; }
+      if (!s && extra.end != null && extra.end <= t) { result = { ok: false, reason: 'before-clock-in' }; return; }
       // 補登：你揀了哪一個工作日，這班就固定屬於那一天，不會跑去別日。
       const target = s || newSession(d, t, wd);
       target.start = t;
       target.workdayDate = wd;
       target.workdayManual = true;
-      if (!s) target.end = extra.end ?? null;
+      if (!s) {
+        target.end = extra.end ?? null;
+        if (target.end == null && (extra.now ?? Date.now()) - t > OPEN_LIMIT) target.endPending = true;
+      }
       if (j && !j.sessionId) { j.sessionId = target.id; delete j.workdayDate; }
       mark(target, 'start');
       return;
@@ -146,6 +153,7 @@ export function setStepTime(wd, step, t, extra = {}) {
       if (!s) { result = { ok: false, reason: 'no-session' }; return; }
       if (t <= s.start) { result = { ok: false, reason: 'before-clock-in' }; return; }
       s.end = t;
+      delete s.endPending;
       mark(s, 'end');
       return;
     }
@@ -254,8 +262,38 @@ export function clearStepTime(wd, step) {
   });
 }
 
-// 直接改某一筆事件（桌面檢視面板用）。
+// 修改單一時間之前先檢查：開始不能晚於結束、結束不能早於開始。
+// 所有修改入口（補登、時間線、桌面面板）共用這套規則。回傳 null 代表可以存。
+export function checkRefTime(d, ref, t) {
+  if (t == null || Number.isNaN(t)) return 'bad-time';
+  if (ref.type === 'session') {
+    const s = d.sessions.find((x) => x.id === ref.id);
+    if (!s) return 'missing';
+    if (ref.field === 'start' && s.end != null && t >= s.end) return 'after-clock-out';
+    if (ref.field === 'end' && t <= s.start) return 'before-clock-in';
+  } else if (ref.type === 'sleep') {
+    const s = d.sleeps.find((x) => x.id === ref.id);
+    if (!s) return 'missing';
+    if (s.start != null) {
+      if (ref.field === 'start' && s.end != null && t >= s.end) return 'after-end';
+      if (ref.field === 'end' && s.end != null && t <= s.start) return 'before-start';
+    } else {
+      if (ref.field === 'start' && s.planEnd != null && t >= s.planEnd) return 'after-end';
+      if (ref.field === 'end' && s.planStart != null && t <= s.planStart) return 'before-start';
+    }
+  } else if (ref.type === 'rest') {
+    const r = (d.rests || []).find((x) => x.id === ref.id);
+    if (!r) return 'missing';
+    if (ref.field === 'start' && r.end != null && t >= r.end) return 'after-end';
+    if (ref.field === 'end' && r.start != null && t <= r.start) return 'before-start';
+  }
+  return null;
+}
+
+// 直接改某一筆事件（時間線、桌面檢視面板用）。不合理的時間不寫入，回傳 { ok: false, reason }。
 export function setRefTime(ref, t, extra = {}) {
+  const bad = checkRefTime(get(), ref, t);
+  if (bad) return { ok: false, reason: bad };
   update((d) => {
     if (ref.type === 'journey') {
       const j = d.journeys.find((x) => x.id === ref.id);
@@ -268,6 +306,7 @@ export function setRefTime(ref, t, extra = {}) {
     } else if (ref.type === 'session') {
       const s = d.sessions.find((x) => x.id === ref.id);
       if (s && (ref.field === 'start' || ref.field === 'end')) s[ref.field] = t;
+      if (s && ref.field === 'end') delete s.endPending;
       if (s && ref.field === 'break' && extra.origT != null) {
         const b = (s.breaks || []).find((x) => x.start === extra.origT);
         if (b) { const len = b.end != null ? b.end - b.start : null; b.start = t; if (len != null) b.end = t + len; }
@@ -290,6 +329,7 @@ export function setRefTime(ref, t, extra = {}) {
     }
   });
   if (extra.verified !== undefined && ref.type !== 'shift') setVerified(ref, extra.verified, t);
+  return { ok: true };
 }
 
 // ---------- 睡眠 ----------

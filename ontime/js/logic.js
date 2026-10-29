@@ -113,14 +113,20 @@ export function dayOf(data, t) {
 
 // 補登時揀咗嘅工作日（workdayManual）優先；即時按掣的紀錄才用起床邊界推算。
 export const workdayOfSession = (s, data) => (s.workdayManual && s.workdayDate) || (data && dayOf(data, s.start)) || dateKey(s.start);
-export const activeSession = (data) => data.sessions.find((s) => s.end == null) || null;
+// 補舊班時收工留空 = 「待補收工」（endPending）：不是正在上班，也不會把工時一路算到現在。
+// 只有「收工留空、又沒標待補」的才是進行中的那一班。
+export const OPEN_LIMIT = 16 * HOUR;
+export const isOpenSession = (s) => s.end == null && !s.endPending;
+// 計算用的結束時間：已收工用收工；待補收工當作未知（不計工時）；進行中算到現在。
+export const sessionEndAt = (s, now) => s.end ?? (s.endPending ? s.start : now);
+export const activeSession = (data) => data.sessions.find(isOpenSession) || null;
 
 export function breakIntervals(s, now) {
   return (s.breaks || []).map((b) => [b.start, b.end ?? now]);
 }
 
 export function sessionWorkIntervals(s, now) {
-  const end = s.end ?? now;
+  const end = sessionEndAt(s, now);
   const base = [[s.start, end]];
   const breaks = mergeIntervals(clip(breakIntervals(s, now), s.start, end));
   return subtract(base, breaks);
@@ -279,7 +285,7 @@ export function statusOf(cycle, data, now) {
   const sleeping = latestOpenSleep(data);
   if (sleeping) return { key: 'sleep', title: '睡眠中', since: sleeping.start };
   const s = cycle.session;
-  if (s && s.end == null) {
+  if (s && isOpenSession(s)) {
     const onBreak = (s.breaks || []).find((b) => b.end == null);
     if (onBreak) return { key: 'break', title: '休息中', since: onBreak.start };
     return { key: 'work', title: '工作中', since: s.start };
@@ -371,7 +377,7 @@ const WAKE_GAP = 16 * HOUR;
 export function currentWorkday(data, now) {
   const byWake = dayOf(data, now);
   const awakeIdle = !data.sleeps.some((x) => x.start != null && x.end == null)
-    && !data.sessions.some((x) => x.start <= now && (x.end == null || x.end > now));
+    && !data.sessions.some((x) => x.start <= now && (isOpenSession(x) || (x.end != null && x.end > now)));
   if (awakeIdle) {
     const lastEnd = Math.max(
       0,
@@ -442,7 +448,7 @@ export function workdaySpan(data, wd, now) {
   }
   const times = [];
   for (const s of sessionsOfWorkday(data, wd)) {
-    times.push(s.start, s.end ?? now);
+    times.push(s.start, sessionEndAt(s, now));
     const j = journeyOfSession(data, s);
     if (j) for (const k of JOURNEY_FIELDS) if (j[k] != null) times.push(j[k]);
   }
@@ -471,7 +477,7 @@ export function mealWorkday(meal, data, now) {
   // 前一個工作日的班次可能跨過午夜，要先看它有沒有包住這一餐。
   for (const s of sessionsOfWorkday(data, prev)) {
     const j = journeyOfSession(data, s);
-    const end = Math.max(s.end ?? now, j?.home ?? 0, j?.leave ?? 0);
+    const end = Math.max(sessionEndAt(s, now), j?.home ?? 0, j?.leave ?? 0);
     if (meal.start >= (j?.out ?? s.start) && meal.start <= end) return prev;
   }
   return wd;
@@ -500,6 +506,8 @@ export function workdayEvents(data, wd, now) {
     }
     if (s.end != null) {
       ev.push({ t: s.end, step: 'clockOut', kind: 'work', icon: 'flag', title: '下班', detail: `本班 ${fmtShort(sessionWorkMs(s, now))}`, ref: { type: 'session', id: s.id, field: 'end' } });
+    } else if (s.endPending) {
+      ev.push({ t: s.start, step: 'clockOut', kind: 'work', icon: 'flag', title: '待補收工', detail: '收工時間未知，點這裡補上', plan: true, ref: { type: 'session', id: s.id, field: 'end' } });
     } else if (sh) {
       ev.push({ t: sh.end, step: 'clockOut', kind: 'work', icon: 'flag', title: '預計下班', plan: true, ref: { type: 'session', id: s.id, field: 'end' } });
     }
@@ -549,7 +557,7 @@ export function workdayEvents(data, wd, now) {
   }
   for (const m of data.meals) {
     if (mealWorkday(m, data, now) !== wd) continue;
-    const during = sessions.some((s) => m.start >= s.start && m.start <= (s.end ?? now));
+    const during = sessions.some((s) => m.start >= s.start && m.start <= sessionEndAt(s, now));
     ev.push({
       t: m.start, kind: 'meal', icon: 'meal', title: (m.name || '用餐') + (during ? '（工作中）' : ''),
       detail: m.end ? `${fmtClock(m.start)}–${fmtClock(m.end)}` : '', plan: !m.confirmed, ref: { type: 'meal', id: m.id }
@@ -581,9 +589,9 @@ export function intervalsAround(data, from, to, now) {
   for (const s of data.sessions) {
     const job = jobOf(data, s.jobId);
     const kind = job?.color === 'deliv' ? 'deliv' : 'work';
-    const actualEnd = s.end ?? Math.max(now, s.start);
+    const actualEnd = s.endPending && s.end == null ? s.start : s.end ?? Math.max(now, s.start);
     for (const [a, b] of sessionWorkIntervals({ ...s, end: actualEnd }, now)) push(kind, a, b, false, job?.name ?? '');
-    if (s.end == null) {
+    if (isOpenSession(s)) {
       const sh = shiftOf(data, s);
       if (sh && sh.end > now) push(kind, now, sh.end, true, '預計');
     }
