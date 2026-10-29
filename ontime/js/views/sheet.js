@@ -68,7 +68,7 @@ function stepFlag(tg, step, t, key) {
 }
 
 // 班次的一行說明，例如「07:13–15:29」。
-const shiftRange = (x) => `${fmtTime(x.start)}–${x.end != null ? fmtTime(x.end) : '進行中'}`;
+const shiftRange = (x) => `${fmtTime(x.start)}–${x.end != null ? fmtTime(x.end) : x.endPending ? '待補收工' : '進行中'}`;
 
 function shiftChips(data, sessions, sid, newShift) {
   const chips = sessions.map((x) => {
@@ -103,8 +103,8 @@ function recordSheet(ctx) {
   const sessions = sessionsOfWorkday(data, wd);
   const sid = sessions.some((x) => x.id === sh.sid) ? sh.sid : (sessions.find((x) => x.end == null) || sessions[0])?.id ?? null;
   const sess = sessions.find((x) => x.id === sid) || null;
-  // 要補的是跟班次有關的步驟、但這天一班都沒有：直接引導去新增班次。
-  const newShift = !!sh.newShift || (bound && !sess);
+  // 只有按了「＋ 新增班次」才換成新增班次表單；休息日照樣可以揀睡眠、用餐。
+  const newShift = !!sh.newShift;
   const { val, plan, session } = valuesFor(data, wd, sid);
   const groups = GROUPS.map(([name, steps]) => `<div class="chip-group"><span class="chip-group-name">${name}</span><div class="step-chips">${steps.map((k) => {
     const v = val[k];
@@ -137,7 +137,9 @@ function recordSheet(ctx) {
         <label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label></details>`
     : `<div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
       <label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>`;
-  const form = newShift ? newShiftForm(data, wd) : step === 'meal'
+  // 選了跟班次有關的步驟、但這天一班都沒有：只在表單位置提示，不擋住其他步驟。
+  const needShiftNote = `<div class="sheet-note">「${LABEL[step]}」要先有班次才能補。休息日想記睡眠或用餐，直接在上面揀就可以。<button type="button" class="btn btn-ink" data-action="rec-newshift">＋ 新增班次</button></div>`;
+  const form = newShift ? newShiftForm(data, wd) : bound && !sess ? needShiftNote : step === 'meal'
     ? `<div class="sheet-note">用餐有自己的表單，可以加餐點和相片。<a class="btn btn-ink" href="#/meals" data-action="close-sheet-nav">前往記一餐</a></div>`
     : `<form class="form" data-form="record" id="record-form" ${anchored ? `data-anchored="1" data-s-start="${sess.start}" data-s-end="${sess.end ?? ''}"` : ''}><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="step" value="${step}"><input type="hidden" name="sid" value="${anchored ? esc(sess.id) : ''}">
       <div class="sheet-step-title"><span class="step-no">${stepNo}</span>「${LABEL[step]}」在什麼時候？</div>
@@ -186,14 +188,16 @@ function refSheet(ctx) {
     : '';
   const canVerify = ref.type !== 'shift' && !ui.sheet.plan;
   const origT = `<input type="hidden" name="origT" value="${t}">`;
+  // 上次儲存失敗時，顯示你剛填的時間，不要跳回原本的時間。
+  const shown = ui.sheet.draftT ?? t;
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>
   <section class="sheet sheet-small" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2 id="sheet-title">修改「${esc(title)}」</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button></div>
     <div class="sheet-body"><form class="form" data-form="ref-time">
       <input type="hidden" name="type" value="${esc(ref.type)}"><input type="hidden" name="id" value="${esc(ref.id)}"><input type="hidden" name="field" value="${esc(ref.field || '')}">${origT}
-      <div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
-      <label class="field field-strong"><span>時間</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
+      <div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(shown)}" required></label>
+      <label class="field field-strong"><span>時間</span><input type="time" name="time" value="${toTimeInput(shown)}" required></label></div>
       ${canVerify ? verifyToggle(eventVerified(data, { ref, t })) : ''}
       ${rideRef ? rideFieldsHtml(ctx.data, rideRef.mode, rideRef.from) : ''}
       ${mainSleepBox}

@@ -2,7 +2,7 @@
 // 版本：主.次.修（semver）。主版 2 代表目前這一代；次版延續舊的流水號（原本 v17）。
 // 改功能或畫面 → 升次版；只修錯字、註解或微調 → 升修訂版。
 // 這個字串也是快取名稱，改了才會讓舊快取失效、使用者拿到新檔。
-const VERSION = '2.25.0';
+const VERSION = '2.26.0';
 const CACHE = `ontime-${VERSION}`;
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
@@ -18,8 +18,11 @@ self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))));
 });
 
+// 只清 OnTime 自己的舊版快取；同一網域其他 App（例如 commute-log-temp）的快取不要動。
+const isOldOntimeCache = (k) => k.startsWith('ontime-') && k !== CACHE && k !== FONT_CACHE;
+
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== FONT_CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter(isOldOntimeCache).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener('message', (e) => {

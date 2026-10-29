@@ -1,8 +1,8 @@
 import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
-import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD, normTime } from './time.js';
-import { currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
+import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD, normTime, endOnOrAfter } from './time.js';
+import { activeSession, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { timelineView } from './views/timeline.js';
 import { weekView } from './views/week.js';
@@ -304,7 +304,7 @@ const handlers = {
   'undo': () => { if (store.undo()) toast('已復原'); },
   'show-templates': () => { ui.showTemplates = true; render(); },
   'break': () => {
-    const working = store.get().sessions.some((x) => x.end == null);
+    const working = !!activeSession(store.get());
     if (working) { act.toggleBreak(nowFn()); toastUndo('已更新休息'); return; }
     const r = act.toggleRest(nowFn());
     toastUndo(r.opened ? '開始休息' : '結束休息');
@@ -508,7 +508,10 @@ const RECORD_ERROR = {
   'before-start': '起床時間不能早於入睡時間',
   'no-session': '這個工作日還沒有上班紀錄，請先補登「上班」',
   'before-clock-in': '下班時間不能早於上班時間',
-  'break-end-before-start': '休息結束不能早於開始'
+  'break-end-before-start': '休息結束不能早於開始',
+  'after-clock-out': '上班時間不能晚於下班時間',
+  'after-end': '開始時間不能晚於結束時間',
+  'bad-time': '請填寫日期和時間'
 };
 
 // 實際寫入補登，並把「這筆歸到哪個工作日」講清楚。
@@ -558,7 +561,7 @@ const forms = {
         ui.pendingRecord = p;
         ui.sheet = {
           type: 'confirm', title: '離這一班太遠',
-          body: `你要存的是 ${wdOfKey(dateKey(t))} ${fmtMD(dateKey(t))} ${fmtTime(t)}，但這班是 ${fmtTime(s.start)}–${s.end != null ? fmtTime(s.end) : '進行中'}（${wdOfKey(dateKey(s.start))} ${fmtMD(dateKey(s.start))}），相差超過 12 小時。日期是不是填錯了？`,
+          body: `你要存的是 ${wdOfKey(dateKey(t))} ${fmtMD(dateKey(t))} ${fmtTime(t)}，但這班是 ${fmtTime(s.start)}–${s.end != null ? fmtTime(s.end) : '待補／進行中'}（${wdOfKey(dateKey(s.start))} ${fmtMD(dateKey(s.start))}），相差超過 12 小時。日期是不是填錯了？`,
           confirm: '照樣儲存', action: 'record-force', tone: 'ink', cancel: 'record-cancel'
         };
         render();
@@ -585,8 +588,7 @@ const forms = {
   'new-shift': (f) => {
     const start = fromInputs(f.date.value, f.start.value);
     if (start == null) return;
-    let end = f.end.value ? fromInputs(f.date.value, f.end.value) : null;
-    if (end != null && end <= start) end += 24 * HOUR;
+    const end = f.end.value ? endOnOrAfter(f.date.value, start, f.end.value) : null;
     const r = act.createShift(f.wd.value, start, end);
     ui.sheet = { type: 'record', wd: f.wd.value, step: ui.sheet?.step || 'out', sid: r.id };
     toast('已新增班次');
@@ -597,15 +599,22 @@ const forms = {
     const extra = f.mode ? { mode: f.mode.value.trim(), from: f.from.value.trim() } : {};
     if (f.verified) extra.verified = f.verified.checked;
     if (f.origT) extra.origT = Number(f.origT.value);
-    act.setRefTime({ type: f.type.value, id: f.id.value, field: f.field.value || undefined }, t, extra);
+    if (f.mainSleep) extra.mainSleep = f.mainSleep.checked;
+    const r = act.setRefTime({ type: f.type.value, id: f.id.value, field: f.field.value || undefined }, t, extra);
+    if (!r.ok) {
+      // 不合理的時間不存；面板保持打開，保留剛填的日期和時間。
+      toast(RECORD_ERROR[r.reason] || '這個時間存不到');
+      if (ui.sheet?.type === 'ref' && t != null) ui.sheet = { ...ui.sheet, draftT: t };
+      render();
+      return;
+    }
     ui.selRef = `${f.type.value}:${f.id.value}:${f.field.value}`;
     ui.sheet = null;
     toast('已更新時間');
   },
   'meal': (f) => {
     const start = fromInputs(f.date.value, f.start.value);
-    let end = f.end.value ? fromInputs(f.date.value, f.end.value) : null;
-    if (end != null && end < start) end += 24 * HOUR;
+    const end = f.end.value ? endOnOrAfter(f.date.value, start, f.end.value, { allowSame: true }) : null;
     const existing = f.id.value ? store.get().meals.find((m) => m.id === f.id.value) : null;
     act.saveMeal({
       verified: (f.verified ? f.verified.checked : !!existing?.verified?.start) ? { start: true } : undefined,

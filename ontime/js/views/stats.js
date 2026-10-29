@@ -37,8 +37,8 @@ export function statsView(ctx) {
 
   // 每個日曆日的工時：前一個工作日帶過來的部分和當天開始的部分分開顯示。
   const maxMs = Math.max(4 * HOUR, ...keys.map((k) => st.byDay[k] || 0));
-  const prevPart = {};
-  for (const s of st.sessions) for (const [k, v] of Object.entries(splitWorkByDay(s, now))) if (k !== dateKey(s.start)) prevPart[k] = (prevPart[k] || 0) + v;
+  // 包括上一段期間開始、跨進這段期間的夜班（periodStats 已算好）。
+  const prevPart = st.carryByDay;
   const bars = keys.map((k) => {
     const total = st.byDay[k] || 0;
     const prev = prevPart[k] || 0;
@@ -68,7 +68,7 @@ export function statsView(ctx) {
 
   return `${pageHead('統計與收入', `${title} · 收入按開始上班日期歸屬，跨日只算一次`, tools)}
     <section class="kpis">
-      <div class="card card-ink kpi"><span>實際工時</span><strong>${fmtDur(st.workMs)}</strong><small class="c-lime">${st.sessions.length} 次出勤</small></div>
+      <div class="card card-ink kpi"><span>實際工時（按開班日）</span><strong>${fmtDur(st.workMs)}</strong><small class="c-lime">${st.sessions.length} 次出勤 · 跨期間的班算在開班那段</small></div>
       ${st.sessions.some((s) => s.payMode === 'hourly')
         ? `<div class="card kpi"><span>計薪 · 時薪</span><strong>${money(st.hourlyPay)}</strong><small>${st.hourlyKnown ? '用每班的計薪快照' : '部分班次未設時薪'}</small></div>`
         : `<div class="card kpi"><span>平均每班工時</span><strong>${st.sessions.length ? fmtDur(st.workMs / st.sessions.length) : '—'}</strong><small>${st.sessions.length} 班</small></div>`}
@@ -76,8 +76,9 @@ export function statsView(ctx) {
       <div class="card kpi"><span>通勤</span><strong>${fmtDur(st.commuteMs)}</strong><small>只計完整路程</small></div>
       <div class="card kpi k-sleep-soft"><span>平均睡眠</span><strong>${sleep.avg == null ? '—' : fmtDur(sleep.avg)}</strong><small>${sleep.count} 天有完整紀錄</small></div>
     </section>
-    <section class="card"><div class="card-head"><h2 class="card-title">每個日曆日的工時</h2><div class="legend"><span><i class="sw k-work"></i>前一工作日帶過來</span><span><i class="sw k-work-light"></i>當天開始</span></div></div>
-      <div class="bars ${ui.statsPeriod === 'month' ? 'bars-dense' : ''}">${bars}</div></section>
+    <section class="card"><div class="card-head"><h2 class="card-title">每個日曆日的工時（按日曆日）</h2><div class="legend"><span><i class="sw k-work"></i>前一工作日帶過來</span><span><i class="sw k-work-light"></i>當天開始</span></div></div>
+      <div class="bars ${ui.statsPeriod === 'month' ? 'bars-dense' : ''}">${bars}</div>
+      <p class="fine">這裡按實際發生的日曆日計，包括上一段期間開始、跨午夜進來的夜班，所以加起來可能跟上面「按開班日」的實際工時不一樣。</p></section>
     ${incomeForm}
     <section class="card card-flush"><div class="card-head"><h2 class="card-title">出勤明細</h2>${filters}</div>
       ${rows ? `<div class="table-wrap"><table class="table"><thead><tr><th scope="col">上班日</th><th scope="col">工作</th><th scope="col">實際時段</th><th scope="col">工時（分日）</th><th scope="col">計算方式</th><th scope="col" class="t-right">收入</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted pad">這段期間沒有出勤紀錄。</p>'}
