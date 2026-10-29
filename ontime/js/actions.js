@@ -386,6 +386,60 @@ export function addSleepPlan(start, end, wd) {
   });
 }
 
+// ---------- 睡眠成對補記／修改：入睡和起床一次過寫入，不會留下「半筆」進行中的睡眠 ----------
+// 回傳 null 代表可以存。end = null 只容許用在「本來就進行中」的那一筆。
+export function checkSleepPair(d, start, end, { id = null, now = Date.now() } = {}) {
+  if (start == null || Number.isNaN(start)) return 'bad-time';
+  const self = id ? d.sleeps.find((x) => x.id === id) : null;
+  if (id && !self) return 'missing';
+  if (end == null) {
+    if (!self || self.start == null || self.end != null) return 'bad-time';
+    if (start > now) return 'future';
+  } else {
+    if (Number.isNaN(end)) return 'bad-time';
+    if (end <= start) return 'before-start';
+    if (end - start > 24 * HOUR) return 'too-long';
+    if (end > now) return 'future';
+  }
+  const e = end ?? now;
+  const clash = d.sleeps.find((x) => x.id !== id && x.start != null && x.start < e && (x.end ?? now) > start);
+  return clash ? 'overlap' : null;
+}
+
+export function saveSleepPair({ id = null, start, end, mainSleep }, now = Date.now()) {
+  const bad = checkSleepPair(get(), start, end, { id, now });
+  if (bad) return { ok: false, reason: bad };
+  let sid = id;
+  update((d) => {
+    let s = id ? d.sleeps.find((x) => x.id === id) : null;
+    if (!s) {
+      s = { id: uid('slp'), start: null, end: null, planStart: null, planEnd: null, note: '' };
+      d.sleeps.push(s);
+      sid = s.id;
+    }
+    s.start = start;
+    s.end = end;
+    // 改了時間，歸屬交給自動推算；你手動指定過的工作日保持不變。
+    if (!s.workdayManual) delete s.workdayDate;
+    if (mainSleep !== undefined) s.mainSleep = !!mainSleep;
+  });
+  const v = get();
+  const rec = v.sleeps.find((x) => x.id === sid);
+  return { ok: true, id: sid, wd: sleepWorkday(rec, v), ms: (end ?? now) - start };
+}
+
+// 修改睡眠計畫（未發生的入睡／起床）。
+export function saveSleepPlan(id, planStart, planEnd) {
+  if (planStart == null || planEnd == null || Number.isNaN(planStart) || Number.isNaN(planEnd)) return { ok: false, reason: 'bad-time' };
+  if (planEnd <= planStart) return { ok: false, reason: 'before-start' };
+  if (!get().sleeps.some((x) => x.id === id && x.start == null)) return { ok: false, reason: 'missing' };
+  update((d) => {
+    const s = d.sleeps.find((x) => x.id === id);
+    if (s) { s.planStart = planStart; s.planEnd = planEnd; }
+  });
+  return { ok: true, id };
+}
+
 export function updateSleep(id, patch) {
   update((d) => {
     const s = d.sleeps.find((x) => x.id === id);
@@ -426,12 +480,15 @@ export function deleteRest(id) {
 }
 
 // ---------- 用餐 ----------
+// 回傳這一餐的 id（新增時是新的 id），方便畫面把它標亮。
 export function saveMeal(meal) {
+  let id = meal.id;
   update((d) => {
     const i = d.meals.findIndex((m) => m.id === meal.id);
     if (i >= 0) d.meals[i] = { ...d.meals[i], ...meal };
-    else d.meals.push({ id: uid('meal'), confirmed: true, name: '', place: '', note: '', photo: null, ...meal });
+    else { id = uid('meal'); d.meals.push({ id, confirmed: true, name: '', place: '', note: '', photo: null, ...meal }); }
   });
+  return id;
 }
 
 export function confirmMeal(id, t) {

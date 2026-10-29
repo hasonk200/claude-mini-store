@@ -1,8 +1,8 @@
 import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
-import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD, normTime, endOnOrAfter } from './time.js';
-import { activeSession, shiftDateMismatch, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
+import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD, normTime, endOnOrAfter, fmtDur } from './time.js';
+import { activeSession, shiftDateMismatch, mealWorkday, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { timelineView } from './views/timeline.js';
 import { weekView } from './views/week.js';
@@ -10,7 +10,9 @@ import { sleepView } from './views/sleep.js';
 import { mealsView } from './views/meals.js';
 import { statsView } from './views/stats.js';
 import { settingsView } from './views/settings.js';
-import { sheetView, defaultStep, previewText } from './views/sheet.js';
+import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText } from './views/sheet.js';
+import { sleepPairPreview, SLEEP_PAIR_ERROR } from './views/sleep.js';
+import { mealPreview } from './views/meals.js';
 import { initSync, onSync, syncState, signIn, signOut } from './sync.js';
 
 const ROUTES = {
@@ -28,9 +30,44 @@ const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'],
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
-  selRef: null, sheet: null, mealEdit: null, mealPhoto: undefined, incomeEdit: null, jobEdit: null, canInstall: false,
-  pendingRecord: null, pendingDelete: null
+  selRef: null, sheet: null, incomeEdit: null, jobEdit: null, canInstall: false,
+  pendingRecord: null, pendingDelete: null, flash: null, sleepSaved: null,
+  drafts: loadDrafts()
 };
+
+// ---------- 表單草稿 ----------
+// 有 data-draft 的表單，每次輸入都存一份（連相片）。重畫、同步、加相片、切換分頁都用草稿的值，
+// 不會清空未儲存的輸入；同一個分頁重新載入也還在（sessionStorage）。儲存或清除後才刪。
+function loadDrafts() {
+  try { return JSON.parse(sessionStorage.getItem('ontime-drafts')) || {}; } catch { return {}; }
+}
+function persistDrafts() {
+  try { sessionStorage.setItem('ontime-drafts', JSON.stringify(ui.drafts)); } catch { /* 空間不足或不能用：只留在記憶體 */ }
+}
+function captureDraft(form) {
+  const key = form?.dataset.draft;
+  if (!key) return;
+  const vals = {};
+  for (const el of form.querySelectorAll('input[name], select[name], textarea[name]')) {
+    if (el.type === 'file' || el.type === 'hidden') continue;
+    vals[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+  }
+  ui.drafts[key] = { ...ui.drafts[key], ...vals };
+  persistDrafts();
+}
+function clearDraft(key) {
+  if (!key || !(key in ui.drafts)) return;
+  delete ui.drafts[key];
+  persistDrafts();
+}
+
+// 剛儲存的那一筆在列表原位亮一下，不捲動頁面。
+let flashT = null;
+function flash(key) {
+  ui.flash = key;
+  clearTimeout(flashT);
+  flashT = setTimeout(() => { ui.flash = null; render(); }, 2600);
+}
 
 // 測試可以用 ?now=2026-10-13T03:18 固定時間。
 const params = new URLSearchParams(location.search);
@@ -188,8 +225,7 @@ function toast(msg, actionHTML = '', ms = 3200) {
 function route() {
   const r = (location.hash.replace(/^#\/?/, '') || 'today').split('?')[0];
   ui.route = ROUTES[r] ? r : 'today';
-  ui.mealEdit = null;
-  ui.mealPhoto = undefined;
+  ui.sleepSaved = null;
   lastView = '';
   dirty = false;
   render();
@@ -212,12 +248,12 @@ function parseRef(s) {
   return { type, id, field: field || undefined };
 }
 
-const RECORD_STEPS = new Set(['out', 'ride', 'arrive', 'clockIn', 'clockOut', 'break', 'leave', 'ride2', 'home', 'meal', 'sleepStart', 'sleepEnd']);
+const RECORD_STEPS = new Set(['out', 'ride', 'arrive', 'clockIn', 'clockOut', 'break', 'leave', 'ride2', 'home', 'meal', 'sleepStart', 'sleepEnd', 'sleepPair']);
 
 function openRecord(wd, step) {
   const c = ctx();
   const key = wd || c.wd;
-  ui.sheet = { type: 'record', wd: key, step: RECORD_STEPS.has(step) ? step : defaultStep(c.data, key) };
+  ui.sheet = openRecordSheet(c.data, key, RECORD_STEPS.has(step) ? step : null);
   // 由卡片直接指定步驟打開時，滑入後捲到輸入時間的位置。
   if (RECORD_STEPS.has(step)) sheetScrollToForm = true;
   render();
@@ -295,9 +331,10 @@ const handlers = {
     toastUndo(`已記錄${el.textContent.replace(' · 現在', '').replace('記錄', '').trim()} ${fmtTime(nowFn())}`);
   },
   'meal-fill': (el) => {
-    const input = document.querySelector(`form[data-form=meal] [name="${el.dataset.field}"]`);
+    const input = el.closest('form')?.querySelector(`[name="${el.dataset.field}"]`);
     if (!input) return;
     input.value = el.dataset.value;
+    captureDraft(input.form);
     dirty = true;
     input.focus();
   },
@@ -344,10 +381,22 @@ const handlers = {
     // 取消後回到補登面板，保留剛才填的時間。
     const p = ui.pendingRecord;
     ui.pendingRecord = null;
-    ui.sheet = p ? { type: 'record', wd: p.wd, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
+    ui.sheet = p ? { type: 'record', wd: p.wd, cat: p.cat, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
     render();
   },
   'rec-step': (el) => { ui.sheet.step = el.dataset.step; delete ui.sheet.t; ui.sheet.newShift = false; sheetScrollToForm = true; render(); },
+  // 補登先揀類別；只有工作、通勤才需要班次。
+  'rec-cat': (el) => {
+    const cat = el.dataset.cat;
+    ui.sheet.cat = cat;
+    ui.sheet.newShift = false;
+    delete ui.sheet.t;
+    ui.sheet.step = defaultStepIn(store.get(), ui.sheet.wd, cat, ui.sheet.sid);
+    render();
+  },
+  'meal-open': (el) => { ui.sheet = { type: 'meal', id: el.dataset.id }; render(); },
+  'sleep-open': (el) => { ui.sheet = { type: 'sleep', id: el.dataset.id }; render(); },
+  'draft-clear': (el) => { clearDraft(el.dataset.key); lastView = ''; lastSheet = ''; render(); },
   // 補登先選班次：之後所有時間都扣在這一班上。
   'rec-shift': (el) => { ui.sheet.sid = el.dataset.sid; ui.sheet.newShift = false; delete ui.sheet.t; render(); },
   'rec-newshift': () => { ui.sheet.newShift = true; render(); },
@@ -427,7 +476,15 @@ const handlers = {
       toast(`已重新計算 ${done} 筆睡眠歸屬`);
     }
   },
-  'sleep-delete': (el) => act.deleteSleep(el.dataset.id),
+  'sleep-delete': (el) => {
+    const id = el.dataset.id;
+    if (ui.sheet?.type === 'sleep') ui.sheet = null;
+    clearDraft(`sleep:${id}`); clearDraft(`plan:${id}`);
+    if (ui.sleepSaved === id) ui.sleepSaved = null;
+    act.deleteSleep(id);
+    toastUndo('已刪除');
+    render();
+  },
   'sleep-reuse': () => {
     const d = store.get();
     const now = nowFn();
@@ -439,7 +496,7 @@ const handlers = {
     toast(`已建立計畫 ${fmtTime(start)} 開始`);
   },
   'meal-confirm': (el) => { act.confirmMeal(el.dataset.id); toastUndo('已確認這一餐'); },
-  'meal-delete': (el) => { act.deleteMeal(el.dataset.id); if (ui.sheet?.type === 'ref') ui.sheet = null; toastUndo('已刪除'); },
+  'meal-delete': (el) => { act.deleteMeal(el.dataset.id); if (ui.sheet?.type === 'ref' || ui.sheet?.type === 'meal') ui.sheet = null; clearDraft(`meal:${el.dataset.id}`); toastUndo('已刪除'); render(); },
   'delete-ref': () => {
     const sh = ui.sheet;
     if (!sh || sh.type !== 'ref' || !sh.ref) return;
@@ -474,9 +531,15 @@ const handlers = {
     toast(msg);
     render();
   },
-  'meal-edit': (el) => { ui.mealEdit = el.dataset.id; ui.mealPhoto = undefined; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
-  'meal-cancel': () => { ui.mealEdit = null; ui.mealPhoto = undefined; render(); },
-  'meal-photo-remove': () => { ui.mealPhoto = null; lastView = ''; render(); },
+  'meal-photo-remove': (el) => {
+    const form = el.closest('form[data-draft]');
+    if (!form) return;
+    captureDraft(form);
+    ui.drafts[form.dataset.draft] = { ...ui.drafts[form.dataset.draft], photo: null };
+    persistDrafts();
+    lastView = ''; lastSheet = '';
+    render();
+  },
   'stats-shift': (el) => { ui.statsOffset += Number(el.dataset.dir); render(); },
   'stats-job': (el) => { ui.statsJob = el.dataset.id; render(); },
   'income-edit': (el) => { ui.incomeEdit = el.dataset.id; render(); },
@@ -499,6 +562,10 @@ function markDateManual(f) {
 }
 function updatePreview(f) {
   const box = $('#rec-preview');
+  if (box && f && !f.dataset.sStart && box.dataset.wd) {
+    box.innerHTML = freePreviewText(fromInputs(f.date.value, normTime(f.time.value) || ''), box.dataset.wd);
+    return;
+  }
   if (!box || !f?.dataset.sStart) return;
   const hhmm = normTime(f.time.value);
   if (!hhmm) return;
@@ -509,6 +576,28 @@ function updatePreview(f) {
   }
   const t = fromInputs(f.date.value, hhmm);
   if (t != null) box.innerHTML = previewText(t, s);
+}
+
+// 一邊填一邊更新「會存成…、歸屬…」的預覽。
+function updateFormPreview(form) {
+  const data = store.get();
+  const now = nowFn();
+  if (form.dataset.form === 'meal') {
+    const box = form.querySelector('[data-meal-preview]');
+    if (box) box.innerHTML = mealPreview(data, fromInputs(form.date.value, normTime(form.start.value) || ''), now);
+  } else if (form.dataset.form === 'sleep-pair') {
+    const box = form.querySelector('[data-sleep-preview]');
+    const start = fromInputs(form.sd.value, normTime(form.st.value) || '');
+    const end = form.ed.value && normTime(form.et.value) ? fromInputs(form.ed.value, normTime(form.et.value)) : null;
+    if (box) box.innerHTML = sleepPairPreview(data, start, end, { id: form.id.value || null, now });
+  } else if (form.id === 'record-form' && !form.dataset.anchored) {
+    updatePreview(form);
+  }
+}
+
+function mealWorkdayOf(data, id) {
+  const m = data.meals.find((x) => x.id === id);
+  return m ? mealWorkday(m, data, nowFn()) : null;
 }
 
 const RECORD_ERROR = {
@@ -528,12 +617,12 @@ const RECORD_ERROR = {
 // 實際寫入補登，並把「這筆歸到哪個工作日」講清楚。
 function applyRecord(p) {
   // 「儲存」：存檔期間面板保持打開，才不會先關再開而閃一下。
-  ui.sheet = p.stay ? { type: 'record', wd: p.wd, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
+  ui.sheet = p.stay ? { type: 'record', wd: p.wd, cat: p.cat, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
   const r = act.setStepTime(p.wd, p.step, p.t, p.extra);
   if (!r.ok) {
     toast(RECORD_ERROR[r.reason] || '沒有可更新的紀錄');
     // 「儲存」模式失敗時留在面板，保留剛填的時間。
-    ui.sheet = p.stay ? { type: 'record', wd: p.wd, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
+    ui.sheet = p.stay ? { type: 'record', wd: p.wd, cat: p.cat, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
     render();
     return;
   }
@@ -548,7 +637,7 @@ function applyRecord(p) {
   }
   toast(`已儲存 ${fmtTime(p.t)}${note}`);
   // 「儲存」只存不關，讓同一頁可以接著補下一個步驟。
-  if (p.stay) ui.sheet = { type: 'record', wd: p.wd, step: p.step, sid: p.extra?.sessionId };
+  if (p.stay) ui.sheet = { type: 'record', wd: p.wd, cat: p.cat, step: p.step, sid: p.extra?.sessionId };
   render();
 }
 
@@ -571,7 +660,7 @@ const forms = {
     if (f.replace && f.replace.checked) extra.replace = true;
     if (f.verified) extra.verified = f.verified.checked;
     if (f.mainSleep) extra.mainSleep = f.mainSleep.checked;
-    const p = { wd: f.wd.value, step: f.step.value, t, extra, stay };
+    const p = { wd: f.wd.value, cat: ui.sheet?.cat, step: f.step.value, t, extra, stay };
     // 離這一班太遠（例如把 16 號的時間記進 1 號的班）：先問清楚再存。
     if (f.dataset.sStart && !['clockIn', 'clockOut'].includes(p.step)) {
       const s = { start: Number(f.dataset.sStart), end: f.dataset.sEnd ? Number(f.dataset.sEnd) : null };
@@ -641,19 +730,53 @@ const forms = {
     ui.sheet = null;
     toast('已更新時間');
   },
-  'meal': (f) => {
+  'meal': (f, e) => {
+    const key = f.dataset.draft;
+    const dr = ui.drafts[key] || {};
     const start = fromInputs(f.date.value, f.start.value);
+    if (start == null) return;
     const end = f.end.value ? endOnOrAfter(f.date.value, start, f.end.value, { allowSame: true }) : null;
     const existing = f.id.value ? store.get().meals.find((m) => m.id === f.id.value) : null;
-    act.saveMeal({
+    const id = act.saveMeal({
       verified: (f.verified ? f.verified.checked : !!existing?.verified?.start) ? { start: true } : undefined,
       ...(f.id.value ? { id: f.id.value } : {}),
       start, end, confirmed: f.confirmed.value === '1',
       name: f.name.value.trim(), place: f.place.value.trim(), note: f.note.value.trim(),
-      photo: ui.mealPhoto !== undefined ? ui.mealPhoto : existing?.photo ?? null
+      photo: 'photo' in dr ? dr.photo : existing?.photo ?? null
     });
-    ui.mealEdit = null; ui.mealPhoto = undefined;
-    toast('已儲存這一餐');
+    clearDraft(key);
+    if (f.closest('.sheet') && e?.submitter?.value !== 'stay') ui.sheet = null;
+    flash(`meal:${id}`);
+    lastView = ''; lastSheet = '';
+    const data = store.get();
+    const wk = mealWorkdayOf(data, id);
+    toast(`已儲存這一餐${wk ? ` · 歸屬 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日` : ''}`);
+    render();
+  },
+  'sleep-pair': (f, e) => {
+    const key = f.dataset.draft;
+    const id = f.id.value || null;
+    const start = fromInputs(f.sd.value, f.st.value);
+    const end = f.ed.value && f.et.value ? fromInputs(f.ed.value, f.et.value) : null;
+    const r = act.saveSleepPair({ id, start, end, mainSleep: f.mainSleep.checked || (id ? false : undefined) }, nowFn());
+    if (!r.ok) { toast(SLEEP_PAIR_ERROR[r.reason] || '這段睡眠存不到'); return; }
+    clearDraft(key);
+    const inSheet = !!f.closest('.sheet');
+    if (inSheet && e?.submitter?.value !== 'stay') ui.sheet = null;
+    if (!inSheet) ui.sleepSaved = r.id;
+    flash(`sleep:${r.id}`);
+    lastView = ''; lastSheet = '';
+    toastUndo(`${id ? '已更新' : '已補記'} ${fmtDur(r.ms)} · 歸屬 ${wdOfKey(r.wd)} ${fmtMD(r.wd)} 工作日`);
+    render();
+  },
+  'sleep-plan-edit': (f) => {
+    const r = act.saveSleepPlan(f.id.value, fromInputs(f.sd.value, f.st.value), fromInputs(f.ed.value, f.et.value));
+    if (!r.ok) { toast(SLEEP_PAIR_ERROR[r.reason] || '這個計畫存不到'); return; }
+    clearDraft(f.dataset.draft);
+    ui.sheet = null;
+    flash(`sleep:${r.id}`);
+    toast('已更新睡眠計畫');
+    render();
   },
   'expected-end': (f) => {
     const t = fromInputs(f.date.value, f.time.value);
@@ -782,7 +905,17 @@ function bind() {
     if (el.dataset.action === 'close-sheet-nav') { ui.sheet = null; return; }
     fn(el);
   });
-  document.addEventListener('input', (e) => { if (e.target.closest('form')) dirty = true; });
+  document.addEventListener('input', (e) => {
+    const form = e.target.closest('form');
+    if (!form) return;
+    dirty = true;
+    captureDraft(form.closest('form[data-draft]'));
+    updateFormPreview(form);
+  });
+  document.addEventListener('change', (e) => {
+    const form = e.target.closest('form[data-draft]');
+    if (form && e.target.type !== 'file') { captureDraft(form); updateFormPreview(form); }
+  });
   document.addEventListener('submit', (e) => {
     const f = e.target.closest('form[data-form]');
     if (!f) return;
@@ -797,17 +930,19 @@ function bind() {
   document.addEventListener('change', async (e) => {
     const el = e.target;
     if (el.dataset.action === 'rec-wd' && el.value) {
-      ui.sheet.wd = el.value;
-      ui.sheet.sid = undefined;
-      ui.sheet.newShift = false;
-      delete ui.sheet.t;
-      ui.sheet.step = defaultStep(store.get(), el.value);
+      // 換工作日：保留揀好的類別，步驟按新的一天重新建議。
+      const cat = ui.sheet.cat;
+      ui.sheet = cat ? { type: 'record', wd: el.value, cat, step: defaultStepIn(store.get(), el.value, cat) } : openRecordSheet(store.get(), el.value, null);
       render();
     }
     if (el.dataset.action === 'meal-photo' && el.files?.[0]) {
+      // 先存好已填的文字，再處理相片；處理完重畫時欄位不會被清空。
+      const form = el.closest('form[data-draft]');
+      captureDraft(form);
       try {
-        ui.mealPhoto = await compressPhoto(el.files[0]);
-        lastView = '';
+        const photo = await compressPhoto(el.files[0]);
+        if (form) { ui.drafts[form.dataset.draft] = { ...ui.drafts[form.dataset.draft], photo }; persistDrafts(); }
+        lastView = ''; lastSheet = '';
         render();
       } catch {
         toast('這張相片太大或無法讀取，請換一張');

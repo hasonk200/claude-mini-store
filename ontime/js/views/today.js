@@ -2,7 +2,7 @@ import { esc, icon, bubble, durHTML, STEP_ICON, STEP_KIND, seg } from '../ui.js'
 import { dateKey, fmtTime, wdOf, fmtDayMD, wdOfKey, fmtMD, MIN, HOUR, fmtDur, fmtDurLong, toDateInput, toTimeInput } from '../time.js';
 import {
   STEPS, STEP_LABEL, lastMeal, awakeSince, sleepLast24h, currentCycle, nextStep, statusOf, beforeBedBudget, shiftOf, sessionWorkMs,
-  workdaySpan, workdayEvents, jobOf, shiftsOfWorkday
+  workdaySpan, workdayEvents, jobOf, shiftsOfWorkday, currentWorkday
 } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
 import { ribbon, legend, crossBadge } from './shared.js';
@@ -76,7 +76,7 @@ function stepper(data, wd, cycle, now) {
   return `<ol class="stepper" style="--prog:${prog.toFixed(1)}%">${items}</ol>`;
 }
 
-function statusCard(data, wd, cycle, now) {
+function statusCard(data, wd, cycle, now, manual = false) {
   const st = statusOf(cycle, data, now);
   const s = cycle.session;
   const sh = s ? shiftOf(data, s) : null;
@@ -109,19 +109,23 @@ function statusCard(data, wd, cycle, now) {
     if (ns === 'ride') alt.push(['arrive', '步行直接抵達']);
     if (ns === 'arrive') alt.push(['clockIn', '直接上班']);
     if (ns === 'ride2') alt.push(['home', '直接到家']);
-    const altHTML = alt.map(([k, l]) => `<button type="button" class="btn btn-ghost-dark" data-action="step" data-step="${k}">${l}</button>`).join('');
+    const nowTag = manual ? ' · 現在' : '';
+    const altHTML = alt.map(([k, l]) => `<button type="button" class="btn btn-ghost-dark" data-action="step" data-step="${k}">${l}${nowTag}</button>`).join('');
     // 休息一律可以按：上班中記的是班內休息，沒班時記獨立休息。
     const resting = st.key === 'break' || st.key === 'rest';
-    const brk = `<button type="button" class="btn btn-ghost-dark" data-action="break">${resting ? '結束休息' : '開始休息'}</button>`;
+    const brk = `<button type="button" class="btn btn-ghost-dark" data-action="break">${resting ? '結束休息' : '開始休息'}${nowTag}</button>`;
     const sleepBtn = ['free', 'off'].includes(st.key) || ns === 'out' ? '<button type="button" class="btn btn-ghost-dark" data-action="sleep-start">現在入睡</button>' : '';
     if (altHTML || brk || sleepBtn) buttons.push(`<div class="btn-row">${altHTML}${brk}${sleepBtn}</div>`);
   }
+  // 切到別的工作日時，這張卡的按鈕仍然是「記錄現在」；講清楚，補舊日請用補登。
+  const nowNote = manual ? `<div class="status-now-note">這裡的按鈕記錄的是<strong>現在 ${wdOf(now)} ${fmtMD(dateKey(now))} ${fmtTime(now)}</strong>，不是 ${wdOfKey(wd)} ${fmtMD(wd)}。</div>` : '';
   return `<section class="card card-ink status-card" aria-label="現在狀態">
     <div class="status-top"><span class="live-dot"></span>現在狀態<span class="spacer"></span><span class="muted-ink">${esc(s ? jobOf(data, s.jobId)?.name ?? '' : '')}</span></div>
     <div class="status-main"><div class="status-title">${esc(st.title)}</div><div class="status-sub">${sub}</div></div>
     ${progress}
+    ${nowNote}
     ${buttons.join('')}
-    <button type="button" class="link-ink" data-action="open-record">補登其他時間</button>
+    <button type="button" class="link-ink" data-action="open-record">${manual ? `補登 ${wdOfKey(wd)} ${fmtMD(wd)} 的時間` : '補登其他時間'}</button>
   </section>`;
 }
 
@@ -262,12 +266,12 @@ export function todayView(ctx) {
   if (isDesktop) {
     return `${head}
       <div class="grid-today">
-        ${statusCard(data, wd, cycle, now)}
+        ${statusCard(data, wd, cycle, now, wd !== currentWorkday(data, now))}
         <div class="today-side">${budgetCards(data, now)}${stepCard}</div>
       </div>
       ${ribbonCard}
       ${eventTable(data, wd, now, ui)}
       <div class="grid-2">${nextMealCard(data, now)}${quickTiles(cycle, data, now)}</div>`;
   }
-  return `${head}${statusCard(data, wd, cycle, now)}${budgetCards(data, now)}${ribbonCard}${stepCard}${quickTiles(cycle, data, now)}${nextMealCard(data, now)}`;
+  return `${head}${statusCard(data, wd, cycle, now, wd !== currentWorkday(data, now))}${budgetCards(data, now)}${ribbonCard}${stepCard}${quickTiles(cycle, data, now)}${nextMealCard(data, now)}`;
 }

@@ -659,6 +659,13 @@ export function nextSleepPlan(data, now) {
     .sort((a, b) => a.planStart - b.planStart)[0] || null;
 }
 
+// 新表單的預設時間：看的是現在這個工作日就用現在；
+// 切到別的工作日（例如今天頁往回看週六）就沿用那一天的日期，時間先用現在的時：分。
+export function timeOnWorkday(data, wd, now) {
+  if (!wd || wd === currentWorkday(data, now)) return now;
+  return at(wd, `${String(new Date(now).getHours()).padStart(2, '0')}:${String(new Date(now).getMinutes()).padStart(2, '0')}`);
+}
+
 // 新增班次：開工日期要落在工作日當天，或者隔天（午夜後才開工的夜班）。
 // 不在這範圍就回傳開工那天的日期，讓畫面問清楚要歸到哪一個工作日。
 export function shiftDateMismatch(wd, start) {

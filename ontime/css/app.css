@@ -147,6 +147,21 @@ kbd { font-family: inherit; font-size: 11px; font-weight: 800; color: #111418; b
 .btn-soft { background: var(--line-soft); color: var(--ink); }
 .btn-ghost-dark { background: transparent; border: 1.5px solid #3A4049; color: #fff; }
 .btn-danger { background: var(--danger-tint); color: var(--danger); }
+/* 次要動作：文字按鈕（例如修改面板底部的刪除）。 */
+.btn-text, .btn-text-danger { background: transparent; border: 0; box-shadow: none; font-weight: 700; }
+.btn-text { color: var(--muted); }
+.btn-text-danger { color: var(--danger); }
+
+/* 列表：點整筆就修改。 */
+.row-click { cursor: pointer; }
+.row-click:hover { background: var(--surface-2); }
+tr.row-click:focus-visible, li.row-click:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+/* 剛儲存的那一筆：留在原位，短暫亮一下。 */
+@keyframes flash-row { 0%, 35% { background: color-mix(in srgb, var(--lime) 45%, transparent); } 100% { background: transparent; } }
+.is-flash, tr.is-flash td { animation: flash-row 2.4s ease-out; }
+@media (prefers-reduced-motion: reduce) { .is-flash, tr.is-flash td { animation: none; outline: 2px solid var(--ink); outline-offset: -2px; } }
+.saved-note { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 14px; background: var(--sleep-tint-2); color: var(--sleep-deep); font-size: 13px; }
+.saved-note strong { font-size: 15px; }
 .btn-night { background: var(--night-btn); color: #fff; min-height: 54px; font-size: 16px; font-weight: 800; }
 .btn-soft-night { background: var(--sleep-tint); color: var(--sleep-deep); font-weight: 800; }
 .btn-meal { background: var(--meal); color: #2A0610; font-weight: 800; min-height: 54px; font-size: 16px; }
@@ -853,3 +868,6 @@ details.more .form { padding: 0 14px 14px; }
 .shift-add { border-style: dashed; background: transparent; }
 .shift-add.is-on { background: var(--solid); border-style: solid; }
 #rec-preview strong { font-weight: 800; }
+.c-danger { color: var(--danger); font-weight: 700; }
+.status-now-note { font-size: 13px; line-height: 1.5; color: #E7EBEF; background: rgba(255, 255, 255, .08); border-radius: 12px; padding: 10px 12px; }
+.status-now-note strong { color: var(--lime); }

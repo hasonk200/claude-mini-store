@@ -1,7 +1,9 @@
 import { esc, icon, bubble, STEP_ICON, STEP_KIND, verifyToggle } from '../ui.js';
 import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN } from '../time.js';
-import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isFlag, eventVerified, journeyOfSession, sessionsOfWorkday, defaultStepTime, SHIFT_BOUND_STEPS, recentShiftRanges, jobOf } from '../logic.js';
+import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isFlag, eventVerified, journeyOfSession, sessionsOfWorkday, defaultStepTime, SHIFT_BOUND_STEPS, recentShiftRanges, jobOf, timeOnWorkday } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
+import { sleepPairForm } from './sleep.js';
+import { mealForm } from './meals.js';
 
 const GROUPS = [
   ['去程', ['out', 'ride', 'arrive']],
@@ -9,9 +11,18 @@ const GROUPS = [
   ['回程', ['leave', 'ride2', 'home']],
   ['生活', ['meal', 'sleepStart', 'sleepEnd']]
 ];
-const LABEL = { ...STEP_LABEL, ride: '搭車', ride2: '搭車', break: '休息', meal: '用餐', sleepStart: '入睡', sleepEnd: '起床' };
-const ICON = { ...STEP_ICON, break: 'cup', meal: 'meal', sleepStart: 'moon', sleepEnd: 'sun' };
-const KINDS = { ...STEP_KIND, break: 'commute', meal: 'meal', sleepStart: 'sleep', sleepEnd: 'sleep' };
+// 補登先揀「要補什麼」：只有工作和通勤要先選班次；睡眠、用餐直接填。
+export const CATS = [
+  ['work', '工作', 'bag', 'work', ['clockIn', 'clockOut', 'break']],
+  ['commute', '通勤', 'bus', 'commute', ['out', 'ride', 'arrive', 'leave', 'ride2', 'home']],
+  ['sleep', '睡眠', 'moon', 'sleep', ['sleepPair', 'sleepStart', 'sleepEnd']],
+  ['meal', '用餐', 'meal', 'meal', ['meal']]
+];
+const CAT_STEPS = Object.fromEntries(CATS.map(([k, , , , steps]) => [k, steps]));
+export const catOf = (step) => CATS.find(([, , , , steps]) => steps.includes(step))?.[0] ?? null;
+const LABEL = { ...STEP_LABEL, ride: '搭車', ride2: '搭車', break: '休息', meal: '用餐', sleepStart: '只補入睡', sleepEnd: '只補起床', sleepPair: '一段睡眠' };
+const ICON = { ...STEP_ICON, break: 'cup', meal: 'meal', sleepStart: 'moon', sleepEnd: 'sun', sleepPair: 'moon' };
+const KINDS = { ...STEP_KIND, break: 'commute', meal: 'meal', sleepStart: 'sleep', sleepEnd: 'sleep', sleepPair: 'sleep' };
 
 function valuesFor(data, wd, sid) {
   const tg = findWorkdayTargets(data, wd);
@@ -42,6 +53,23 @@ export function defaultStep(data, wd) {
   if (session && session.end == null) return 'clockOut';
   for (const [, steps] of GROUPS) for (const k of steps) if (k !== 'meal' && k !== 'break' && val[k] == null) return k;
   return 'clockOut';
+}
+
+// 揀了類別之後預設補哪一項：工作／通勤揀第一個未記錄的；睡眠預設「一段睡眠」。
+export function defaultStepIn(data, wd, cat, sid) {
+  if (cat === 'sleep') return 'sleepPair';
+  if (cat === 'meal') return 'meal';
+  const { val, session } = valuesFor(data, wd, sid);
+  if (cat === 'work') return session && session.end == null ? 'clockOut' : val.clockIn == null ? 'clockIn' : 'clockOut';
+  return CAT_STEPS.commute.find((k) => val[k] == null) || 'out';
+}
+
+// 一般「＋」打開：這天有班次就預先揀好最需要補的類別；空白日（例如休息日）先問要補什麼。
+export function openRecordSheet(data, wd, step) {
+  if (step) return { type: 'record', wd, cat: catOf(step), step };
+  if (!sessionsOfWorkday(data, wd).length) return { type: 'record', wd, cat: null, step: null };
+  const st = defaultStep(data, wd);
+  return { type: 'record', wd, cat: catOf(st), step: st };
 }
 
 // 搭車的交通工具與上車地點，補登和時間線修改共用。
@@ -81,10 +109,10 @@ function shiftChips(data, sessions, sid, newShift) {
   return `<div class="step-chips shift-chips">${chips}${add}</div>`;
 }
 
-function newShiftForm(data, wd) {
+function newShiftForm(data, wd, no = 2) {
   const recent = recentShiftRanges(data);
   return `<form class="form" data-form="new-shift"><input type="hidden" name="wd" value="${wd}">
-    <div class="sheet-step-title"><span class="step-no">2</span>新增班次：幾點開工、幾點收工？</div>
+    <div class="sheet-step-title"><span class="step-no">${no}</span>新增班次：幾點開工、幾點收工？</div>
     ${recent.length ? `<div class="btn-wrap">${recent.map((r) => `<button type="button" class="btn btn-soft btn-sm" data-action="shift-range" data-from="${r.from}" data-to="${r.to}">${r.key}</button>`).join('')}</div>` : ''}
     <div class="field-pair big-fields"><label class="field"><span>開工日期</span><input type="date" name="date" value="${wd}" required></label>
     <label class="field field-strong"><span>開工時間</span><input type="time" name="start" required></label></div>
@@ -98,26 +126,68 @@ function recordSheet(ctx) {
   const { data, now, ui } = ctx;
   const sh = ui.sheet;
   const wd = sh.wd;
-  const step = sh.step;
-  const bound = SHIFT_BOUND_STEPS.has(step);
+  const cat = sh.cat !== undefined ? sh.cat : catOf(sh.step);
   const sessions = sessionsOfWorkday(data, wd);
   const sid = sessions.some((x) => x.id === sh.sid) ? sh.sid : (sessions.find((x) => x.end == null) || sessions[0])?.id ?? null;
-  const sess = sessions.find((x) => x.id === sid) || null;
-  // 只有按了「＋ 新增班次」才換成新增班次表單；休息日照樣可以揀睡眠、用餐。
-  const newShift = !!sh.newShift;
-  const { val, plan, session } = valuesFor(data, wd, sid);
-  const groups = GROUPS.map(([name, steps]) => `<div class="chip-group"><span class="chip-group-name">${name}</span><div class="step-chips">${steps.map((k) => {
+  const step = cat && CAT_STEPS[cat].includes(sh.step) ? sh.step : cat ? defaultStepIn(data, wd, cat, sid) : null;
+  let n = 0;
+  const title = (text) => `<div class="sheet-step-title"><span class="step-no">${++n}</span>${text}</div>`;
+  const cats = `${title('要補什麼？')}<div class="step-chips cat-chips">${CATS.map(([k, label, ic, kind]) => `<button type="button" class="step-chip cat-chip${k === cat ? ' is-on' : ''}" data-action="rec-cat" data-cat="${k}" aria-pressed="${k === cat}">${bubble(ic, kind, { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${label}</strong><small>${k === 'work' || k === 'commute' ? '先選班次' : '直接填'}</small></span></button>`).join('')}</div>`;
+  let body = '';
+  if (!cat) {
+    body = '<p class="fine">休息日也可以直接記睡眠和用餐，不用先建立班次。</p>';
+  } else if (cat === 'meal') {
+    body = `${title('這一餐在什麼時候？')}${mealForm({ data, now, ui, key: 'meal:new', defaultStart: timeOnWorkday(data, wd, now), inSheet: true })}`;
+  } else if (cat === 'sleep') {
+    const subs = stepChips(data, wd, sid, CAT_STEPS.sleep, step, null);
+    body = `${title('補哪一種？')}${subs}${step === 'sleepPair'
+      ? `${title('入睡和起床')}${sleepPairForm({ data, now, ui, key: 'sleep:rec', wd, inSheet: true })}`
+      : recordForm(ctx, { wd, step, sid: null, sess: null, title })}`;
+  } else {
+    const sess = sessions.find((x) => x.id === sid) || null;
+    const newShift = !!sh.newShift;
+    body = `${title('選班次')}${shiftChips(data, sessions, sid, newShift)}`;
+    if (newShift) body += newShiftForm(data, wd, ++n);
+    else {
+      body += `${title(cat === 'work' ? '補哪一個出勤時間？' : '補哪一段通勤？')}${stepChips(data, wd, sid, CAT_STEPS[cat], step, sess)}`;
+      body += !sess
+        ? `<div class="sheet-note">「${LABEL[step]}」要先有班次才能補。<button type="button" class="btn btn-ink" data-action="rec-newshift">＋ 新增班次</button></div>`
+        : recordForm(ctx, { wd, step, sid, sess, title });
+    }
+  }
+  return `<div class="sheet-backdrop" data-action="close-sheet"></div>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2 id="sheet-title">補登</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button></div>
+    <div class="sheet-body">
+      <label class="field wd-field"><span>工作日</span><input type="date" value="${wd}" data-action="rec-wd"></label>
+      ${cats}
+      ${body}
+    </div>
+  </section>`;
+}
+
+function stepChips(data, wd, sid, steps, step, sess) {
+  const { val } = valuesFor(data, wd, sid);
+  return `<div class="step-chips">${steps.map((k) => {
     const v = val[k];
     const on = k === step;
-    const needShift = SHIFT_BOUND_STEPS.has(k) && !session;
-    return `<button type="button" class="step-chip${on ? ' is-on' : ''}${v == null ? ' is-missing' : ''}" data-action="rec-step" data-step="${k}" aria-pressed="${on}" ${needShift ? 'disabled' : ''}>
-      ${bubble(ICON[k], KINDS[k], { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${LABEL[k]}</strong><small>${k === 'meal' ? '另開表單' : needShift ? '先選班次' : v != null ? fmtTime(v) : '未記錄'}</small></span></button>`;
-  }).join('')}</div></div>`).join('');
+    const needShift = SHIFT_BOUND_STEPS.has(k) && !sess;
+    const note = k === 'sleepPair' ? '入睡＋起床' : needShift ? '先選班次' : v != null ? fmtTime(v) : '未記錄';
+    return `<button type="button" class="step-chip${on ? ' is-on' : ''}${v == null && k !== 'sleepPair' ? ' is-missing' : ''}" data-action="rec-step" data-step="${k}" aria-pressed="${on}" ${needShift ? 'disabled' : ''}>
+      ${bubble(ICON[k], KINDS[k], { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${LABEL[k]}</strong><small>${note}</small></span></button>`;
+  }).join('')}</div>`;
+}
 
-  // 跟班次有關的步驟：預設時間放在班次附近（不是「現在」）；睡眠、用餐照舊。
-  const t = sh.t ?? val[step] ?? plan[step] ?? (bound && sess ? defaultStepTime(step, sess) : now);
+// 單一時間的補登表單（工作、通勤、只補入睡／起床）。
+function recordForm(ctx, { wd, step, sid, sess, title }) {
+  const { data, now, ui } = ctx;
+  const sh = ui.sheet;
+  const bound = SHIFT_BOUND_STEPS.has(step);
+  const { val, plan, session } = valuesFor(data, wd, sid);
+  // 跟班次有關的步驟：預設時間放在班次附近；其他的沿用所選工作日（不是「現在」那天）。
+  const t = sh.t ?? val[step] ?? plan[step] ?? (bound && sess ? defaultStepTime(step, sess) : timeOnWorkday(data, wd, now));
   const isBreak = step === 'break';
-  // 已經有這一段休息時，顯示它真正存下的結束時間；還沒結束的顯示現在；新的一段預設 30 分鐘。
   const savedBreak = isBreak ? (session?.breaks || []).find((b) => b.start === t) : null;
   const breakEnd = !isBreak ? null
     : savedBreak ? (savedBreak.end ?? now)
@@ -129,45 +199,34 @@ function recordSheet(ctx) {
   const replaceable = step === 'sleepStart' && tg.sleep && tg.sleep.start != null && tg.sleep.end != null;
   const rideFields = isRide ? rideFieldsHtml(data, jr?.[`${step}Mode`], jr?.[`${step}From`]) : '';
   const anchored = bound && !!sess;
-  const stepNo = anchored ? 3 : 2;
   const timeBlock = anchored
     ? `<label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label>
       <div class="cross-note" id="rec-preview" aria-live="polite">${previewText(t, sess)}</div>
       <details class="more"><summary>日期不對？手動改日期</summary>
         <label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label></details>`
     : `<div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
-      <label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>`;
-  // 選了跟班次有關的步驟、但這天一班都沒有：只在表單位置提示，不擋住其他步驟。
-  const needShiftNote = `<div class="sheet-note">「${LABEL[step]}」要先有班次才能補。休息日想記睡眠或用餐，直接在上面揀就可以。<button type="button" class="btn btn-ink" data-action="rec-newshift">＋ 新增班次</button></div>`;
-  const form = newShift ? newShiftForm(data, wd) : bound && !sess ? needShiftNote : step === 'meal'
-    ? `<div class="sheet-note">用餐有自己的表單，可以加餐點和相片。<a class="btn btn-ink" href="#/meals" data-action="close-sheet-nav">前往記一餐</a></div>`
-    : `<form class="form" data-form="record" id="record-form" ${anchored ? `data-anchored="1" data-s-start="${sess.start}" data-s-end="${sess.end ?? ''}"` : ''}><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="step" value="${step}"><input type="hidden" name="sid" value="${anchored ? esc(sess.id) : ''}">
-      <div class="sheet-step-title"><span class="step-no">${stepNo}</span>「${LABEL[step]}」在什麼時候？</div>
+      <label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
+      <div class="cross-note" id="rec-preview" data-wd="${wd}" aria-live="polite">${freePreviewText(t, wd)}</div>`;
+  return `<form class="form" data-form="record" id="record-form" ${anchored ? `data-anchored="1" data-s-start="${sess.start}" data-s-end="${sess.end ?? ''}"` : ''}><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="step" value="${step}"><input type="hidden" name="sid" value="${anchored ? esc(sess.id) : ''}">
+      ${title(`「${LABEL[step].replace('只補', '')}」在什麼時候？`)}
       ${timeBlock}
       ${isBreak ? `<div class="field-pair"><label class="field"><span>結束日期</span><input type="date" name="endDate" value="${toDateInput(breakEnd)}"></label><label class="field"><span>結束時間（可空白）</span><input type="time" name="endTime" value="${toTimeInput(breakEnd)}"></label></div>` : ''}
       ${verifyToggle(stepFlag(tg, step, t, 'verified'))}
       ${rideFields}
       ${replaceable ? `<label class="fine"><input type="checkbox" name="replace"> 取代這天最後一筆的入睡時間（不勾就新增一筆）</label>` : ''}
-      ${!anchored && dateKey(t) !== wd ? `<div class="cross-note"><span class="badge-cross">隔日</span>仍屬${wdOfKey(wd)}工作日，實際發生在${wdOfKey(dateKey(t))}</div>` : ''}
       <div class="btn-wrap"><button type="button" class="btn btn-soft btn-sm" data-action="rec-now">現在</button><button type="button" class="btn btn-soft btn-sm" data-action="rec-minus">−15 分</button>${plan[step] ? `<button type="button" class="btn btn-line btn-sm" data-action="rec-plan" data-t="${plan[step]}">用預計 ${fmtTime(plan[step])}</button>` : ''}</div>
-      <p class="fine">只會修改「${LABEL[step]}」這一個時間；其他打卡、收入、休息、備註都保持不變。</p>
-      <div class="sheet-foot btn-pair"><button class="btn btn-line btn-lg" type="submit" name="after" value="stay">儲存</button><button class="btn btn-ink btn-lg" type="submit" name="after" value="close">完成</button></div>
-      <p class="fine">「儲存」會留在這一頁繼續補；「完成」儲存後關閉。</p>
+      <p class="fine">只會修改「${LABEL[step].replace('只補', '')}」這一個時間；其他打卡、收入、休息、備註都保持不變。</p>
+      <div class="sheet-foot btn-pair"><button class="btn btn-line btn-lg" type="submit" name="after" value="stay">儲存並繼續</button><button class="btn btn-ink btn-lg" type="submit" name="after" value="close">儲存並關閉</button></div>
+      <p class="fine">「儲存並繼續」會留在這裡，接著補下一項。</p>
     </form>`;
+}
 
-  return `<div class="sheet-backdrop" data-action="close-sheet"></div>
-  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-    <div class="sheet-handle"></div>
-    <div class="sheet-head"><h2 id="sheet-title">補登一個時間</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button></div>
-    <div class="sheet-body">
-      <label class="field wd-field"><span>工作日</span><input type="date" value="${wd}" data-action="rec-wd"></label>
-      <div class="sheet-step-title"><span class="step-no">1</span>選班次</div>
-      ${shiftChips(data, sessions, sid, newShift)}
-      ${newShift ? '' : `<div class="sheet-step-title"><span class="step-no">2</span>先選要補哪一個</div>
-      ${groups}`}
-      ${form}
-    </div>
-  </section>`;
+// 沒有班次可以對照時的預覽：「會存成 週六 10/24 15:00 · 補 週六 10/24 工作日」。
+export function freePreviewText(t, wd) {
+  if (t == null || Number.isNaN(t)) return '';
+  const k = dateKey(t);
+  const badge = k === wd ? '' : ` <span class="badge-cross">${k > wd ? '隔日' : '前一日'}</span>`;
+  return `會存成 <strong>${wdOf(t)} ${fmtMD(k)} ${fmtTime(t)}</strong>${badge} · 補 ${wdOfKey(wd)} ${fmtMD(wd)} 工作日`;
 }
 
 // 「會存成 週二 10/20 07:05 · 屬於 23:00–07:00 這班」。補登時即時更新，讓你一眼看到日期對不對。
@@ -238,9 +297,46 @@ function expectedEndSheet(ctx) {
   </section>`;
 }
 
+function sheetWrap(title, body, small = true) {
+  return `<div class="sheet-backdrop" data-action="close-sheet"></div>
+  <section class="sheet${small ? ' sheet-small' : ''}" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2 id="sheet-title">${title}</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button></div>
+    <div class="sheet-body">${body}</div>
+  </section>`;
+}
+
+// 由列表點一筆睡眠：入睡、起床一起改；計畫改計畫時間。刪除放在最底（次要）。
+function sleepSheet(ctx) {
+  const { data, now, ui } = ctx;
+  const s = data.sleeps.find((x) => x.id === ui.sheet.id);
+  if (!s) return '';
+  if (s.start == null) {
+    const d = ui.drafts?.[`plan:${s.id}`] || {};
+    const v = (k, f) => (k in d ? d[k] : f);
+    return sheetWrap('修改睡眠計畫', `<form class="form" data-form="sleep-plan-edit" data-draft="plan:${esc(s.id)}"><input type="hidden" name="id" value="${esc(s.id)}">
+      <div class="field-pair"><label class="field"><span>入睡日期</span><input type="date" name="sd" value="${esc(v('sd', toDateInput(s.planStart)))}" required></label><label class="field field-strong"><span>入睡時間</span><input type="time" name="st" value="${esc(v('st', toTimeInput(s.planStart)))}" required></label></div>
+      <div class="field-pair"><label class="field"><span>起床日期</span><input type="date" name="ed" value="${esc(v('ed', toDateInput(s.planEnd)))}" required></label><label class="field field-strong"><span>起床時間</span><input type="time" name="et" value="${esc(v('et', toTimeInput(s.planEnd)))}" required></label></div>
+      <p class="fine">計畫只是安排，不會產生實際睡眠紀錄。</p>
+      <div class="sheet-foot"><button class="btn btn-ink btn-block btn-lg" type="submit">儲存修改</button></div>
+      <button type="button" class="btn btn-text-danger btn-block" data-action="sleep-delete" data-id="${esc(s.id)}">刪除這個計畫</button>
+    </form>`);
+  }
+  return sheetWrap('修改這筆睡眠', sleepPairForm({ data, now, ui, sleep: s, key: `sleep:${s.id}`, wd: sleepWorkday(s, data), inSheet: true }));
+}
+
+function mealSheet(ctx) {
+  const { data, now, ui } = ctx;
+  const m = data.meals.find((x) => x.id === ui.sheet.id);
+  if (!m) return '';
+  return sheetWrap('修改這一餐', mealForm({ data, now, ui, meal: m, key: `meal:${m.id}`, inSheet: true }));
+}
+
 export function sheetView(ctx) {
   const sh = ctx.ui.sheet;
   if (!sh) return '';
+  if (sh.type === 'sleep') return sleepSheet(ctx);
+  if (sh.type === 'meal') return mealSheet(ctx);
   if (sh.type === 'expected-end') return expectedEndSheet(ctx);
   if (sh.type === 'record') return recordSheet(ctx);
   if (sh.type === 'ref') return refSheet(ctx);
