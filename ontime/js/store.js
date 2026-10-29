@@ -165,20 +165,24 @@ export function purge(full, now = Date.now()) {
 
 // mutator 修改「可見資料」的草稿；完成後自動蓋時間戳、保存並通知畫面。
 let previous = null;
+let stampedAt = 0;
 
 export function update(mutator) {
   previous = data;
   const draft = structuredClone(view);
   mutator(draft);
-  setRaw(stamp(data, draft));
+  stampedAt = Date.now();
+  setRaw(stamp(data, draft, stampedAt));
   scheduleSave();
   emit();
 }
 
 // 復原上一步（只保留一步）。
-export function undo() {
+// 復原本身也是一次新的修改：剛新增的紀錄得到刪除標記、被刪或被改的紀錄以新的時間戳還原，
+// 這樣雲端合併時不會把已復原的東西再帶回來。時間戳一定晚於被復原的那一次修改。
+export function undo(now = Date.now()) {
   if (!previous) return false;
-  setRaw(previous);
+  setRaw(stamp(data, visible(previous), Math.max(now, stampedAt + 1)));
   previous = null;
   scheduleSave();
   emit();

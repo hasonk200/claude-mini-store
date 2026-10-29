@@ -103,8 +103,8 @@ function recordSheet(ctx) {
   const sessions = sessionsOfWorkday(data, wd);
   const sid = sessions.some((x) => x.id === sh.sid) ? sh.sid : (sessions.find((x) => x.end == null) || sessions[0])?.id ?? null;
   const sess = sessions.find((x) => x.id === sid) || null;
-  // 要補的是跟班次有關的步驟、但這天一班都沒有：直接引導去新增班次。
-  const newShift = !!sh.newShift || (bound && !sess);
+  // 只有按了「＋ 新增班次」才換成新增班次表單；休息日照樣可以揀睡眠、用餐。
+  const newShift = !!sh.newShift;
   const { val, plan, session } = valuesFor(data, wd, sid);
   const groups = GROUPS.map(([name, steps]) => `<div class="chip-group"><span class="chip-group-name">${name}</span><div class="step-chips">${steps.map((k) => {
     const v = val[k];
@@ -137,7 +137,9 @@ function recordSheet(ctx) {
         <label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label></details>`
     : `<div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
       <label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>`;
-  const form = newShift ? newShiftForm(data, wd) : step === 'meal'
+  // 選了跟班次有關的步驟、但這天一班都沒有：只在表單位置提示，不擋住其他步驟。
+  const needShiftNote = `<div class="sheet-note">「${LABEL[step]}」要先有班次才能補。休息日想記睡眠或用餐，直接在上面揀就可以。<button type="button" class="btn btn-ink" data-action="rec-newshift">＋ 新增班次</button></div>`;
+  const form = newShift ? newShiftForm(data, wd) : bound && !sess ? needShiftNote : step === 'meal'
     ? `<div class="sheet-note">用餐有自己的表單，可以加餐點和相片。<a class="btn btn-ink" href="#/meals" data-action="close-sheet-nav">前往記一餐</a></div>`
     : `<form class="form" data-form="record" id="record-form" ${anchored ? `data-anchored="1" data-s-start="${sess.start}" data-s-end="${sess.end ?? ''}"` : ''}><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="step" value="${step}"><input type="hidden" name="sid" value="${anchored ? esc(sess.id) : ''}">
       <div class="sheet-step-title"><span class="step-no">${stepNo}</span>「${LABEL[step]}」在什麼時候？</div>

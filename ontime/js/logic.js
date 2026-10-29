@@ -739,10 +739,21 @@ export function periodStats(data, fromKey, toKey, now) {
   let incomeKnown = 0;
   let orders = 0;
   let perOrderCount = 0;
+  // byDay / carryByDay 按「日曆日」：所有跟期間重疊的班都計（例如週日 23:00 開、週一 07:00 收的夜班，週一那 7 小時也算），
+  // 但只留期間內的日子。carryByDay 是其中「前一天開的班帶過來」的部分。
+  // workMs、收入、班數仍然按「開班日期」，跨期間的班只算在開班那一段。
   const byDay = {};
+  const carryByDay = {};
+  for (const s of data.sessions) {
+    if (s.start >= b || sessionEndAt(s, now) <= a) continue;
+    for (const [k, v] of Object.entries(splitWorkByDay(s, now))) {
+      if (k < fromKey || k >= toKey) continue;
+      byDay[k] = (byDay[k] || 0) + v;
+      if (k !== dateKey(s.start)) carryByDay[k] = (carryByDay[k] || 0) + v;
+    }
+  }
   for (const s of sessions) {
     workMs += sessionWorkMs(s, now);
-    for (const [k, v] of Object.entries(splitWorkByDay(s, now))) byDay[k] = (byDay[k] || 0) + v;
     if (s.payMode === 'hourly') {
       const p = sessionPay(s, now);
       if (p == null) hourlyKnown = false; else hourlyPay += p;
@@ -754,7 +765,7 @@ export function periodStats(data, fromKey, toKey, now) {
   }
   let commuteMs = 0;
   for (const x of intervalsAround(data, a, b, now)) if (x.kind === 'commute' && !x.plan) commuteMs += Math.min(x.b, b) - Math.max(x.a, a);
-  return { sessions, workMs, hourlyPay, hourlyKnown, income, incomeKnown, perOrderCount, orders, byDay, commuteMs };
+  return { sessions, workMs, hourlyPay, hourlyKnown, income, incomeKnown, perOrderCount, orders, byDay, carryByDay, commuteMs };
 }
 
 // ---------- 清醒時間與近 24 小時睡眠 ----------
