@@ -332,6 +332,24 @@ export function setRefTime(ref, t, extra = {}) {
   return { ok: true };
 }
 
+// 預計收工：只用來估算睡前空檔，不是收工紀錄（不會寫入 end，也不影響工時）。
+// t = null 代表清除。
+export function setExpectedEnd(sessionId, t, now = Date.now()) {
+  const s = get().sessions.find((x) => x.id === sessionId);
+  if (!s) return { ok: false, reason: 'missing' };
+  if (t != null) {
+    if (Number.isNaN(t)) return { ok: false, reason: 'bad-time' };
+    if (t <= s.start) return { ok: false, reason: 'before-clock-in' };
+    if (t <= now) return { ok: false, reason: 'expected-past' };
+  }
+  update((d) => {
+    const x = d.sessions.find((y) => y.id === sessionId);
+    if (!x) return;
+    if (t == null) delete x.expectedEnd; else x.expectedEnd = t;
+  });
+  return { ok: true };
+}
+
 // ---------- 睡眠 ----------
 export function startSleep(t = Date.now()) {
   if (latestOpenSleep(get())) return { ok: false, reason: 'sleeping' };

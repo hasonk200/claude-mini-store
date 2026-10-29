@@ -1,5 +1,5 @@
 import { esc, icon, bubble, seg } from '../ui.js';
-import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, weekStartKey, dayStart, dayEnd, HOUR } from '../time.js';
+import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, weekStartKey, dayStart, dayEnd, HOUR, daysBetween } from '../time.js';
 import {
   workdayEvents, workdaySpan, sessionsOfWorkday, splitWorkByDay, sessionWorkMs, calendarAllocation, intervalsAround, totalOf, clip, sleepWorkday, shiftsOfWorkday, wakeSpan
 } from '../logic.js';
@@ -22,12 +22,17 @@ function weekStrip(data, key, now) {
 function workdayList(data, wd, now) {
   const ev = workdayEvents(data, wd, now);
   if (!ev.length) return `<div class="card"><p class="muted">這個工作日還沒有紀錄或排班。</p><button type="button" class="btn btn-ink" data-action="open-record" data-wd="${wd}">補登一個時間</button></div>`;
-  let crossed = false;
+  // 日期一變就加分隔線；早於工作日的（例如補登時揀了較早的開工日期）不要寫成「進入下一天」。
+  let prevKey = wd;
   const items = ev.map((e, i) => {
     let divider = '';
-    if (!crossed && dateKey(e.t) !== wd) {
-      crossed = true;
-      divider = `<li class="tl-divider"><span>午夜 · 進入${wdOf(e.t)}，仍屬${wdOfKey(wd)}工作日</span></li>`;
+    const k = dateKey(e.t);
+    if (k !== prevKey) {
+      const label = k > wd ? `午夜 · 進入${wdOf(e.t)}，仍屬${wdOfKey(wd)}工作日`
+        : k < wd ? `${wdOf(e.t)} ${fmtMD(k)} · 早於工作日 ${daysBetween(k, wd)} 天，仍屬${wdOfKey(wd)}工作日`
+        : `${wdOfKey(wd)} ${fmtMD(wd)} · 工作日當天`;
+      divider = `<li class="tl-divider${k < wd ? ' is-warn' : ''}"><span>${label}</span></li>`;
+      prevKey = k;
     }
     const last = i === ev.length - 1;
     return `${divider}<li class="tl-item${last ? ' is-last' : ''} k-${e.kind}">
@@ -58,7 +63,10 @@ function workdaySummary(data, wd, now) {
   const work = sessions.reduce((n, s) => n + sessionWorkMs(s, now), 0);
   const split = {};
   for (const s of sessions) for (const [k, v] of Object.entries(splitWorkByDay(s, now))) split[k] = (split[k] || 0) + v;
-  const splitText = (Object.entries(split).map(([k, v]) => `${wdShort(k)} ${fmtDur(v)}`).join(' · ') || '沒有出勤');
+  const pending = sessions.filter((s) => s.endPending && s.end == null).length;
+  // 有班次但收工未補：寫「待補收工」，不要寫成「沒有出勤」。
+  const splitText = (Object.entries(split).map(([k, v]) => `${wdShort(k)} ${fmtDur(v)}`).join(' · ')
+    || (pending ? '收工時間未知，補上後才計工時' : '沒有出勤')) + (pending && Object.keys(split).length ? ` · 另有 ${pending} 班待補收工` : '');
   const [a, b] = workdaySpan(data, wd, now);
   const items = intervalsAround(data, a, b, now).filter((x) => !x.plan);
   const commute = totalOf(items.filter((x) => x.kind === 'commute').map((x) => [x.a, x.b]));
@@ -69,14 +77,14 @@ function workdaySummary(data, wd, now) {
   const tg = findWorkdayTargets(data, wd);
   const sess = tg.session;
   const jr = tg.journey;
-  const workStep = !sess || sess.start == null ? 'clockIn' : sess.end == null ? 'clockOut' : 'clockIn';
+  const workStep = pending ? 'clockOut' : !sess || sess.start == null ? 'clockIn' : sess.end == null ? 'clockOut' : 'clockIn';
   const commuteStep = ['out', 'arrive', 'leave', 'home'].find((k) => jr?.[k] == null) || 'out';
   const sl = tg.sleep;
   const sleepStep = !sl || sl.start == null ? 'sleepStart' : sl.end == null ? 'sleepEnd' : 'sleepStart';
   const card = (cls, label, value, note, step) =>
     `<button type="button" class="card mini mini-btn ${cls}" data-action="open-record" data-wd="${wd}" data-step="${step}" aria-label="修改${label}"><span>${label}</span><strong>${value}</strong><small>${note}</small></button>`;
   return `<section class="summary-3">
-    ${card('', '工時', fmtDur(work), esc(splitText), workStep)}
+    ${card(pending && !work ? 'is-pending' : '', '工時', pending && !work ? '待補收工' : fmtDur(work), esc(splitText), workStep)}
     ${card('', '通勤', fmtDur(commute), '只計有完整起止的路程', commuteStep)}
     ${card('k-sleep-soft', '睡眠', sleeps.length ? fmtDur(sleepMs) : '—', sleeping ? '進行中，計至現在' : sleeps.length ? '實際紀錄' : '未記錄', sleepStep)}
   </section>`;

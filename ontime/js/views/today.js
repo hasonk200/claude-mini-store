@@ -29,7 +29,8 @@ export function heroFor(data, wd, cycle, now, compact = false) {
   const upcoming = data.shifts.filter((x) => x.start > now).sort((x, y) => x.start - y.start)[0];
   let line = '';
   if (b.state === 'ok') line = `睡前還有 ${fmtDur(b.free)} 未安排`;
-  else if (b.state === 'unset' && awakeSince(data, now)) line = `已清醒 ${fmtDur(awakeSince(data, now).ms)}`;
+  else if (b.state === 'unknown-end') line = `距離入睡 ${fmtDur(b.countdown)} · 收工時間未知`;
+  else if (b.state === 'unset' && awakeSince(data, now)) line = `距離上次記錄起床 ${fmtDur(awakeSince(data, now).ms)}`;
   else if (st.key === 'sleep') line = `入睡 ${fmtTime(st.since)} · 已睡 ${fmtDur(now - st.since)}`;
   else if (upcoming) line = `下一班 ${wdOf(upcoming.start)} ${fmtTime(upcoming.start)}`;
   return heroHTML({ state: st.key, now, headline: H[st.key] || '', line, eyebrow: `ONTIME · ${wdOfKey(wd)}工作日`, compact });
@@ -129,19 +130,36 @@ function budgetCards(data, now) {
   if (b.state === 'sleeping') {
     return `<section class="metric-pair"><div class="card metric"><span class="metric-label">睡前未安排</span><span class="metric-value">—</span><span class="metric-note">正在睡眠</span></div><div class="card metric"><span class="metric-label">距離預計入睡</span><span class="metric-value">—</span><span class="metric-note">起床後重新計算</span></div></section>`;
   }
+  const countdown = `<div class="card metric"><span class="metric-label">距離預計入睡</span>${durHTML(b.countdown, 'metric-value')}<span class="metric-note">${wdOf(b.target)} ${fmtTime(b.target)} · 仍含工作</span></div>`;
+  if (b.state === 'unknown-end') {
+    // 正在上班但不知道幾點收工：不估空檔，只保留倒數，讓你補一個預計收工時間。
+    const why = b.reason === 'overtime' ? '已過排班的下班時間，還沒收工' : '這一班沒有排班，不知道幾點收工';
+    return `<section class="metric-pair">
+    <div class="card metric"><span class="metric-label">睡前未安排</span><span class="metric-value metric-text">收工時間未知</span><span class="metric-note">${why}</span><button type="button" class="btn btn-soft btn-sm metric-btn" data-action="expected-end-open" data-id="${esc(b.session.id)}">填預計收工</button></div>
+    ${countdown}
+  </section>`;
+  }
   if (b.state === 'unset') {
+    // 睡眠紀錄不齊時，不顯示「已清醒很久」或「睡了 0 小時」這種誤導的大數字。
     const aw = awakeSince(data, now);
     const sl = sleepLast24h(data, now);
     const span = 24 * HOUR;
     const bars = sl.parts.map(([x, y]) => `<i style="left:${(((x - sl.from) / span) * 100).toFixed(1)}%;width:${(((y - x) / span) * 100).toFixed(1)}%"></i>`).join('');
+    const addSleep = '<button type="button" class="btn btn-soft btn-sm metric-btn" data-action="open-record" data-step="sleepPair">補記睡眠</button>';
+    const unknown = '<span class="metric-value metric-text">未記錄</span>';
+    const awNote = !aw ? '還沒有起床紀錄' : `上次記錄起床 ${wdOf(aw.since)} ${fmtMD(dateKey(aw.since))} ${fmtTime(aw.since)}${aw.ms > 20 * HOUR ? ' · 可能漏記了睡眠' : ''}`;
     return `<section class="metric-pair">
-    <div class="card metric"><span class="metric-label">已清醒</span>${aw ? durHTML(aw.ms, 'metric-value') : '<span class="metric-value">—</span>'}<span class="metric-note">${aw ? `${wdOf(aw.since)} ${fmtTime(aw.since)} 起床` : '還沒有起床紀錄'}</span></div>
-    <div class="card metric k-sleep-soft"><span class="metric-label">過去 24 小時睡了</span>${durHTML(sl.ms, 'metric-value c-sleep')}<span class="sleep24" aria-hidden="true">${bars}</span><span class="metric-note">${sl.parts.length ? `分 ${sl.parts.length} 段` : '沒有睡眠紀錄'}</span></div>
+    <div class="card metric"><span class="metric-label">距離上次記錄起床</span>${aw ? durHTML(aw.ms, 'metric-value') : unknown}<span class="metric-note">${awNote}</span>${!aw || aw.ms > 20 * HOUR ? addSleep : ''}</div>
+    <div class="card metric k-sleep-soft"><span class="metric-label">過去 24 小時睡了</span>${sl.parts.length ? `${durHTML(sl.ms, 'metric-value c-sleep')}<span class="sleep24" aria-hidden="true">${bars}</span><span class="metric-note">分 ${sl.parts.length} 段 · 只計有記錄的睡眠</span>` : `${unknown}<span class="metric-note">這 24 小時沒有睡眠紀錄</span>${addSleep}`}</div>
   </section>`;
   }
+  const we = b.workEnd;
+  const workNote = we?.source === 'expected'
+    ? `已扣工作（預計 ${fmtTime(we.at)} 收工）、通勤、已確認用餐 <button type="button" class="link-inline" data-action="expected-end-open" data-id="${esc(we.session.id)}">改</button>`
+    : '已扣工作、通勤、已確認用餐';
   return `<section class="metric-pair">
-    <div class="card metric"><span class="metric-label">睡前未安排</span>${durHTML(b.free, 'metric-value c-sleep')}<span class="metric-note">已扣工作、通勤、已確認用餐</span></div>
-    <div class="card metric"><span class="metric-label">距離預計入睡</span>${durHTML(b.countdown, 'metric-value')}<span class="metric-note">${wdOf(b.target)} ${fmtTime(b.target)} · 仍含工作</span></div>
+    <div class="card metric"><span class="metric-label">睡前未安排</span>${durHTML(b.free, 'metric-value c-sleep')}<span class="metric-note">${workNote}</span></div>
+    ${countdown}
   </section>`;
 }
 

@@ -241,6 +241,10 @@ button.chip { cursor: pointer; min-height: 30px; }
 .metric-value { font-size: 30px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
 .num small { font-size: 13px; font-weight: 700; margin-left: 1px; letter-spacing: 0; }
 .metric-note { font-size: 11px; color: var(--muted); line-height: 1.45; }
+/* 估算不到或沒有紀錄時：用文字代替大數字，不顯示誤導的 0。 */
+.metric-value.metric-text { font-size: 20px; letter-spacing: -.01em; }
+.metric-btn { align-self: flex-start; margin-top: 4px; }
+.link-inline { background: none; border: 0; padding: 0 2px; font: inherit; font-weight: 700; color: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .budget-unset { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
 .budget-unset > div { display: flex; flex-direction: column; gap: 2px; }
 .budget-unset strong { font-size: 17px; }
@@ -393,6 +397,7 @@ details.more .form { padding: 0 14px 14px; }
 .tl-divider { display: flex; align-items: center; gap: 10px; margin: 2px 0 12px; }
 .tl-divider span { font-size: 11px; font-weight: 800; color: var(--sleep-deep); background: var(--sleep-tint-2); padding: 3px 10px; border-radius: 999px; }
 .tl-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.tl-divider.is-warn span { color: var(--danger); background: var(--danger-tint); }
 .summary-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .mini { padding: 14px; gap: 4px; }
 .mini span { font-size: 12px; color: var(--muted); }

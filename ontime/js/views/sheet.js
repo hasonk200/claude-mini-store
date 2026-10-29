@@ -209,18 +209,39 @@ function refSheet(ctx) {
 }
 
 function confirmSheet(ctx) {
-  const { title, body, confirm, action, tone, cancel } = ctx.ui.sheet;
+  const { title, body, confirm, action, tone, cancel, cancelLabel } = ctx.ui.sheet;
   const okClass = tone === 'ink' ? 'btn-ink' : 'btn-danger';
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>
   <section class="sheet sheet-small" role="alertdialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="sheet-head"><h2 id="sheet-title">${esc(title)}</h2></div>
-    <div class="sheet-body"><p>${esc(body)}</p><div class="btn-pair"><button type="button" class="btn ${okClass}" data-action="${esc(action)}" data-confirmed="1">${esc(confirm)}</button><button type="button" class="btn btn-line" data-action="${esc(cancel || 'close-sheet')}">取消</button></div></div>
+    <div class="sheet-body"><p>${esc(body)}</p><div class="btn-pair"><button type="button" class="btn ${okClass}" data-action="${esc(action)}" data-confirmed="1">${esc(confirm)}</button><button type="button" class="btn btn-line" data-action="${esc(cancel || 'close-sheet')}">${esc(cancelLabel || '取消')}</button></div></div>
+  </section>`;
+}
+
+// 預計收工：只用來估算睡前空檔。預設在現在之後、最近的整點半點再加一小時。
+function expectedEndSheet(ctx) {
+  const { data, now, ui } = ctx;
+  const s = data.sessions.find((x) => x.id === ui.sheet.sid);
+  if (!s) return '';
+  const half = 30 * MIN;
+  const t = ui.sheet.draftT ?? s.expectedEnd ?? Math.ceil(now / half) * half + 2 * half;
+  return `<div class="sheet-backdrop" data-action="close-sheet"></div>
+  <section class="sheet sheet-small" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2 id="sheet-title">預計幾點收工？</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button></div>
+    <div class="sheet-body"><form class="form" data-form="expected-end"><input type="hidden" name="sid" value="${esc(s.id)}">
+      <p class="fine">這班 ${wdOf(s.start)} ${fmtTime(s.start)} 上班。預計收工只用來估算睡前空檔，不會記成下班時間，也不影響工時。</p>
+      <div class="field-pair big-fields"><label class="field"><span>日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
+      <label class="field field-strong"><span>預計收工</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
+      <div class="sheet-foot btn-pair">${s.expectedEnd != null ? '<button type="button" class="btn btn-line btn-lg" data-action="expected-end-clear">清除預計</button>' : ''}<button class="btn btn-ink btn-lg" type="submit">用這個時間估算</button></div>
+    </form></div>
   </section>`;
 }
 
 export function sheetView(ctx) {
   const sh = ctx.ui.sheet;
   if (!sh) return '';
+  if (sh.type === 'expected-end') return expectedEndSheet(ctx);
   if (sh.type === 'record') return recordSheet(ctx);
   if (sh.type === 'ref') return refSheet(ctx);
   if (sh.type === 'confirm') return confirmSheet(ctx);

@@ -2,7 +2,7 @@ import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
 import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD, normTime, endOnOrAfter } from './time.js';
-import { activeSession, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
+import { activeSession, shiftDateMismatch, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { timelineView } from './views/timeline.js';
 import { weekView } from './views/week.js';
@@ -323,6 +323,14 @@ const handlers = {
     toastUndo(`早安，起床時間 ${fmtTime(nowFn())}`);
   },
   'open-record': (el) => openRecord(el.dataset.wd, el.dataset.step),
+  'expected-end-open': (el) => { ui.sheet = { type: 'expected-end', sid: el.dataset.id }; render(); },
+  'expected-end-clear': () => {
+    const sid = ui.sheet?.sid;
+    if (sid) act.setExpectedEnd(sid, null, nowFn());
+    ui.sheet = null;
+    toast('已清除預計收工');
+    render();
+  },
   'close-sheet': closeSheet,
   'close-sheet-nav': () => { ui.sheet = null; },
   'record-force': () => {
@@ -330,6 +338,8 @@ const handlers = {
     ui.pendingRecord = null;
     if (p) applyRecord(p);
   },
+  'newshift-use-date': () => { const p = ui.pendingShift; ui.pendingShift = null; if (p) createShiftNow(p, dateKey(p.start)); },
+  'newshift-keep-wd': () => { const p = ui.pendingShift; ui.pendingShift = null; if (p) createShiftNow(p, p.wd); },
   'record-cancel': () => {
     // 取消後回到補登面板，保留剛才填的時間。
     const p = ui.pendingRecord;
@@ -511,7 +521,8 @@ const RECORD_ERROR = {
   'break-end-before-start': '休息結束不能早於開始',
   'after-clock-out': '上班時間不能晚於下班時間',
   'after-end': '開始時間不能晚於結束時間',
-  'bad-time': '請填寫日期和時間'
+  'bad-time': '請填寫日期和時間',
+  'expected-past': '預計收工要晚於現在'
 };
 
 // 實際寫入補登，並把「這筆歸到哪個工作日」講清楚。
@@ -538,6 +549,13 @@ function applyRecord(p) {
   toast(`已儲存 ${fmtTime(p.t)}${note}`);
   // 「儲存」只存不關，讓同一頁可以接著補下一個步驟。
   if (p.stay) ui.sheet = { type: 'record', wd: p.wd, step: p.step, sid: p.extra?.sessionId };
+  render();
+}
+
+function createShiftNow(p, wd) {
+  const r = act.createShift(wd, p.start, p.end, nowFn());
+  ui.sheet = { type: 'record', wd, cat: p.back?.cat, step: p.back?.step || 'clockIn', sid: r.id };
+  toast(wd === p.wd ? '已新增班次' : `已新增班次，歸到 ${wdOfKey(wd)} ${fmtMD(wd)}`);
   render();
 }
 
@@ -589,10 +607,21 @@ const forms = {
     const start = fromInputs(f.date.value, f.start.value);
     if (start == null) return;
     const end = f.end.value ? endOnOrAfter(f.date.value, start, f.end.value) : null;
-    const r = act.createShift(f.wd.value, start, end);
-    ui.sheet = { type: 'record', wd: f.wd.value, step: ui.sheet?.step || 'out', sid: r.id };
-    toast('已新增班次');
-    render();
+    const p = { wd: f.wd.value, start, end, back: { ...ui.sheet } };
+    // 開工日期跟工作日對不上（例如在 10/24 工作日填 10/21 開工）：先問要歸到哪一天，不要默默掛在 10/24。
+    const other = shiftDateMismatch(p.wd, start);
+    if (other) {
+      ui.pendingShift = p;
+      ui.sheet = {
+        type: 'confirm', title: '開工日期和工作日不一致',
+        body: `開工是 ${wdOfKey(other)} ${fmtMD(other)} ${fmtTime(start)}，但你在補 ${wdOfKey(p.wd)} ${fmtMD(p.wd)} 工作日。這班要歸到哪一天？`,
+        confirm: `歸到 ${wdOfKey(other)} ${fmtMD(other)}`, action: 'newshift-use-date', tone: 'ink',
+        cancel: 'newshift-keep-wd', cancelLabel: `仍屬 ${wdOfKey(p.wd)} ${fmtMD(p.wd)}`
+      };
+      render();
+      return;
+    }
+    createShiftNow(p, p.wd);
   },
   'ref-time': (f) => {
     const t = fromInputs(f.date.value, f.time.value);
@@ -625,6 +654,19 @@ const forms = {
     });
     ui.mealEdit = null; ui.mealPhoto = undefined;
     toast('已儲存這一餐');
+  },
+  'expected-end': (f) => {
+    const t = fromInputs(f.date.value, f.time.value);
+    const r = act.setExpectedEnd(f.sid.value, t, nowFn());
+    if (!r.ok) {
+      toast(RECORD_ERROR[r.reason] || '這個時間存不到');
+      if (t != null) ui.sheet = { ...ui.sheet, draftT: t };
+      render();
+      return;
+    }
+    ui.sheet = null;
+    toast(`已用 ${fmtTime(t)} 收工估算睡前空檔`);
+    render();
   },
   'sleep-plan': (f) => {
     const s = fromInputs(f.sd.value, f.st.value);
