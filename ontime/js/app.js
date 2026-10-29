@@ -261,6 +261,11 @@ function openRecord(wd, step) {
 }
 
 function closeSheet() {
+  // 主動關掉「修改舊紀錄」的面板 = 放棄修改，不留草稿（免得下次打開以為已經存了）。
+  // 新增用的表單照樣保留草稿。
+  const sh = ui.sheet;
+  if (sh?.type === 'sleep') { clearDraft(`sleep:${sh.id}`); clearDraft(`plan:${sh.id}`); }
+  if (sh?.type === 'meal') clearDraft(`meal:${sh.id}`);
   ui.sheet = null;
   render();
 }
