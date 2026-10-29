@@ -31,6 +31,7 @@ export const ICONS = {
   camera: 'M6 7h1.5L9 5h6l1.5 2H18a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3zM8.5 13.5a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0',
   download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
   upload: 'M12 20V9M7 14l5-5 5 5M5 4h14',
+  cloud: 'M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 9.2 4.5 4.5 0 0 0 7 18z',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3',
   edit: 'M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4',
   gear: 'M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'
@@ -79,6 +80,15 @@ export function money(v) {
 export function seg(key, name, options, value) {
   return `<div class="seg" role="group" aria-label="${esc(name)}">${options.map(([v, label]) =>
     `<button type="button" data-action="seg" data-seg="${esc(key)}" data-value="${esc(v)}" aria-pressed="${v === value}">${esc(label)}</button>`).join('')}</div>`;
+}
+
+// 時間與狀態只用五個詞：實際、計畫、未記錄、待補、已驗證。
+// 每個標記都有文字和形狀符號，不會只靠顏色分辨。
+export const STATE_TEXT = { real: '實際', plan: '計畫', none: '未記錄', pending: '待補', verified: '已驗證' };
+const STATE_MARK = { real: '●', plan: '◌', none: '–', pending: '!' };
+export function stateTag(kind, text) {
+  const mark = kind === 'verified' ? icon('check', 11, 3.4) : `<i class="chip-mark" aria-hidden="true">${STATE_MARK[kind]}</i>`;
+  return `<span class="chip chip-${kind}">${mark}${esc(text || STATE_TEXT[kind])}</span>`;
 }
 
 // 「已驗證」打勾：你手動確認這個時間是對的。預設沒勾。

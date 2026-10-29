@@ -1,9 +1,9 @@
-import { esc, icon, bubble, seg } from '../ui.js';
+import { esc, icon, bubble, seg, stateTag } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, weekStartKey, dayStart, dayEnd, HOUR, daysBetween } from '../time.js';
 import {
   workdayEvents, workdaySpan, sessionsOfWorkday, splitWorkByDay, sessionWorkMs, calendarAllocation, intervalsAround, totalOf, clip, sleepWorkday, shiftsOfWorkday, wakeSpan
 } from '../logic.js';
-import { ribbon, legend, crossBadge, pageHead, dayNav } from './shared.js';
+import { ribbon, legend, pageHead, dayNav } from './shared.js';
 import { refKey } from './today.js';
 import { findWorkdayTargets } from '../actions.js';
 
@@ -39,7 +39,7 @@ function workdayList(data, wd, now) {
       <div class="tl-time${e.plan ? ' is-plan-text' : ''}"><strong>${fmtTime(e.t)}</strong><span>${wdOf(e.t)}</span>${e.plan ? '' : verifyBtn(e)}</div>
       <div class="tl-rail">${bubble(e.icon, e.kind, { plan: e.plan, iconSize: 18 })}<i></i></div>
       <button type="button" class="tl-body" data-action="edit-ref" data-ref="${esc(refKey(e.ref))}" data-t="${e.t}" data-title="${esc(e.title)}" data-plan="${e.plan ? 1 : 0}">
-        <strong>${esc(e.title)}</strong>${e.detail ? `<span>${esc(e.detail)}</span>` : ''}${e.plan ? '<span class="chip chip-plan">計畫</span>' : ''}${e.verified ? '<span class="chip chip-verified">已驗證</span>' : ''}
+        <strong>${esc(e.title)}</strong>${e.detail ? `<span>${esc(e.detail)}</span>` : ''}${e.pending ? stateTag('pending') : e.plan ? stateTag('plan') : ''}${e.verified ? stateTag('verified') : ''}
       </button>
     </li>`;
   }).join('');
@@ -86,7 +86,7 @@ function workdaySummary(data, wd, now) {
   return `<section class="summary-3">
     ${card(pending && !work ? 'is-pending' : '', '工時', pending && !work ? '待補收工' : fmtDur(work), esc(splitText), workStep)}
     ${card('', '通勤', fmtDur(commute), '只計有完整起止的路程', commuteStep)}
-    ${card('k-sleep-soft', '睡眠', sleeps.length ? fmtDur(sleepMs) : '—', sleeping ? '進行中，計至現在' : sleeps.length ? '實際紀錄' : '未記錄', sleepStep)}
+    ${card('k-sleep-soft', '睡眠', sleeps.length ? fmtDur(sleepMs) : '—', sleeping ? '進行中，計至現在' : sleeps.length ? '實際' : '未記錄', sleepStep)}
   </section>`;
 }
 

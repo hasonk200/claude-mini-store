@@ -135,7 +135,18 @@ function bus(facing, cx) {
 
 const STARS = [[60, 30], [140, 70], [210, 22], [300, 52], [380, 16], [460, 78], [540, 36], [620, 62], [700, 20], [780, 48], [860, 26], [940, 66], [1020, 30], [1100, 58], [1170, 18], [250, 96], [500, 104], [820, 98]];
 
-export function heroHTML({ state, now, headline, line, eyebrow, compact = false }) {
+// 收起模式：只留一條細的天色橫條和文字，不畫場景。
+function heroStrip({ now, headline, line, eyebrow }) {
+  const d = new Date(now);
+  const sky = skyOf(d.getHours() + d.getMinutes() / 60);
+  return `<section class="hero hero-strip" data-sky="${sky}" aria-label="今天的狀態">
+    <div class="hero-text"><span class="hero-eyebrow">${esc(eyebrow)}</span><strong class="hero-headline">${esc(headline)}</strong>${line ? `<span class="hero-line">${esc(line)}</span>` : ''}</div>
+    <button type="button" class="hero-toggle" data-action="hero-toggle" aria-expanded="false" aria-label="展開街景">展開</button>
+  </section>`;
+}
+
+export function heroHTML({ state, now, headline, line, eyebrow, compact = false, collapsed = false }) {
+  if (collapsed) return heroStrip({ now, headline, line, eyebrow });
   const W = compact ? 640 : 1200;
   const H = compact ? 300 : 300;
   const dy = H - 240;
@@ -230,6 +241,7 @@ export function heroHTML({ state, now, headline, line, eyebrow, compact = false 
       </g>
     </svg>
     <button type="button" class="hero-poke" data-action="hero-poke" aria-label="跟小人打招呼"></button>
+    <button type="button" class="hero-toggle" data-action="hero-toggle" aria-expanded="true" aria-label="收起街景">收起</button>
     <div class="hero-text">
       <span class="hero-eyebrow">${esc(eyebrow)}</span>
       <strong class="hero-headline">${esc(headline)}</strong>

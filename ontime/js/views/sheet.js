@@ -4,6 +4,7 @@ import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isFlag, ev
 import { findWorkdayTargets } from '../actions.js';
 import { sleepPairForm } from './sleep.js';
 import { mealForm } from './meals.js';
+import { syncSummary } from './shared.js';
 
 const GROUPS = [
   ['去程', ['out', 'ride', 'arrive']],
@@ -103,7 +104,7 @@ function shiftChips(data, sessions, sid, newShift) {
     const on = !newShift && x.id === sid;
     const job = jobOf(data, x.jobId);
     return `<button type="button" class="step-chip shift-chip${on ? ' is-on' : ''}" data-action="rec-shift" data-sid="${esc(x.id)}" aria-pressed="${on}">
-      <span class="step-chip-text"><strong>${shiftRange(x)}</strong><small>${esc(job?.name ?? '工作')} · ${wdOf(x.start)} ${fmtMD(dateKey(x.start))}${dateKey(x.end ?? x.start) !== dateKey(x.start) ? ' · 跨日' : ''}</small></span></button>`;
+      <span class="step-chip-text"><strong>${shiftRange(x)}</strong><small>${esc(job?.name ?? '工作')} · ${wdOf(x.start)} ${fmtMD(dateKey(x.start))}${dateKey(x.end ?? x.start) !== dateKey(x.start) ? ` → ${wdOf(x.end)} ${fmtMD(dateKey(x.end))}` : ''}</small></span></button>`;
   }).join('');
   const add = `<button type="button" class="step-chip shift-chip shift-add${newShift ? ' is-on' : ''}" data-action="rec-newshift" aria-pressed="${newShift}"><span class="step-chip-text"><strong>＋ 新增班次</strong><small>填開工和收工時間</small></span></button>`;
   return `<div class="step-chips shift-chips">${chips}${add}</div>`;
@@ -132,7 +133,10 @@ function recordSheet(ctx) {
   const step = cat && CAT_STEPS[cat].includes(sh.step) ? sh.step : cat ? defaultStepIn(data, wd, cat, sid) : null;
   let n = 0;
   const title = (text) => `<div class="sheet-step-title"><span class="step-no">${++n}</span>${text}</div>`;
-  const cats = `${title('要補什麼？')}<div class="step-chips cat-chips">${CATS.map(([k, label, ic, kind]) => `<button type="button" class="step-chip cat-chip${k === cat ? ' is-on' : ''}" data-action="rec-cat" data-cat="${k}" aria-pressed="${k === cat}">${bubble(ic, kind, { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${label}</strong><small>${k === 'work' || k === 'commute' ? '先選班次' : '直接填'}</small></span></button>`).join('')}</div>`;
+  // 揀好類別之後縮成一行，少捲動；頂部固定顯示「正在補：…」。
+  const cats = `${title('要補什麼？')}<div class="step-chips cat-chips${cat ? ' is-compact' : ''}">${CATS.map(([k, label, ic, kind]) => `<button type="button" class="step-chip cat-chip${k === cat ? ' is-on' : ''}" data-action="rec-cat" data-cat="${k}" aria-pressed="${k === cat}">${bubble(ic, kind, { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${label}</strong>${cat ? '' : `<small>${k === 'work' || k === 'commute' ? '先選班次' : '直接填'}</small>`}</span></button>`).join('')}</div>`;
+  const catLabel = CATS.find(([k]) => k === cat)?.[1];
+  const crumb = cat ? `<div class="sheet-crumb" aria-live="polite">正在補：<strong>${catLabel}${step && cat !== 'meal' ? ` › ${LABEL[step]}` : ''}</strong> · ${wdOfKey(wd)} ${fmtMD(wd)} 工作日</div>` : '';
   let body = '';
   if (!cat) {
     body = '<p class="fine">休息日也可以直接記睡眠和用餐，不用先建立班次。</p>';
@@ -160,6 +164,7 @@ function recordSheet(ctx) {
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2 id="sheet-title">補登</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button></div>
     <div class="sheet-body">
+      ${crumb}
       <label class="field wd-field"><span>工作日</span><input type="date" value="${wd}" data-action="rec-wd"></label>
       ${cats}
       ${body}
@@ -222,11 +227,10 @@ function recordForm(ctx, { wd, step, sid, sess, title }) {
 }
 
 // 沒有班次可以對照時的預覽：「會存成 週六 10/24 15:00 · 補 週六 10/24 工作日」。
+// 跨日直接寫出兩個日期，不用「隔日／前一日」。
 export function freePreviewText(t, wd) {
   if (t == null || Number.isNaN(t)) return '';
-  const k = dateKey(t);
-  const badge = k === wd ? '' : ` <span class="badge-cross">${k > wd ? '隔日' : '前一日'}</span>`;
-  return `會存成 <strong>${wdOf(t)} ${fmtMD(k)} ${fmtTime(t)}</strong>${badge} · 補 ${wdOfKey(wd)} ${fmtMD(wd)} 工作日`;
+  return `會存成 <strong>${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}</strong> · 補 ${wdOfKey(wd)} ${fmtMD(wd)} 工作日`;
 }
 
 // 「會存成 週二 10/20 07:05 · 屬於 23:00–07:00 這班」。補登時即時更新，讓你一眼看到日期對不對。
@@ -332,9 +336,24 @@ function mealSheet(ctx) {
   return sheetWrap('修改這一餐', mealForm({ data, now, ui, meal: m, key: `meal:${m.id}`, inSheet: true }));
 }
 
+// 同步狀態詳情：講清楚紀錄現在在哪裡、出了甚麼問題、可以怎樣處理。
+function syncSheet(ctx) {
+  const sum = syncSummary(ctx.sync?.state, ctx.sync?.status);
+  const st = ctx.sync?.status || {};
+  const btn = {
+    signin: '<button type="button" class="btn btn-ink btn-block" data-action="sync-in">登入 Google 同步</button>',
+    retry: '<button type="button" class="btn btn-ink btn-block" data-action="sync-retry">再試一次</button>',
+    settings: '<a class="btn btn-line btn-block" href="#/settings" data-action="close-sheet-nav">到「我的」匯出備份或管理同步</a>'
+  };
+  return sheetWrap('同步狀態', `<div class="sync-detail is-${sum.tone}" role="status"><strong>${esc(sum.line)}</strong><span>${esc(sum.detail)}</span></div>
+    <dl class="dl"><dt>這部裝置</dt><dd>${st.saveError ? '未能儲存' : st.lastSaved ? `最後儲存 ${fmtTime(st.lastSaved)}` : '已儲存'}${st.persisted ? ' · 不會被瀏覽器自動清除' : ''}</dd></dl>
+    <div class="stack-tight">${sum.actions.map((a) => btn[a]).join('')}</div>`);
+}
+
 export function sheetView(ctx) {
   const sh = ctx.ui.sheet;
   if (!sh) return '';
+  if (sh.type === 'sync') return syncSheet(ctx);
   if (sh.type === 'sleep') return sleepSheet(ctx);
   if (sh.type === 'meal') return mealSheet(ctx);
   if (sh.type === 'expected-end') return expectedEndSheet(ctx);

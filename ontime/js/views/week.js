@@ -90,7 +90,7 @@ function weekSummary(data, ws, now) {
   const off = days.filter((k) => data.dayMarks.some((m) => m.date === k)).length;
   const plans = days.filter((k) => data.sleeps.some((s) => sleepWorkday(s, data) === k)).length;
   const jobs = Object.entries(count).map(([n, c]) => `${esc(n)} ${c}`).join(' · ') || '沒有排班';
-  return `<section class="card card-ink kpi-card"><span class="muted-ink">本週工時（已做 + 預計）</span>
+  return `<section class="card card-ink kpi-card"><span class="muted-ink">本週工時（實際 + 計畫）</span>
     <div class="kpi-grid">
       <div><strong>${fmtDur(planned)}</strong><span>工時</span></div>
       <div><strong class="c-lime">${Object.values(count).reduce((a, b) => a + b, 0)}</strong><span>${jobs}</span></div>
@@ -174,7 +174,7 @@ function dayPanel(data, ui, now) {
   const off = data.dayMarks.some((m) => m.date === k);
   const list = shifts.map((sh) => {
     const done = data.sessions.some((s) => s.shiftId === sh.id);
-    return `<li><i class="sw k-${jobOf(data, sh.jobId)?.color === 'deliv' ? 'deliv' : 'work'}"></i><span>${esc(jobOf(data, sh.jobId)?.name ?? '')} ${fmtTime(sh.start)} → ${dateKey(sh.end) !== k ? '隔日 ' : ''}${fmtTime(sh.end)}${done ? '（已有實際出勤）' : ''}</span>${done ? '' : `<button type="button" class="icon-btn icon-btn-sm" data-action="shift-delete" data-id="${sh.id}" aria-label="刪除班次">${icon('trash', 16)}</button>`}</li>`;
+    return `<li><i class="sw k-${jobOf(data, sh.jobId)?.color === 'deliv' ? 'deliv' : 'work'}"></i><span>${esc(jobOf(data, sh.jobId)?.name ?? '')} ${fmtTime(sh.start)} → ${dateKey(sh.end) !== k ? `${wdOfKey(dateKey(sh.end))} ${fmtMD(dateKey(sh.end))} ` : ''}${fmtTime(sh.end)}${done ? '（已有實際出勤）' : ''}</span>${done ? '' : `<button type="button" class="icon-btn icon-btn-sm" data-action="shift-delete" data-id="${sh.id}" aria-label="刪除班次">${icon('trash', 16)}</button>`}</li>`;
   }).join('');
   const jobOpts = data.jobs.map((j) => `<option value="${j.id}">${esc(j.name)}</option>`).join('');
   return `<div class="day-panel">
@@ -195,9 +195,9 @@ export function weekView(ctx) {
   const we = addDays(ws, 6);
   const tools = `${seg('weekMode', '排列方式', [['workday', '按工作日'], ['calendar', '按日曆日']], ui.weekMode)}
     <div class="day-switch"><button type="button" class="icon-btn" data-action="week-shift" data-dir="-1" aria-label="上一週">${icon('left', 18, 2)}</button><button type="button" class="icon-btn" data-action="week-shift" data-dir="1" aria-label="下一週">${icon('right', 18, 2)}</button></div>`;
-  return `${pageHead('一週作息與班表', `${fmtMD(ws)} – ${fmtMD(we)} · 實際、預計、休假一起看`, tools)}
+  return `${pageHead('一週作息與班表', `${fmtMD(ws)} – ${fmtMD(we)} · 實際、計畫、休假一起看`, tools)}
     <section class="card"><p class="muted small">${ui.weekMode === 'workday' ? '每行是一個工作日；夜班和下班後的事不會被午夜切開。' : '每行是一個日曆日 00:00–24:00；夜班在午夜切開，標示「接續」。'}</p>${weekGrid(data, ws, ui.weekMode, now)}
-    <div class="legend">${(data.jobs.length ? data.jobs : [{ name: '工作', color: 'work' }]).map((j) => `<span><i class="sw k-${j.color === 'deliv' ? 'deliv' : 'work'}"></i>${esc(j.name)}</span>`).join('')}<span><i class="sw k-commute"></i>通勤</span><span><i class="sw k-sleep"></i>睡眠</span><span><i class="sw k-meal"></i>用餐</span><span><i class="sw is-plan-sw"></i>預計</span></div></section>
+    <div class="legend">${(data.jobs.length ? data.jobs : [{ name: '工作', color: 'work' }]).map((j) => `<span><i class="sw k-${j.color === 'deliv' ? 'deliv' : 'work'}"></i>${esc(j.name)}</span>`).join('')}<span><i class="sw k-commute"></i>通勤</span><span><i class="sw k-sleep"></i>睡眠</span><span><i class="sw k-meal"></i>用餐</span><span><i class="sw is-plan-sw"></i>計畫</span></div></section>
     <div class="grid-1-2">${weekSummary(data, ws, now)}${templatesCard(data, ui)}</div>
     ${monthCalendar(data, ui, now)}`;
 }

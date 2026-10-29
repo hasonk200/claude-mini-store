@@ -20,10 +20,17 @@ const data = () => ({
   meals: [{ id: 'm', start: at('2026-10-24', '12:00'), end: at('2026-10-24', '12:30'), name: '便當', place: '公司', confirmed: true }]
 });
 
-test('最近睡眠：整行可點來修改，列表上沒有刪除按鈕；剛改好的那行亮一下', () => {
+test('最近睡眠（手機）：每筆是可點的一行，列表上沒有刪除按鈕；剛改好的那行有標示和「已更新」', () => {
   const html = sleepView({ data: data(), now, ui: { drafts: {}, flash: 'sleep:a' }, wd: '2026-10-24', isDesktop: false });
-  assert.match(html, /<tr class="row-click is-flash" data-action="sleep-open" data-id="a">/);
+  assert.match(html, /<li class="is-flash"><button type="button" class="rec-row" data-action="sleep-open" data-id="a"/);
+  assert.match(html, /已更新/);
   assert.match(html, /<li class="row-click" data-action="sleep-open" data-id="p">/);
+  assert.doesNotMatch(html, /data-action="sleep-delete"/);
+});
+
+test('最近睡眠（桌面）：表格整行可點', () => {
+  const html = sleepView({ data: data(), now, ui: { drafts: {}, flash: 'sleep:a' }, wd: '2026-10-24', isDesktop: true });
+  assert.match(html, /<tr class="row-click is-flash" data-action="sleep-open" data-id="a">/);
   assert.doesNotMatch(html, /data-action="sleep-delete"/);
 });
 
@@ -47,7 +54,7 @@ test('計畫也可以點來修改；起床早過入睡要拒絕', () => {
 
 test('用餐列表：點一餐就打開修改，列表上不再有刪除；修改面板保留原本的內容', () => {
   const html = mealsView({ data: data(), now, ui: { drafts: {}, flash: 'meal:m' }, wd: '2026-10-24', isDesktop: false });
-  assert.match(html, /<li class="card meal-item row-click is-flash" data-action="meal-open" data-id="m">/);
+  assert.match(html, /<li class="is-flash"><button type="button" class="rec-row meal-row" data-action="meal-open" data-id="m"/);
   assert.doesNotMatch(html, /data-action="meal-delete" data-id="m"/);
   const sheet = sheetView({ data: data(), now, ui: { drafts: {}, sheet: { type: 'meal', id: 'm' } } });
   assert.match(sheet, /修改這一餐/);

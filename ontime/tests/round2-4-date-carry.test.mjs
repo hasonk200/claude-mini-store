@@ -38,9 +38,9 @@ test('用餐頁切到週六：新表單日期是週六，預覽歸屬週六工�
   assert.match(html, /會存成 <strong>週六 10\/24 08:54<\/strong> · 歸屬 週六 10\/24 工作日/);
 });
 
-test('預覽在日期跟工作日不同時加標記', () => {
-  assert.match(freePreviewText(at('2026-10-25', '02:00'), past), /隔日/);
-  assert.match(freePreviewText(at('2026-10-23', '22:00'), past), /前一日/);
+test('預覽在日期跟工作日不同時直接寫出兩個日期（第三輪：不用「隔日／前一日」）', () => {
+  assert.match(freePreviewText(at('2026-10-25', '02:00'), past), /會存成 <strong>週日 10\/25 02:00<\/strong> · 補 週六 10\/24 工作日/);
+  assert.doesNotMatch(freePreviewText(at('2026-10-23', '22:00'), past), /隔日|前一日/);
 });
 
 test('今天頁切到舊工作日：打卡按鈕講明記錄的是現在；看今天時不顯示', () => {

@@ -65,6 +65,13 @@ test('預設時段不會在未來', () => {
   assert.equal(p.end - p.start, 8 * HOUR);
 });
 
+test('預設時段避開已有紀錄的晚上（第三輪：打開表單不會一開始就顯示重疊錯誤）', () => {
+  const d = { ...emptyData(), sleeps: [{ id: 'a', start: at('2026-10-23', '23:30'), end: at('2026-10-24', '07:20') }] };
+  const p = defaultSleepPair('2026-10-24', now, d);
+  assert.equal(p.start, at('2026-10-22', '23:00'));
+  assert.equal(p.end, at('2026-10-23', '07:00'));
+});
+
 test('睡眠頁有「補記睡眠」表單；剛存好的一筆顯示長度和歸屬', () => {
   const d = { ...emptyData(), sleeps: [{ id: 'a', start: at('2026-10-22', '23:30'), end: at('2026-10-23', '07:15') }] };
   const html = sleepView({ data: d, now, ui: { drafts: {}, sleepSaved: 'a' }, wd: '2026-10-24', isDesktop: false });

@@ -1,6 +1,6 @@
 // 幾個頁面共用的片段：時間軸色條、工作日標籤。
 import { esc, icon, KIND } from '../ui.js';
-import { dateKey, fmtTime, wdOf, fmtDayMD, HOUR, addDays, dayStart } from '../time.js';
+import { dateKey, fmtTime, wdOf, fmtDayMD, fmtMD, HOUR, addDays, dayStart } from '../time.js';
 import { intervalsAround } from '../logic.js';
 
 const LANES = [
@@ -64,7 +64,7 @@ function segHTML(x, a, b) {
   const e = Math.min(x.b, b);
   const w = ((e - s) / (b - a)) * 100;
   const label = w > 9 && x.label ? `<span>${esc(x.label)}</span>` : '';
-  return `<div class="seg-bar k-${x.kind}${x.plan ? ' is-plan' : ''}" style="left:${pct(s, a, b)};width:${w.toFixed(2)}%" title="${esc(KIND[x.kind]?.label || '')} ${fmtTime(x.a)}–${fmtTime(x.b)}${x.plan ? '（預計）' : ''}">${label}</div>`;
+  return `<div class="seg-bar k-${x.kind}${x.plan ? ' is-plan' : ''}" style="left:${pct(s, a, b)};width:${w.toFixed(2)}%" title="${esc(KIND[x.kind]?.label || '')} ${fmtTime(x.a)}–${fmtTime(x.b)}${x.plan ? '（計畫）' : ''}">${label}</div>`;
 }
 
 // 單一色條（手機）或分行色條（桌面）。
@@ -91,18 +91,28 @@ export function ribbon(data, a, b, now, { lanes = false } = {}) {
 export function legend(withPlan = true, data = null) {
   const jobs = data && data.jobs.length ? data.jobs.map((j) => [j.color === 'deliv' ? 'deliv' : 'work', j.name]) : [['work', '工作']];
   const items = [...jobs, ['commute', '通勤'], ['meal', '用餐'], ['sleep', '睡眠']];
-  return `<div class="legend">${items.map(([k, l]) => `<span><i class="sw k-${k}"></i>${esc(l)}</span>`).join('')}${withPlan ? '<span><i class="sw is-plan-sw"></i>預計</span><span><i class="sw is-unknown-sw"></i>未知</span>' : ''}</div>`;
+  return `<div class="legend">${items.map(([k, l]) => `<span><i class="sw k-${k}"></i>${esc(l)}</span>`).join('')}${withPlan ? '<span><i class="sw is-plan-sw"></i>計畫</span><span><i class="sw is-unknown-sw"></i>未記錄</span>' : ''}</div>`;
 }
 
 export function wdLabel(wd) {
   return `${fmtDayMD(wd)}`;
 }
 
-export function crossBadge(t, wd) {
-  const k = dateKey(t);
-  if (k === wd) return '';
-  const diff = Math.round((dayStart(k) - dayStart(wd)) / (24 * HOUR));
-  return `<span class="badge-cross">${diff > 0 ? '隔日 +' + diff : '前一日'}</span>`;
+// 同步狀態的摘要：首頁入口、側邊欄、同步面板共用。sy = syncState()，st = store.status()。
+export function syncSummary(sy = {}, st = {}) {
+  const time = (t) => (t ? fmtTime(t) : '');
+  if (st.saveError) {
+    return { tone: 'warn', short: '未能儲存', line: '未能儲存', detail: `${st.saveError}。請盡快到「我的」匯出備份。`, actions: ['settings'] };
+  }
+  switch (sy.status) {
+    case 'cloud': return { tone: 'ok', short: '已同步', line: '已同步到雲端', detail: `${sy.user?.email ? `${sy.user.email} · ` : ''}${sy.lastSync ? `最後同步 ${time(sy.lastSync)}` : ''}`, actions: ['settings'] };
+    case 'loading': return { tone: 'off', short: '同步中', line: '正在同步…', detail: '已存在這部裝置，正在上傳到雲端。', actions: [] };
+    case 'signin': return { tone: 'off', short: '待同步', line: '已存在這部裝置，待同步', detail: '雲端同步還沒登入。紀錄已安全存在這部裝置。', actions: ['signin'] };
+    case 'offline': return { tone: 'off', short: '待同步', line: '已存在這部裝置，待同步', detail: sy.message || '離線中，連線後會自動上傳。', actions: ['retry'] };
+    case 'error': return { tone: 'warn', short: '同步失敗', line: '已存在這部裝置，待同步', detail: sy.message || '同步失敗，稍後會再試。', actions: ['retry', 'settings'] };
+    case 'full': return { tone: 'warn', short: '雲端已滿', line: '已存在這部裝置，待同步', detail: sy.message || '雲端空間不足：請匯出備份，再刪除舊紀錄。', actions: ['settings'] };
+    default: return { tone: 'ok', short: '已存本機', line: '已存在這部裝置', detail: '沒有開雲端同步，紀錄只在這部裝置。', actions: ['signin'] };
+  }
 }
 
 export function emptyHint(title, body, actionHTML = '') {

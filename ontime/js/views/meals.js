@@ -1,4 +1,4 @@
-import { esc, icon, verifyToggle } from '../ui.js';
+import { esc, icon, verifyToggle, stateTag } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, toDateInput, toTimeInput, MIN, fromInputs, normTime } from '../time.js';
 import { mealWorkday, sessionsOfWorkday, frequentMealValues, timeOnWorkday } from '../logic.js';
 import { lastMealLine } from './today.js';
@@ -43,7 +43,7 @@ export function mealForm({ data, now, ui, meal = null, key, defaultStart, inShee
       <div class="cross-note" data-meal-preview aria-live="polite">${mealPreview(data, t, now)}</div>
       ${verifyToggle(verified)}
       <div class="field-pair"><label class="field"><span>結束（可空白）</span><input type="time" name="end" value="${esc(endT)}"></label>
-      <label class="field"><span>狀態</span><select name="confirmed"><option value="1"${confirmed !== '0' ? ' selected' : ''}>已經吃了</option><option value="0"${confirmed === '0' ? ' selected' : ''}>只是安排</option></select></label></div>
+      <label class="field"><span>狀態</span><select name="confirmed"><option value="1"${confirmed !== '0' ? ' selected' : ''}>已經吃了</option><option value="0"${confirmed === '0' ? ' selected' : ''}>只是計畫</option></select></label></div>
       <details class="more"${openMore ? ' open' : ''}><summary>餐點、地點、備註、相片（選填）</summary>
         <div class="field-pair"><div class="stack-tight"><label class="field"><span>餐點</span><input name="name" value="${esc(name)}" placeholder="例如：便當"></label>${chips(favNames, 'name')}</div>
         <div class="stack-tight"><label class="field"><span>地點</span><input name="place" value="${esc(place)}" placeholder="例如：公司休息室"></label>${chips(favPlaces, 'place')}</div></div>
@@ -73,21 +73,21 @@ export function mealsView(ctx) {
   const meals = data.meals.filter((m) => mealWorkday(m, data, now) === wd).sort((a, b) => a.start - b.start);
   const pending = data.meals.filter((m) => !m.confirmed && m.start >= now - 3 * 60 * MIN).sort((a, b) => a.start - b.start);
   const sessions = sessionsOfWorkday(data, wd);
-  const pendingHTML = pending.map((m) => `<section class="card card-suggest"><div class="card-head"><span class="eyebrow c-meal">安排 · 尚未確認</span><span class="muted small">${wdOf(m.start)} ${fmtMD(dateKey(m.start))}</span></div>
+  const pendingHTML = pending.map((m) => `<section class="card card-suggest"><div class="card-head"><span class="eyebrow c-meal">計畫 · 未確認</span><span class="muted small">${wdOf(m.start)} ${fmtMD(dateKey(m.start))}</span></div>
     <strong class="suggest-title">${fmtTime(m.start)} ${esc(m.name || '用餐')}</strong>
     <div class="btn-pair"><button type="button" class="btn btn-ink" data-action="meal-confirm" data-id="${m.id}">確認已吃</button><button type="button" class="btn btn-line" data-action="meal-delete" data-id="${m.id}">沒有吃</button></div></section>`).join('');
-  // 點整筆就打開修改；刪除放在修改面板裡（次要動作）。
+  // 點整筆就打開修改；刪除放在修改面板裡（次要動作）。時間、內容、相片固定在同一位置。
   const list = meals.map((m) => {
     const during = sessions.some((s) => m.start >= s.start && m.start <= (s.end ?? now));
-    return `<li class="card meal-item row-click${ui.flash === `meal:${m.id}` ? ' is-flash' : ''}" data-action="meal-open" data-id="${m.id}">
-      ${m.photo ? `<img class="meal-photo" src="${esc(m.photo)}" alt="${esc(m.name || '用餐')}的相片">` : `<span class="meal-photo is-empty">${icon('meal', 22)}</span>`}
-      <div class="meal-text"><div class="meal-title"><strong>${esc(m.name || '用餐')}</strong>${during ? '<span class="chip chip-work">工作中</span>' : ''}${m.confirmed ? '' : '<span class="chip chip-plan">安排</span>'}</div>
-      <span class="meal-time">${fmtTime(m.start)}${m.end ? '–' + fmtTime(m.end) : ''} · ${wdOf(m.start)}</span>
-      ${m.place || m.note ? `<span class="muted small">${esc([m.place, m.note].filter(Boolean).join(' · '))}</span>` : ''}</div>
-      <div class="meal-actions"><button type="button" class="icon-btn icon-btn-sm" data-action="meal-open" data-id="${m.id}" aria-label="修改這一餐">${icon('edit', 16)}</button></div>
-    </li>`;
+    const fresh = ui.flash === `meal:${m.id}`;
+    return `<li class="${fresh ? 'is-flash' : ''}"><button type="button" class="rec-row meal-row" data-action="meal-open" data-id="${m.id}" aria-label="修改這一餐：${esc(m.name || '用餐')} ${wdOf(m.start)} ${fmtTime(m.start)}">
+      <span class="rec-date"><strong>${fmtTime(m.start)}</strong><small>${m.end ? `至 ${fmtTime(m.end)}` : wdOf(m.start)}</small></span>
+      <span class="rec-span"><strong>${esc(m.name || '用餐')}</strong><small>${[m.place, m.note].filter(Boolean).map(esc).join(' · ') || `${wdOf(m.start)} ${fmtMD(dateKey(m.start))}`}</small>
+        <span class="rec-tags">${m.confirmed ? '' : stateTag('plan')}${during ? '<span class="chip chip-work">工作中</span>' : ''}${fresh ? '<span class="saved-tag" role="status">已更新</span>' : ''}</span></span>
+      ${m.photo ? `<img class="rec-photo" src="${esc(m.photo)}" alt="">` : `<span class="rec-photo is-empty" aria-hidden="true">${icon('meal', 18)}</span>`}
+    </button></li>`;
   }).join('');
-  const listHTML = `${dayNav('wd-shift', `${wdOfKey(wd)}工作日 · ${fmtMD(wd)}`, `${meals.length} 餐 · 點一餐可以修改`)}<ul class="meal-list">${list || '<li class="card muted">這個工作日還沒有用餐紀錄。</li>'}</ul>`;
+  const listHTML = `${dayNav('wd-shift', `${wdOfKey(wd)}工作日 · ${fmtMD(wd)}`, `${meals.length} 餐 · 點一餐可以修改`)}${list ? `<section class="card card-flush"><ul class="rec-list">${list}</ul></section>` : '<p class="card muted">這個工作日還沒有用餐紀錄。</p>'}`;
   const form = `<section class="card" aria-label="記一餐"><div class="card-head"><h2 class="card-title">記一餐</h2></div>
     ${mealForm({ data, now, ui, key: 'meal:new', defaultStart: timeOnWorkday(data, wd, now) })}</section>`;
   const body = ctx.isDesktop
