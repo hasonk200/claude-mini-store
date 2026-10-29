@@ -507,7 +507,7 @@ export function workdayEvents(data, wd, now) {
     if (s.end != null) {
       ev.push({ t: s.end, step: 'clockOut', kind: 'work', icon: 'flag', title: '下班', detail: `本班 ${fmtShort(sessionWorkMs(s, now))}`, ref: { type: 'session', id: s.id, field: 'end' } });
     } else if (s.endPending) {
-      ev.push({ t: s.start, step: 'clockOut', kind: 'work', icon: 'flag', title: '待補收工', detail: '收工時間未知，點這裡補上', plan: true, ref: { type: 'session', id: s.id, field: 'end' } });
+      ev.push({ t: s.start, step: 'clockOut', kind: 'work', icon: 'flag', title: '待補收工', detail: '收工時間未知，點這裡補上', plan: true, pending: true, ref: { type: 'session', id: s.id, field: 'end' } });
     } else if (sh) {
       ev.push({ t: sh.end, step: 'clockOut', kind: 'work', icon: 'flag', title: '預計下班', plan: true, ref: { type: 'session', id: s.id, field: 'end' } });
     }
@@ -657,6 +657,31 @@ export function nextSleepPlan(data, now) {
   return data.sleeps
     .filter((s) => s.start == null && s.planStart != null && s.planStart > now && s.planStart - now <= 8 * 24 * HOUR)
     .sort((a, b) => a.planStart - b.planStart)[0] || null;
+}
+
+// 首頁「需要補的紀錄」：最多列出 4 項，每項都帶補登要用的工作日和步驟。
+export function pendingItems(data, now) {
+  const out = [];
+  for (const s of data.sessions) {
+    if (s.end != null || !s.endPending) continue;
+    const job = jobOf(data, s.jobId);
+    out.push({ kind: 'pending-end', t: s.start, wd: workdayOfSession(s, data), step: 'clockOut', job: job?.name ?? '工作' });
+  }
+  // 剛收工、超過回程時間還沒記到家。
+  const backMs = (data.settings?.commuteBackMin ?? 45) * MIN;
+  for (const s of data.sessions) {
+    if (s.end == null || s.end > now || now - s.end > 16 * HOUR) continue;
+    const j = journeyOfSession(data, s);
+    if (j && j.home == null && now - (j.leave ?? s.end) > backMs) out.push({ kind: 'home', t: s.end, wd: workdayOfSession(s, data), step: 'home' });
+  }
+  const sleeping = data.sleeps.some((x) => x.start != null && x.end == null);
+  const slept = data.sleeps.some((x) => x.start != null && x.start < now && (x.end ?? now) > now - 24 * HOUR);
+  if (!sleeping && !slept) out.push({ kind: 'sleep', t: now - 24 * HOUR, wd: null, step: 'sleepPair' });
+  for (const m of data.meals) {
+    if (m.confirmed || m.start > now - 30 * MIN || now - m.start > 24 * HOUR) continue;
+    out.push({ kind: 'meal', t: m.start, id: m.id, name: m.name || '用餐' });
+  }
+  return out.sort((a, b) => b.t - a.t).slice(0, 4);
 }
 
 // 新表單的預設時間：看的是現在這個工作日就用現在；

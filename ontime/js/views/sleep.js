@@ -2,7 +2,7 @@ import { esc, icon, bubble } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, HOUR, DAY, dayStart, toDateInput, toTimeInput, at, fromInputs, normTime } from '../time.js';
 import { sleepWorkday, sleepByWorkday, sleepAverage, nextSleepPlan, latestOpenSleep } from '../logic.js';
 import { checkSleepPair } from '../actions.js';
-import { pageHead, crossBadge } from './shared.js';
+import { pageHead } from './shared.js';
 
 function ring(frac) {
   const r = 90;
@@ -72,15 +72,20 @@ export const SLEEP_PAIR_ERROR = {
   missing: '找不到這筆睡眠，可能已經刪除'
 };
 
-// 補記的預設時段：這個工作日晚上 23:00 → 隔天 07:00；還沒發生就往前一晚。
-export function defaultSleepPair(wd, now) {
+// 補記的預設時段：這個工作日晚上 23:00 → 隔天 07:00；還沒發生、或者那晚已經有紀錄，就往前一晚找。
+export function defaultSleepPair(wd, now, data = null) {
+  const taken = (a, b) => (data?.sleeps || []).some((x) => x.start != null && x.start < b && (x.end ?? now) > a);
   let k = wd;
-  for (let i = 0; i < 3; i++) {
-    const end = at(addDays(k, 1), '07:00');
-    if (end <= now) return { start: at(k, '23:00'), end };
+  let first = null;
+  for (let i = 0; i < 8; i++) {
+    const p = { start: at(k, '23:00'), end: at(addDays(k, 1), '07:00') };
+    if (p.end <= now) {
+      first = first || p;
+      if (!taken(p.start, p.end)) return p;
+    }
     k = addDays(k, -1);
   }
-  return { start: at(k, '23:00'), end: at(addDays(k, 1), '07:00') };
+  return first || { start: at(k, '23:00'), end: at(addDays(k, 1), '07:00') };
 }
 
 // 補記／修改睡眠時的即時預覽：長度、跨午夜、歸屬哪個工作日；不合理就直接講。
@@ -100,7 +105,7 @@ export function sleepPairPreview(data, start, end, { id = null, now } = {}) {
 export function sleepPairForm({ data, now, ui, sleep = null, key, wd, inSheet = false }) {
   const dr = ui.drafts?.[key] || {};
   const v = (k, fallback) => (k in dr ? dr[k] : fallback);
-  const def = sleep ? { start: sleep.start, end: sleep.end } : defaultSleepPair(wd, now);
+  const def = sleep ? { start: sleep.start, end: sleep.end } : defaultSleepPair(wd, now, data);
   const sd = v('sd', toDateInput(def.start));
   const st = v('st', toTimeInput(def.start));
   const ed = v('ed', def.end != null ? toDateInput(def.end) : '');
@@ -140,7 +145,7 @@ function plans(data, now, ui) {
   const defEnd = next ? next.planEnd : now + 9 * HOUR;
   const reuse = last ? `<button type="button" class="btn btn-soft-night btn-block" data-action="sleep-reuse">沿用最近一次時段 ${fmtTime(last.start)}–${fmtTime(last.end)}</button>` : '';
   const list = data.sleeps.filter((s) => s.start == null && s.planStart != null && s.planStart > now).sort((a, b) => a.planStart - b.planStart).slice(0, 5)
-    .map((s) => `<li class="row-click${ui.flash === `sleep:${s.id}` ? ' is-flash' : ''}" data-action="sleep-open" data-id="${s.id}">${bubble('moon', 'sleep', { plan: true, size: 'sm', iconSize: 15 })}<span>${wdOf(s.planStart)} ${fmtMD(dateKey(s.planStart))} ${fmtTime(s.planStart)} → ${fmtTime(s.planEnd)}</span><button type="button" class="icon-btn icon-btn-sm" data-action="sleep-open" data-id="${s.id}" aria-label="修改計畫">${icon('edit', 16)}</button></li>`).join('');
+    .map((s) => `<li class="row-click${ui.flash === `sleep:${s.id}` ? ' is-flash' : ''}" data-action="sleep-open" data-id="${s.id}">${bubble('moon', 'sleep', { plan: true, size: 'sm', iconSize: 15 })}<span>${wdOf(s.planStart)} ${fmtMD(dateKey(s.planStart))} ${fmtTime(s.planStart)} → ${dateKey(s.planEnd) !== dateKey(s.planStart) ? `${wdOf(s.planEnd)} ${fmtMD(dateKey(s.planEnd))} ` : ''}${fmtTime(s.planEnd)}${ui.flash === `sleep:${s.id}` ? ' <span class="saved-tag" role="status">已更新</span>' : ''}</span><button type="button" class="icon-btn icon-btn-sm" data-action="sleep-open" data-id="${s.id}" aria-label="修改計畫">${icon('edit', 16)}</button></li>`).join('');
   return `<section class="card card-plan" aria-label="睡眠計畫">
     <div class="card-head"><div><span class="eyebrow">下一次計畫</span><h2 class="card-title">${next ? `${wdOf(next.planStart)} ${fmtTime(next.planStart)} → ${fmtTime(next.planEnd)}` : '未設定'}</h2></div><span class="chip chip-plan">計畫</span></div>
     ${list ? `<ul class="plain-list">${list}</ul>` : ''}
@@ -153,9 +158,10 @@ function plans(data, now, ui) {
   </section>`;
 }
 
-function history(data, now, ui) {
+function history(data, now, ui, isDesktop = false) {
   const list = data.sleeps.filter((s) => s.start != null).sort((a, b) => b.start - a.start).slice(0, 8);
   if (!list.length) return '';
+  if (!isDesktop) return historyCards(data, now, ui, list);
   const rows = list.map((s) => {
     const wd = sleepWorkday(s, data);
     const gap = Math.round((dayStart(dateKey(s.start)) - dayStart(wd)) / DAY);
@@ -164,11 +170,29 @@ function history(data, now, ui) {
     const longBadge = ms > DAY ? `<span class="badge-cross is-warn">超過 24 小時</span>` : '';
     // 點整行就修改；刪除放在修改面板裡。
     return `<tr class="row-click${ui.flash === `sleep:${s.id}` ? ' is-flash' : ''}" data-action="sleep-open" data-id="${s.id}"><td>${wdOfKey(wd)} ${fmtMD(wd)} ${gapBadge}</td>
-      <td>${wdOf(s.start)} ${fmtMD(dateKey(s.start))} ${fmtTime(s.start)} ${crossBadge(s.start, wd)}</td>
-      <td>${s.end ? `${wdOf(s.end)} ${fmtMD(dateKey(s.end))} ${fmtTime(s.end)} ${crossBadge(s.end, dateKey(s.start))}` : '<span class="chip chip-real">進行中</span>'}</td>
-      <td class="t-right"><b>${fmtDur(ms)}</b> ${longBadge}<button type="button" class="icon-btn icon-btn-sm" data-action="sleep-open" data-id="${s.id}" aria-label="修改這筆睡眠">${icon('edit', 15)}</button></td></tr>`;
+      <td>${wdOf(s.start)} ${fmtMD(dateKey(s.start))} ${fmtTime(s.start)}</td>
+      <td>${s.end ? `${wdOf(s.end)} ${fmtMD(dateKey(s.end))} ${fmtTime(s.end)}` : '<span class="chip chip-real">進行中</span>'}</td>
+      <td class="t-right"><b>${fmtDur(ms)}</b> ${longBadge}${ui.flash === `sleep:${s.id}` ? '<span class="saved-tag" role="status">已更新</span>' : ''}<button type="button" class="icon-btn icon-btn-sm" data-action="sleep-open" data-id="${s.id}" aria-label="修改這筆睡眠">${icon('edit', 15)}</button></td></tr>`;
   }).join('');
   return `<section class="card card-flush"><div class="card-head"><h2 class="card-title">最近的睡眠</h2><span class="muted small">點一行可以修改</span></div><div class="table-wrap"><table class="table"><thead><tr><th scope="col">所屬工作日</th><th scope="col">入睡</th><th scope="col">起床</th><th scope="col" class="t-right">時數</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+}
+
+// 手機：每筆睡眠一行，可直接點；歸屬工作日、入睡→起床、時數固定在同一位置。
+function historyCards(data, now, ui, list) {
+  const rows = list.map((s) => {
+    const wd = sleepWorkday(s, data);
+    const ms = (s.end ?? now) - s.start;
+    const gap = Math.abs(Math.round((dayStart(dateKey(s.start)) - dayStart(wd)) / DAY));
+    const warn = [gap >= 2 ? `與入睡差 ${gap} 天` : '', ms > DAY ? '超過 24 小時' : ''].filter(Boolean);
+    const fresh = ui.flash === `sleep:${s.id}`;
+    const endText = s.end ? `${wdOf(s.end)} ${fmtMD(dateKey(s.end))}` : '還沒起床';
+    return `<li class="${fresh ? 'is-flash' : ''}"><button type="button" class="rec-row" data-action="sleep-open" data-id="${s.id}" aria-label="修改睡眠：${wdOf(s.start)} ${fmtMD(dateKey(s.start))} ${fmtTime(s.start)} 到 ${s.end ? `${endText} ${fmtTime(s.end)}` : '還沒起床'}，${fmtDur(ms)}">
+      <span class="rec-date"><strong>${wdOfKey(wd)} ${fmtMD(wd)}</strong><small>工作日</small></span>
+      <span class="rec-span"><strong>${fmtTime(s.start)} → ${s.end ? fmtTime(s.end) : '進行中'}</strong><small>${wdOf(s.start)} ${fmtMD(dateKey(s.start))} → ${endText}</small>${warn.length ? `<small class="c-danger">${warn.join(' · ')}</small>` : ''}</span>
+      <span class="rec-dur"><strong>${fmtDur(ms)}</strong>${fresh ? '<small class="saved-tag" role="status">已更新</small>' : `<small>${s.end ? '實際' : '進行中'}</small>`}</span>
+    </button></li>`;
+  }).join('');
+  return `<section class="card card-flush"><div class="card-head"><h2 class="card-title">最近的睡眠</h2><span class="muted small">點一行可以修改</span></div><ul class="rec-list">${rows}</ul></section>`;
 }
 
 export function sleepView(ctx) {
@@ -176,7 +200,7 @@ export function sleepView(ctx) {
   const head = pageHead('睡眠', '自己記下的時間最重要，計畫另外放');
   const fill = backfill(data, now, ui, ctx.wd);
   if (isDesktop) {
-    return `${head}<div class="grid-1-2"><div class="stack">${hero(data, now)}${fill}${attribution(data, now)}</div><div class="stack">${trend(data, now)}${plans(data, now, ui)}</div></div>${history(data, now, ui)}`;
+    return `${head}<div class="grid-1-2"><div class="stack">${hero(data, now)}${fill}${attribution(data, now)}</div><div class="stack">${trend(data, now)}${plans(data, now, ui)}</div></div>${history(data, now, ui, true)}`;
   }
   return `${head}${hero(data, now)}${fill}${attribution(data, now)}${trend(data, now)}${plans(data, now, ui)}${history(data, now, ui)}`;
 }

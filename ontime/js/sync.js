@@ -227,6 +227,12 @@ export async function signIn() {
   }
 }
 
+// 同步狀態面板的「再試一次」：已登入就立即上傳一次；未登入就走登入流程。
+export function retrySync() {
+  if (user) return push(true);
+  return signIn();
+}
+
 export async function signOut() {
   try { await auth?.signOut(); } catch { /* 忽略 */ }
   try { localStorage.removeItem(FLAG); } catch { /* 忽略 */ }

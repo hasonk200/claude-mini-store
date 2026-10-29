@@ -13,7 +13,8 @@ import { settingsView } from './views/settings.js';
 import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText } from './views/sheet.js';
 import { sleepPairPreview, SLEEP_PAIR_ERROR } from './views/sleep.js';
 import { mealPreview } from './views/meals.js';
-import { initSync, onSync, syncState, signIn, signOut } from './sync.js';
+import { initSync, onSync, syncState, signIn, signOut, retrySync } from './sync.js';
+import { syncSummary } from './views/shared.js';
 
 const ROUTES = {
   today: { title: '今天', icon: 'clock', view: todayView },
@@ -32,8 +33,12 @@ const ui = {
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
   selRef: null, sheet: null, incomeEdit: null, jobEdit: null, canInstall: false,
   pendingRecord: null, pendingDelete: null, flash: null, sleepSaved: null,
-  drafts: loadDrafts()
+  drafts: loadDrafts(), heroCollapsed: loadPref('ontime-hero') === 'collapsed'
 };
+
+// 只屬於這部裝置的小偏好（例如街景收起）；讀不到就用預設。
+function loadPref(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function savePref(key, v) { try { localStorage.setItem(key, v); } catch { /* 忽略 */ } }
 
 // ---------- 表單草稿 ----------
 // 有 data-draft 的表單，每次輸入都存一份（連相片）。重畫、同步、加相片、切換分頁都用草稿的值，
@@ -81,7 +86,7 @@ function ctx() {
   const data = store.get();
   const now = nowFn();
   const wd = ui.wd || currentWorkday(data, now);
-  return { data, now, ui, wd, isDesktop: desktopMQ.matches };
+  return { data, now, ui, wd, isDesktop: desktopMQ.matches, sync: { state: syncState(), status: store.status() } };
 }
 
 function shell() {
@@ -114,7 +119,21 @@ let sheetCloseTimer = null;
 let sheetScrollToForm = false;
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// 焦點的「身分」：重畫後用來找回同一個按鈕或欄位（鍵盤操作時焦點不會掉到頁面最頂）。
+function focusKey(el) {
+  if (!el || el === document.body) return null;
+  if (el.name) return `[name="${CSS.escape(el.name)}"]`;
+  const a = el.dataset?.action;
+  if (!a) return el.id ? `#${CSS.escape(el.id)}` : null;
+  let sel = `[data-action="${CSS.escape(a)}"]`;
+  for (const k of ['cat', 'step', 'sid', 'id', 'dir', 'key', 'ref']) if (el.dataset[k] != null) sel += `[data-${k}="${CSS.escape(el.dataset[k])}"]`;
+  return sel;
+}
+let sheetOpener = null;
+let sheetOpenerKey = null;
+
 // 面板：第一次打開向上滑入；之後只換內容（不閃、捲動位置不變）；關閉時向下滑出再移除。
+// 鍵盤／讀屏：打開時焦點移到面板標題；換內容時焦點留在同一個按鈕；關閉時回到打開它的按鈕。
 function swapSheet(html, type) {
   const host = $('#sheet-host');
   clearTimeout(sheetCloseTimer);
@@ -122,18 +141,35 @@ function swapSheet(html, type) {
   const wasOpen = !!old && !old.classList.contains('is-leave');
   if (!html) {
     lastSheetType = null;
-    if (!wasOpen || reduceMotion()) { host.innerHTML = ''; return; }
+    const back = sheetOpener;
+    const backKey = sheetOpenerKey;
+    sheetOpener = null; sheetOpenerKey = null;
+    const restore = () => {
+      const el = back && back !== document.body && document.contains(back) ? back : backKey ? document.querySelector(`#view ${backKey}, .tabbar ${backKey}, #hero-host ${backKey}`) : null;
+      (el || $('#view'))?.focus({ preventScroll: true });
+    };
+    if (!wasOpen || reduceMotion()) { host.innerHTML = ''; if (wasOpen) restore(); return; }
     host.querySelectorAll('.sheet, .sheet-backdrop').forEach((el) => { el.classList.remove('is-enter'); el.classList.add('is-leave'); });
+    restore();
     sheetCloseTimer = setTimeout(() => { host.innerHTML = ''; }, 240);
     return;
   }
   const top = old?.querySelector('.sheet-body')?.scrollTop ?? 0;
   const enter = !wasOpen || type !== lastSheetType;
+  const active = document.activeElement;
+  const keepKey = !enter && host.contains(active) ? focusKey(active) : null;
+  if (!wasOpen) { sheetOpener = active && !host.contains(active) ? active : null; sheetOpenerKey = focusKey(sheetOpener); }
   host.innerHTML = html;
   enhanceTimeInputs(host);
   lastSheetType = type;
-  if (enter) host.querySelectorAll('.sheet, .sheet-backdrop').forEach((el) => el.classList.add('is-enter'));
-  else { const body = host.querySelector('.sheet-body'); if (body) body.scrollTop = top; }
+  if (enter) {
+    host.querySelectorAll('.sheet, .sheet-backdrop').forEach((el) => el.classList.add('is-enter'));
+    const title = host.querySelector('#sheet-title');
+    if (title) { title.tabIndex = -1; title.focus({ preventScroll: true }); }
+  } else {
+    const body = host.querySelector('.sheet-body'); if (body) body.scrollTop = top;
+    if (keepKey) host.querySelector(keepKey)?.focus({ preventScroll: true });
+  }
   if (sheetScrollToForm) {
     sheetScrollToForm = false;
     setTimeout(scrollSheetToForm, enter && !reduceMotion() ? 280 : 0);
@@ -158,6 +194,17 @@ function applyTheme(theme) {
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0E1116' : '#F4F5F1');
 }
 
+// 背景重畫（同步、定時更新、標示過期）遇到你正在欄位裡打字：先不換畫面，離開欄位後才更新。
+// 你自己按的按鈕、送出的表單照常立即更新。
+let userDepth = 0;
+let pendingView = false;
+let pendingSheet = false;
+function asUser(fn) { userDepth++; try { return fn(); } finally { userDepth--; } }
+function typingIn(sel) {
+  const a = document.activeElement;
+  return !!(a && a.closest?.(sel) && a.matches('textarea, select, input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"])'));
+}
+
 function render() {
   const c = ctx();
   applyTheme(c.data.settings.theme);
@@ -165,15 +212,20 @@ function render() {
   document.title = `${r.title} · ONTIME`;
   // 首頁頂部場景只在內容改變時才重畫，動畫不會因定時更新而跳回起點。
   const heroHost = $('#hero-host');
-  const heroHTML = ui.route === 'today' ? heroFor(c.data, c.wd, currentCycle(c.data, c.now), c.now, !c.isDesktop) : '';
+  const heroHTML = ui.route === 'today' ? heroFor(c.data, c.wd, currentCycle(c.data, c.now), c.now, !c.isDesktop, ui.heroCollapsed) : '';
   if (heroHTML !== lastHero) { heroHost.innerHTML = heroHTML; lastHero = heroHTML; }
   const html = r.view(c);
-  if (html !== lastView) {
+  const holdView = !userDepth && typingIn('#view');
+  if (html !== lastView && holdView) pendingView = true;
+  else if (html !== lastView) {
+    pendingView = false;
     const view = $('#view');
+    const keep = focusKey(view.contains(document.activeElement) ? document.activeElement : null);
     const focusedName = document.activeElement?.name;
     view.innerHTML = html;
     lastView = html;
     if (focusedName) view.querySelector(`[name="${CSS.escape(focusedName)}"]`)?.focus();
+    else if (keep) view.querySelector(keep)?.focus({ preventScroll: true });
     fixLabels();
     enhanceTimeInputs(view);
   }
@@ -181,15 +233,17 @@ function render() {
     if (a.dataset.route === ui.route) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   const sheetHTML = sheetView(c);
-  if (sheetHTML !== lastSheet) { swapSheet(sheetHTML, ui.sheet?.type || null); lastSheet = sheetHTML; }
+  const holdSheet = !userDepth && sheetHTML && typingIn('#sheet-host');
+  if (sheetHTML !== lastSheet && holdSheet) pendingSheet = true;
+  else if (sheetHTML !== lastSheet) { pendingSheet = false; swapSheet(sheetHTML, ui.sheet?.type || null); lastSheet = sheetHTML; }
   // 點了已經選中的步驟：內容沒變，也要捲到輸入位置。
   else if (sheetScrollToForm) { sheetScrollToForm = false; scrollSheetToForm(); }
   const st = store.status();
   const sy = syncState();
-  const SYNC_TEXT = { cloud: '已同步到雲端', loading: '正在同步…', signin: '未登入雲端', error: '同步失敗', offline: '離線中', full: '雲端空間不足' };
   const cloudOn = sy.status !== 'off';
-  const line = st.saveError ? '未能儲存' : cloudOn ? SYNC_TEXT[sy.status] || '已存在這部裝置' : '已存在這部裝置';
-  const dot = st.saveError || ['error', 'full'].includes(sy.status) ? 'is-warn' : sy.status === 'cloud' || !cloudOn ? 'k-ok' : 'is-off';
+  const sum = syncSummary(sy, st);
+  const line = sum.line;
+  const dot = sum.tone === 'warn' ? 'is-warn' : sum.tone === 'ok' ? 'k-ok' : 'is-off';
   const sub = sy.status === 'cloud' && sy.user ? `${esc(sy.user.email)}${sy.lastSync ? ' · ' + fmtTime(sy.lastSync) : ''}` : cloudOn ? esc(sy.message || '離線也能記錄') : `${st.lastSaved ? `最後儲存 ${fmtTime(st.lastSaved)} · ` : ''}<a href="#/settings">登入 Google 同步</a>`;
   $('#sync-card').innerHTML = `<span class="sync-line"><i class="dot ${dot}"></i>${line}</span><span class="fine">${sub}</span>`;
 }
@@ -228,7 +282,8 @@ function route() {
   ui.sleepSaved = null;
   lastView = '';
   dirty = false;
-  render();
+  // 切換分頁一定立即重畫（就算焦點還留在上一頁的欄位裡）。
+  asUser(render);
   if (ui.route !== 'today') $('#view')?.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }
@@ -257,7 +312,6 @@ function openRecord(wd, step) {
   // 由卡片直接指定步驟打開時，滑入後捲到輸入時間的位置。
   if (RECORD_STEPS.has(step)) sheetScrollToForm = true;
   render();
-  setTimeout(() => $('.sheet button, .sheet input')?.focus(), 30);
 }
 
 function closeSheet() {
@@ -318,7 +372,15 @@ async function compressPhoto(file) {
 }
 
 const handlers = {
-  'sync-in': () => signIn(),
+  'sync-in': () => { if (ui.sheet?.type === 'sync') ui.sheet = null; signIn(); render(); },
+  'sync-open': () => { ui.sheet = { type: 'sync' }; render(); },
+  'sync-retry': () => { retrySync(); toast('正在再試一次同步'); render(); },
+  'hero-toggle': () => {
+    ui.heroCollapsed = !ui.heroCollapsed;
+    savePref('ontime-hero', ui.heroCollapsed ? 'collapsed' : 'open');
+    render();
+    $('#hero-host .hero-toggle')?.focus();
+  },
   'sync-out': () => { signOut(); toast('已登出，這部裝置上的紀錄仍然保留'); },
   'hero-poke': () => {
     const h = $('.hero');
@@ -908,7 +970,7 @@ function bind() {
     if (!fn) return;
     if (el.tagName !== 'A') e.preventDefault();
     if (el.dataset.action === 'close-sheet-nav') { ui.sheet = null; return; }
-    fn(el);
+    asUser(() => fn(el));
   });
   document.addEventListener('input', (e) => {
     const form = e.target.closest('form');
@@ -930,7 +992,7 @@ function bind() {
       if (!fixTimeText(inp)) { inp.reportValidity(); return; }
     }
     dirty = false;
-    forms[f.dataset.form]?.(f, e);
+    asUser(() => forms[f.dataset.form]?.(f, e));
   });
   document.addEventListener('change', async (e) => {
     const el = e.target;
@@ -938,7 +1000,7 @@ function bind() {
       // 換工作日：保留揀好的類別，步驟按新的一天重新建議。
       const cat = ui.sheet.cat;
       ui.sheet = cat ? { type: 'record', wd: el.value, cat, step: defaultStepIn(store.get(), el.value, cat) } : openRecordSheet(store.get(), el.value, null);
-      render();
+      asUser(render);
     }
     if (el.dataset.action === 'meal-photo' && el.files?.[0]) {
       // 先存好已填的文字，再處理相片；處理完重畫時欄位不會被清空。
@@ -965,15 +1027,34 @@ function bind() {
       el.value = '';
     }
   });
+  // 延後了的畫面：離開欄位後補上。
+  document.addEventListener('focusout', () => setTimeout(() => {
+    if ((pendingView || pendingSheet) && !typingIn('#view') && !typingIn('#sheet-host')) render();
+  }, 0));
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && ui.sheet) { closeSheet(); return; }
+    if (e.key === 'Escape' && ui.sheet) { asUser(closeSheet); return; }
+    // 面板打開時，Tab 只在面板裡循環。
+    if (e.key === 'Tab' && ui.sheet) {
+      const box = $('#sheet-host .sheet:not(.is-leave)');
+      if (box) {
+        const items = [...box.querySelectorAll('button, a[href], input:not([type="hidden"]):not(.time-native), select, textarea, [tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.offsetParent !== null);
+        if (items.length) {
+          const first = items[0];
+          const last = items[items.length - 1];
+          if (!box.contains(document.activeElement)) { e.preventDefault(); first.focus(); return; }
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); return; }
+          if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); return; }
+        }
+      }
+      return;
+    }
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
     if (ui.sheet || tag === 'BUTTON' || tag === 'A') {
-      if (!ui.sheet && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); openRecord(); }
+      if (!ui.sheet && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); asUser(() => openRecord()); }
       return;
     }
-    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openRecord(); return; }
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); asUser(() => openRecord()); return; }
     const dir = e.key === '[' || e.key === 'ArrowLeft' ? -1 : e.key === ']' || e.key === 'ArrowRight' ? 1 : 0;
     if (dir && ['today', 'timeline', 'meals'].includes(ui.route)) {
       e.preventDefault();
