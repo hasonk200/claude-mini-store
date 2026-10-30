@@ -6,7 +6,7 @@ import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js'
 import {
   currentCycle, activeSession, OPEN_LIMIT, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
   journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys, markFlag,
-  sleepWorkdayChanges, activeRest
+  sleepWorkdayChanges, activeRest, mealAutoWorkday
 } from './logic.js';
 
 function ensureJob(d) {
@@ -481,12 +481,18 @@ export function deleteRest(id) {
 
 // ---------- 用餐 ----------
 // 回傳這一餐的 id（新增時是新的 id），方便畫面把它標亮。
-export function saveMeal(meal) {
+// workday：undefined = 不改歸屬；null = 改返自動；'YYYY-MM-DD' = 想歸去嗰日。
+// 想歸去嘅日子同自動推算一樣，就唔標手動（保持自動）。
+export function saveMeal({ workday, ...meal }, now = Date.now()) {
   let id = meal.id;
   update((d) => {
     const i = d.meals.findIndex((m) => m.id === meal.id);
-    if (i >= 0) d.meals[i] = { ...d.meals[i], ...meal };
-    else { id = uid('meal'); d.meals.push({ id, confirmed: true, name: '', place: '', note: '', photo: null, ...meal }); }
+    let m;
+    if (i >= 0) m = d.meals[i] = { ...d.meals[i], ...meal };
+    else { id = uid('meal'); m = { id, confirmed: true, name: '', place: '', note: '', photo: null, ...meal }; d.meals.push(m); }
+    if (workday === undefined) return;
+    if (workday && workday !== mealAutoWorkday(m, d, now)) { m.workdayDate = workday; m.workdayManual = true; }
+    else { delete m.workdayDate; delete m.workdayManual; }
   });
   return id;
 }

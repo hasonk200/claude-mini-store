@@ -2,7 +2,7 @@ import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
 import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD, normTime, endOnOrAfter, fmtDur } from './time.js';
-import { activeSession, shiftDateMismatch, mealWorkday, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
+import { activeSession, shiftDateMismatch, mealWorkday, mealAutoWorkday, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { timelineView } from './views/timeline.js';
 import { weekView } from './views/week.js';
@@ -54,7 +54,7 @@ function captureDraft(form) {
   if (!key) return;
   const vals = {};
   for (const el of form.querySelectorAll('input[name], select[name], textarea[name]')) {
-    if (el.type === 'file' || el.type === 'hidden') continue;
+    if (el.type === 'file' || (el.type === 'hidden' && !el.hasAttribute('data-keep'))) continue;
     vals[el.name] = el.type === 'checkbox' ? el.checked : el.value;
   }
   ui.drafts[key] = { ...ui.drafts[key], ...vals };
@@ -598,6 +598,16 @@ const handlers = {
     toast(msg);
     render();
   },
+  // 修改一餐：清除手動指定，歸屬交返自動推算。
+  'meal-wd-auto': (el) => {
+    const form = el.closest('form[data-form="meal"]');
+    if (!form?.wdMode) return;
+    form.wdMode.value = 'auto';
+    updateFormPreview(form);
+    captureDraft(form);
+    lastSheet = null;
+    render();
+  },
   'meal-photo-remove': (el) => {
     const form = el.closest('form[data-draft]');
     if (!form) return;
@@ -651,7 +661,11 @@ function updateFormPreview(form) {
   const now = nowFn();
   if (form.dataset.form === 'meal') {
     const box = form.querySelector('[data-meal-preview]');
-    if (box) box.innerHTML = mealPreview(data, fromInputs(form.date.value, normTime(form.start.value) || ''), now);
+    const t = fromInputs(form.date.value, normTime(form.start.value) || '');
+    const mode = form.wdMode?.value || '';
+    // 修改一餐：未手動揀過歸屬時，歸屬欄跟住新嘅時間自動更新。
+    if (mode === 'auto' && t != null && form.wd) form.wd.value = mealAutoWorkday({ start: t }, data, now);
+    if (box) box.innerHTML = mealPreview(data, t, now, mode ? { wd: form.wd?.value, mode } : {});
   } else if (form.dataset.form === 'sleep-pair') {
     const box = form.querySelector('[data-sleep-preview]');
     const start = fromInputs(form.sd.value, normTime(form.st.value) || '');
@@ -804,20 +818,25 @@ const forms = {
     if (start == null) return;
     const end = f.end.value ? endOnOrAfter(f.date.value, start, f.end.value, { allowSame: true }) : null;
     const existing = f.id.value ? store.get().meals.find((m) => m.id === f.id.value) : null;
+    // 歸屬：補登面板用頂部揀的工作日；修改一餐用歸屬欄（auto = 改返自動）；用餐頁新增一律自動。
+    const mode = f.wdMode?.value || '';
+    const workday = mode === 'sheet' || mode === 'manual' ? f.wd.value || null : mode === 'auto' ? null : undefined;
     const id = act.saveMeal({
+      workday,
       verified: (f.verified ? f.verified.checked : !!existing?.verified?.start) ? { start: true } : undefined,
       ...(f.id.value ? { id: f.id.value } : {}),
       start, end, confirmed: f.confirmed.value === '1',
       name: f.name.value.trim(), place: f.place.value.trim(), note: f.note.value.trim(),
       photo: 'photo' in dr ? dr.photo : existing?.photo ?? null
-    });
+    }, nowFn());
     clearDraft(key);
     if (f.closest('.sheet') && e?.submitter?.value !== 'stay') ui.sheet = null;
     flash(`meal:${id}`);
     lastView = ''; lastSheet = null;
     const data = store.get();
     const wk = mealWorkdayOf(data, id);
-    toast(`已儲存這一餐${wk ? ` · 歸屬 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日` : ''}`);
+    const manual = data.meals.find((m) => m.id === id)?.workdayManual;
+    toast(`已儲存這一餐${wk ? ` · 歸屬 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日${manual ? '（手動指定）' : ''}` : ''}`);
     render();
   },
   'sleep-pair': (f, e) => {
@@ -976,12 +995,23 @@ function bind() {
     const form = e.target.closest('form');
     if (!form) return;
     dirty = true;
+    // 修改一餐時自己改了歸屬工作日 = 手動指定。
+    if (e.target.name === 'wd' && form.wdMode && form.wdMode.value !== 'sheet') form.wdMode.value = 'manual';
     captureDraft(form.closest('form[data-draft]'));
     updateFormPreview(form);
   });
   document.addEventListener('change', (e) => {
     const form = e.target.closest('form[data-draft]');
-    if (form && e.target.type !== 'file') { captureDraft(form); updateFormPreview(form); }
+    if (form && e.target.type !== 'file') {
+      if (e.target.name === 'wd' && form.wdMode && form.wdMode.value !== 'sheet') {
+        form.wdMode.value = 'manual';
+        captureDraft(form);
+        lastSheet = null;
+        asUser(render); // 換出「改返自動」按鈕
+        return;
+      }
+      captureDraft(form); updateFormPreview(form);
+    }
   });
   document.addEventListener('submit', (e) => {
     const f = e.target.closest('form[data-form]');

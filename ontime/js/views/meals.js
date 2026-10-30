@@ -1,6 +1,6 @@
 import { esc, icon, verifyToggle, stateTag } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, toDateInput, toTimeInput, MIN, fromInputs, normTime } from '../time.js';
-import { mealWorkday, sessionsOfWorkday, frequentMealValues, timeOnWorkday } from '../logic.js';
+import { mealWorkday, mealAutoWorkday, sessionsOfWorkday, frequentMealValues, timeOnWorkday } from '../logic.js';
 import { lastMealLine } from './today.js';
 import { pageHead, dayNav } from './shared.js';
 
@@ -11,7 +11,8 @@ function chips(values, field) {
 
 // 用餐表單：新增（頁面上、補登面板裡）和修改（面板）共用。
 // 所有欄位先看草稿（ui.drafts[key]）：加相片、同步、重畫、切換分頁都不會清空未儲存的輸入。
-export function mealForm({ data, now, ui, meal = null, key, defaultStart, inSheet = false }) {
+// wd：補登面板頂部揀的工作日（新增時用）。修改一餐時會出「歸屬工作日」欄，可以改或「改返自動」。
+export function mealForm({ data, now, ui, meal = null, key, defaultStart, inSheet = false, wd = null }) {
   const favNames = frequentMealValues(data, 'name');
   const favPlaces = frequentMealValues(data, 'place');
   const dr = ui.drafts?.[key] || {};
@@ -28,6 +29,14 @@ export function mealForm({ data, now, ui, meal = null, key, defaultStart, inShee
   const verified = v('verified', !!m.verified?.start);
   const photo = 'photo' in dr ? dr.photo : m.photo ?? null;
   const t = fromInputs(date, normTime(startT) || '');
+  // 歸屬工作日：sheet = 跟補登面板頂部；auto／manual = 修改一餐時嘅欄位狀態；冇 = 一律自動。
+  const auto = t != null ? mealAutoWorkday({ start: t }, data, now) : null;
+  const wdMode = meal ? v('wdMode', meal.workdayManual && meal.workdayDate ? 'manual' : 'auto') : wd ? 'sheet' : '';
+  const wdValue = meal ? v('wd', wdMode === 'manual' ? meal.workdayDate : auto) : wd;
+  const wdField = !wdMode ? ''
+    : wdMode === 'sheet' ? `<input type="hidden" name="wd" value="${esc(wd)}"><input type="hidden" name="wdMode" value="sheet" data-keep>`
+    : `<div class="field-pair wd-pick"><label class="field"><span>歸屬工作日</span><input type="date" name="wd" value="${esc(wdValue || '')}"></label>
+        <div class="wd-pick-side"><input type="hidden" name="wdMode" value="${wdMode}" data-keep>${wdMode === 'manual' ? '<button type="button" class="btn btn-line btn-sm" data-action="meal-wd-auto">改返自動</button>' : '<span class="fine">自動推算</span>'}</div></div>`;
   const openMore = name || place || note || photo || favNames.length || favPlaces.length;
   const hasDraft = Object.keys(dr).length > 0;
   const foot = meal
@@ -40,7 +49,8 @@ export function mealForm({ data, now, ui, meal = null, key, defaultStart, inShee
       <input type="hidden" name="id" value="${esc(m.id || '')}">
       <div class="field-pair"><label class="field"><span>日期</span><input type="date" name="date" value="${esc(date)}" required></label>
       <label class="field"><span>開始</span><input type="time" name="start" value="${esc(startT)}" required></label></div>
-      <div class="cross-note" data-meal-preview aria-live="polite">${mealPreview(data, t, now)}</div>
+      ${wdField}
+      <div class="cross-note" data-meal-preview aria-live="polite">${mealPreview(data, t, now, wdMode ? { wd: wdValue, mode: wdMode } : {})}</div>
       ${verifyToggle(verified)}
       <div class="field-pair"><label class="field"><span>結束（可空白）</span><input type="time" name="end" value="${esc(endT)}"></label>
       <label class="field"><span>狀態</span><select name="confirmed"><option value="1"${confirmed !== '0' ? ' selected' : ''}>已經吃了</option><option value="0"${confirmed === '0' ? ' selected' : ''}>只是計畫</option></select></label></div>
@@ -60,11 +70,14 @@ export function mealForm({ data, now, ui, meal = null, key, defaultStart, inShee
     </form>`;
 }
 
-// 「會存成 週六 10/24 12:30 · 歸屬 週六 10/24 工作日」：補舊日的餐時一眼看到日期和歸屬。
-export function mealPreview(data, t, now) {
+// 「會存成 週四 10/29 10:10 · 歸屬 週三 10/28 工作日（手動指定）」：補舊日的餐時一眼看到日期和歸屬。
+// mode：sheet／manual 用 wd（同自動一樣就唔算手動）；auto 或冇就用自動推算。
+export function mealPreview(data, t, now, { wd = null, mode = '' } = {}) {
   if (t == null || Number.isNaN(t)) return '';
-  const wk = mealWorkday({ start: t }, data, now);
-  return `會存成 <strong>${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}</strong> · 歸屬 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日`;
+  const auto = mealAutoWorkday({ start: t }, data, now);
+  const wk = (mode === 'sheet' || mode === 'manual') && wd ? wd : auto;
+  const manual = wk !== auto;
+  return `會存成 <strong>${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}</strong> · 歸屬 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日${manual ? '（手動指定）' : ''}`;
 }
 
 export function mealsView(ctx) {
@@ -83,7 +96,7 @@ export function mealsView(ctx) {
     return `<li class="${fresh ? 'is-flash' : ''}"><button type="button" class="rec-row meal-row" data-action="meal-open" data-id="${m.id}" aria-label="修改這一餐：${esc(m.name || '用餐')} ${wdOf(m.start)} ${fmtTime(m.start)}">
       <span class="rec-date"><strong>${fmtTime(m.start)}</strong><small>${m.end ? `至 ${fmtTime(m.end)}` : wdOf(m.start)}</small></span>
       <span class="rec-span"><strong>${esc(m.name || '用餐')}</strong><small>${[m.place, m.note].filter(Boolean).map(esc).join(' · ') || `${wdOf(m.start)} ${fmtMD(dateKey(m.start))}`}</small>
-        <span class="rec-tags">${m.confirmed ? '' : stateTag('plan')}${during ? '<span class="chip chip-work">工作中</span>' : ''}${fresh ? '<span class="saved-tag" role="status">已更新</span>' : ''}</span></span>
+        <span class="rec-tags">${m.workdayManual && m.workdayDate ? `<span class="chip chip-soft">手動歸屬</span>` : ''}${m.confirmed ? '' : stateTag('plan')}${during ? '<span class="chip chip-work">工作中</span>' : ''}${fresh ? '<span class="saved-tag" role="status">已更新</span>' : ''}</span></span>
       ${m.photo ? `<img class="rec-photo" src="${esc(m.photo)}" alt="">` : `<span class="rec-photo is-empty" aria-hidden="true">${icon('meal', 18)}</span>`}
     </button></li>`;
   }).join('');
