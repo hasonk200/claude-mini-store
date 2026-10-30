@@ -946,3 +946,6 @@ details.more .form { padding: 0 14px 14px; }
 .meal-row { grid-template-columns: 70px minmax(0, 1fr) 48px; }
 .rec-photo { width: 48px; height: 48px; border-radius: 12px; object-fit: cover; }
 .rec-photo.is-empty { display: grid; place-items: center; background: var(--meal-tint); color: var(--meal); }
+/* 修改一餐：歸屬工作日欄 */
+.wd-pick { align-items: end; }
+.wd-pick-side { display: flex; align-items: center; min-height: 48px; }

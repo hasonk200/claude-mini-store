@@ -141,7 +141,7 @@ function recordSheet(ctx) {
   if (!cat) {
     body = '<p class="fine">休息日也可以直接記睡眠和用餐，不用先建立班次。</p>';
   } else if (cat === 'meal') {
-    body = `${title('這一餐在什麼時候？')}${mealForm({ data, now, ui, key: 'meal:new', defaultStart: timeOnWorkday(data, wd, now), inSheet: true })}`;
+    body = `${title('這一餐在什麼時候？')}${mealForm({ data, now, ui, key: 'meal:new', defaultStart: timeOnWorkday(data, wd, now), inSheet: true, wd })}`;
   } else if (cat === 'sleep') {
     const subs = stepChips(data, wd, sid, CAT_STEPS.sleep, step, null);
     body = `${title('補哪一種？')}${subs}${step === 'sleepPair'

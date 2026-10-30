@@ -469,7 +469,15 @@ export function workdaySpan(data, wd, now) {
   return [a, b];
 }
 
+// 用餐歸屬：你手動指定的工作日（workdayManual + workdayDate）優先，跟睡眠、班次一致；
+// 冇指定（包括舊資料）就照舊自動推算。
 export function mealWorkday(meal, data, now) {
+  if (meal.workdayManual && meal.workdayDate) return meal.workdayDate;
+  return mealAutoWorkday(meal, data, now);
+}
+
+// 自動推算：起床邊界 → 前一日跨午夜的班有冇包住 → 用餐日期。
+export function mealAutoWorkday(meal, data, now) {
   const byWake = dayOf(data, meal.start);
   if (byWake) return byWake;
   const wd = dateKey(meal.start);
