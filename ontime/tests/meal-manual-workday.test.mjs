@@ -92,7 +92,7 @@ test('修改面板：手動歸屬可以改返自動；自動的顯示「自動�
   const a = sheetView({ data, now, ui: { drafts: {}, sheet: { type: 'meal', id: 'a' } } });
   assert.match(a, /name="wd" value="2026-10-28"/);
   assert.match(a, /name="wdMode" value="manual"/);
-  assert.match(a, /data-action="meal-wd-auto">改返自動/);
+  assert.match(a, /data-action="wd-auto">改返自動/);
   assert.match(a, /（手動指定）/);
   const b = sheetView({ data, now, ui: { drafts: {}, sheet: { type: 'meal', id: 'b' } } });
   assert.match(b, /name="wd" value="2026-10-29"/);

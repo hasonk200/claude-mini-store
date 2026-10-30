@@ -19,15 +19,15 @@ function loadSW(keys) {
   return { listeners, deleted, version: src.match(/const VERSION = '([^']+)'/)[1] };
 }
 
-test('版本號是 2.29.0', () => {
-  assert.equal(loadSW([]).version, '2.29.0');
+test('版本號是 2.30.0', () => {
+  assert.equal(loadSW([]).version, '2.30.0');
 });
 
 test('activate：刪 ontime 舊版快取，保留目前版本、字體和其他 App 的快取', async () => {
-  const keys = ['ontime-2.24.0', 'ontime-2.25.0', 'ontime-2.26.0', 'ontime-2.27.0', 'ontime-2.28.0', 'ontime-2.29.0', 'ontime-fonts', 'commute-log-temp', 'heartland-journal-v3'];
+  const keys = ['ontime-2.24.0', 'ontime-2.25.0', 'ontime-2.26.0', 'ontime-2.27.0', 'ontime-2.28.0', 'ontime-2.29.0', 'ontime-2.30.0', 'ontime-fonts', 'commute-log-temp', 'heartland-journal-v3'];
   const sw = loadSW(keys);
   let done;
   sw.listeners.activate({ waitUntil: (p) => { done = p; } });
   await done;
-  assert.deepEqual(sw.deleted.sort(), ['ontime-2.24.0', 'ontime-2.25.0', 'ontime-2.26.0', 'ontime-2.27.0', 'ontime-2.28.0']);
+  assert.deepEqual(sw.deleted.sort(), ['ontime-2.24.0', 'ontime-2.25.0', 'ontime-2.26.0', 'ontime-2.27.0', 'ontime-2.28.0', 'ontime-2.29.0']);
 });

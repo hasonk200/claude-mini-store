@@ -233,8 +233,15 @@ export function journeyOfSession(data, s) {
 
 const JOURNEY_KEYS = ['out', 'ride', 'arrive', 'leave', 'ride2', 'home'];
 // 還沒掛到出勤的行程（例如只補登了「到家」）屬於哪個工作日。
+// 寫低咗 workdayDate 就用佢：新資料有 workdayManual 標記；舊資料冇標記但一樣照用，
+// 咁升級之後歸屬唔會跳去第二日。冇寫低先自動推算。
 export function journeyWorkday(j, data) {
   if (j.workdayDate) return j.workdayDate;
+  return journeyAutoWorkday(j, data);
+}
+
+// 自動推算：行程最早嗰個時間，按起床邊界；冇邊界就用日期。
+export function journeyAutoWorkday(j, data) {
   const t = JOURNEY_KEYS.map((k) => j[k]).find((v) => v != null);
   if (t == null) return null;
   return (data && dayOf(data, t)) || dateKey(t);
@@ -342,7 +349,12 @@ export function activeRest(data) {
   return (data.rests || []).filter((r) => r.start != null && r.end == null).sort((a, b) => b.start - a.start)[0] || null;
 }
 
-export const restWorkday = (r, data) => dayOf(data, r.start) || dateKey(r.start);
+// 休息歸屬：手動指定（workdayManual + workdayDate）優先，同用餐、睡眠一致；冇先自動推算。
+export const restAutoWorkday = (r, data) => dayOf(data, r.start) || dateKey(r.start);
+export const restWorkday = (r, data) => (r.workdayManual && r.workdayDate) || restAutoWorkday(r, data);
+
+// 補登防撳錯：面板頂部工作日係預設（冇特登改過），但同按時間自動計嘅唔一樣，就要先問。
+export const needsWorkdayConfirm = ({ wd, auto, touched }) => !!wd && !!auto && wd !== auto && !touched;
 
 // 補登「起床」要找哪一筆：這天進行中 → 任何進行中 → 這天最後一筆完成的。
 // 進行中的紀錄一律優先，避免改到已完成的小睡。
