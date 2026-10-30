@@ -6,8 +6,16 @@ import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js'
 import {
   currentCycle, activeSession, OPEN_LIMIT, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
   journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys, markFlag,
-  sleepWorkdayChanges, activeRest, mealAutoWorkday
+  sleepWorkdayChanges, activeRest, mealAutoWorkday, restAutoWorkday, journeyAutoWorkday
 } from './logic.js';
+
+// 歸屬工作日（用餐、休息、獨立通勤共用）：workday = undefined 唔改；null 改返自動；
+// 日期 = 想歸去嗰日——同自動推算一樣就唔標手動（保持自動）。
+function applyWorkday(rec, workday, auto) {
+  if (workday === undefined) return;
+  if (workday && workday !== auto) { rec.workdayDate = workday; rec.workdayManual = true; }
+  else { delete rec.workdayDate; delete rec.workdayManual; }
+}
 
 function ensureJob(d) {
   if (!d.jobs.length) d.jobs.push({ id: uid('job'), name: '我的工作', color: 'work', payMode: 'hourly', rate: null });
@@ -145,7 +153,7 @@ export function setStepTime(wd, step, t, extra = {}) {
         target.end = extra.end ?? null;
         if (target.end == null && (extra.now ?? Date.now()) - t > OPEN_LIMIT) target.endPending = true;
       }
-      if (j && !j.sessionId) { j.sessionId = target.id; delete j.workdayDate; }
+      if (j && !j.sessionId) { j.sessionId = target.id; delete j.workdayDate; delete j.workdayManual; }
       mark(target, 'start');
       return;
     }
@@ -221,9 +229,9 @@ export function setStepTime(wd, step, t, extra = {}) {
       j = { id: uid('jr'), sessionId: s?.id ?? null, out: null, ride: null, arrive: null, leave: null, ride2: null, home: null };
       d.journeys.push(j);
     }
-    // 還沒有出勤時，記住這段行程屬於你揀的工作日。
-    if (!j.sessionId) j.workdayDate = wd;
     j[step] = t;
+    // 還沒有出勤時：你揀的工作日同按時間自動計的唔同，就記低並標手動；一樣就交返自動。
+    if (!j.sessionId) applyWorkday(j, wd, journeyAutoWorkday(j, d));
     mark(j, step);
     if (step === 'ride' || step === 'ride2') {
       if (extra.from !== undefined) j[`${step}From`] = extra.from || null;
@@ -299,6 +307,8 @@ export function setRefTime(ref, t, extra = {}) {
       const j = d.journeys.find((x) => x.id === ref.id);
       if (!j) return;
       j[ref.field] = t;
+      // 有班次的行程跟班次走；獨立行程先可以改歸屬。
+      if (!j.sessionId) applyWorkday(j, extra.workday, journeyAutoWorkday(j, d));
       if (ref.field === 'ride' || ref.field === 'ride2') {
         if (extra.mode !== undefined) j[`${ref.field}Mode`] = extra.mode || null;
         if (extra.from !== undefined) j[`${ref.field}From`] = extra.from || null;
@@ -313,7 +323,7 @@ export function setRefTime(ref, t, extra = {}) {
       }
     } else if (ref.type === 'rest') {
       const r = d.rests.find((x) => x.id === ref.id);
-      if (r) r[ref.field] = t;
+      if (r) { r[ref.field] = t; applyWorkday(r, extra.workday, restAutoWorkday(r, d)); }
     } else if (ref.type === 'sleep') {
       const s = d.sleeps.find((x) => x.id === ref.id);
       if (!s) return;
@@ -475,6 +485,22 @@ export function deleteSleep(id) {
   update((d) => { d.sleeps = d.sleeps.filter((x) => x.id !== id); });
 }
 
+// 補登一段獨立休息（冇班次時）：開始、結束一齊填。workday 同用餐一樣。
+export function addRest({ start, end, workday, verified }, now = Date.now()) {
+  if (start == null || end == null || Number.isNaN(start) || Number.isNaN(end)) return { ok: false, reason: 'bad-time' };
+  if (end <= start) return { ok: false, reason: 'before-start' };
+  if (end > now) return { ok: false, reason: 'future' };
+  let id = null;
+  update((d) => {
+    const r = { id: uid('rst'), start, end, note: '' };
+    if (verified) markFlag(r, 'verified', 'start', true);
+    applyWorkday(r, workday, restAutoWorkday(r, d));
+    d.rests.push(r);
+    id = r.id;
+  });
+  return { ok: true, id };
+}
+
 export function deleteRest(id) {
   update((d) => { d.rests = d.rests.filter((x) => x.id !== id); });
 }
@@ -490,9 +516,7 @@ export function saveMeal({ workday, ...meal }, now = Date.now()) {
     let m;
     if (i >= 0) m = d.meals[i] = { ...d.meals[i], ...meal };
     else { id = uid('meal'); m = { id, confirmed: true, name: '', place: '', note: '', photo: null, ...meal }; d.meals.push(m); }
-    if (workday === undefined) return;
-    if (workday && workday !== mealAutoWorkday(m, d, now)) { m.workdayDate = workday; m.workdayManual = true; }
-    else { delete m.workdayDate; delete m.workdayManual; }
+    applyWorkday(m, workday, mealAutoWorkday(m, d, now));
   });
   return id;
 }

@@ -608,7 +608,7 @@ details.more .form { padding: 0 14px 14px; }
 .wd-field { max-width: 260px; }
 .cross-note { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sleep-deep); background: var(--sleep-tint); border-radius: 14px; padding: 10px 12px; }
 /* 睡眠、用餐的預覽是一段句子（可能兩行），不要排成一欄欄。 */
-.cross-note[data-sleep-preview], .cross-note[data-meal-preview] { display: block; line-height: 1.6; }
+.cross-note[data-sleep-preview], .cross-note[data-meal-preview], .cross-note[data-wd-preview] { display: block; line-height: 1.6; }
 .cross-note[data-meal-preview]:empty { display: none; }
 /* 「要補什麼？」四個類別：兩欄兩行。 */
 .step-chips.cat-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -925,7 +925,7 @@ details.more .form { padding: 0 14px 14px; }
 .sync-detail strong { font-size: 16px; }
 .sync-detail.is-warn { background: var(--danger-tint); color: var(--danger); }
 /* 補登面板：揀好類別後縮成一行；頂部固定「正在補」。 */
-.step-chips.cat-chips.is-compact { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.step-chips.cat-chips.is-compact { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .cat-chips.is-compact .step-chip { min-height: 44px; padding: 4px 6px; gap: 6px; justify-content: center; }
 .cat-chips.is-compact .bubble { display: none; }
 .sheet-crumb { position: sticky; top: -6px; z-index: 2; margin: -6px -20px 0; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--line-soft); font-size: 13px; color: var(--muted); }

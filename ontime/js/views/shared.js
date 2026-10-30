@@ -1,6 +1,6 @@
 // 幾個頁面共用的片段：時間軸色條、工作日標籤。
 import { esc, icon, KIND } from '../ui.js';
-import { dateKey, fmtTime, wdOf, fmtDayMD, fmtMD, HOUR, addDays, dayStart } from '../time.js';
+import { dateKey, fmtTime, wdOf, wdOfKey, fmtDayMD, fmtMD, HOUR, addDays, dayStart } from '../time.js';
 import { intervalsAround } from '../logic.js';
 
 const LANES = [
@@ -128,3 +128,18 @@ export function dayNav(action, label, sub = '') {
 }
 
 export { addDays };
+
+// ---------- 歸屬工作日（用餐、休息、獨立通勤共用）----------
+// mode：sheet = 跟補登面板頂部的工作日；manual = 手動指定；auto = 自動推算。
+// 「改返自動」按鈕一直都在，自動時收埋，揀日子時即時出返，唔使重畫成個面板。
+export function workdayField({ mode, value }) {
+  if (mode === 'sheet') return `<input type="hidden" name="wd" value="${esc(value || '')}"><input type="hidden" name="wdMode" value="sheet" data-keep>`;
+  return `<div class="field-pair wd-pick"><label class="field"><span>歸屬工作日</span><input type="date" name="wd" value="${esc(value || '')}"></label>
+    <div class="wd-pick-side"><input type="hidden" name="wdMode" value="${mode}" data-keep><button type="button" class="btn btn-line btn-sm" data-action="wd-auto"${mode === 'manual' ? '' : ' hidden'}>改返自動</button><span class="fine" data-wd-auto-note${mode === 'manual' ? ' hidden' : ''}>自動推算</span></div></div>`;
+}
+
+// 「會存成 週四 10/29 10:10 · 歸屬 週三 10/28 工作日（手動指定）」。
+export function workdayPreview(t, wk, auto, extra = '') {
+  if (t == null || Number.isNaN(t) || !wk) return '';
+  return `會存成 <strong>${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}</strong>${extra} · 歸屬 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日${wk !== auto ? '（手動指定）' : ''}`;
+}
