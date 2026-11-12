@@ -1,7 +1,8 @@
 // 靜靜湖畔 in 3D: a wooden landing on a quiet lake – a bench with a blanket, a lantern on
 // its post, a rowing boat among the lily pads, a village and mountains across the water.
 // Follows the painted picture (assets/lakeside.webp) the flat page shows; here it also
-// follows the time of day. The companion simply sits; nothing here asks anything of them.
+// follows the time of day. The companion sits at the edge of the landing with their back to
+// us, looking out over a wide lake to the mountains; nothing here asks anything of them.
 import { createOuting } from './outing.mjs';
 import { stars, clouds } from './city.mjs';
 import { leafyTree } from '../props.mjs';
@@ -11,26 +12,37 @@ import { rng } from '../../art/math.mjs';
 // Higher than the street scenes, to look out over the water as the picture does.
 const CAMERA = {
   fov: 35,
-  target: [0.4, 1.5, 0],
-  distance: 13,
+  // Low and level, from just behind the companion: the edge of the landing along the bottom,
+  // then water all the way to the mountains.
+  target: [0.3, 1.9, -2.5],
+  distance: 11,
   azimuth: 0,
   // A wide look-around: there is more of the lakeside to either side than fits at once.
   azimuthRange: 30,
-  polar: 78,
-  polarMin: 70,
-  polarMax: 84,
+  polar: 84,
+  polarMin: 78,
+  polarMax: 88,
   // In a tall box (a phone held upright) the sides are cropped rather than everything
   // shrinking; turning the view brings them back.
-  needWidth: 8.2,
-  needHeight: 7.4,
+  needWidth: 6.6,
+  needHeight: 6.9,
+  // The mountains are a long way off.
+  far: 320,
 };
 
 const DOCK = { left: -3.3, right: 6.9, back: -1.3, front: 9.4 };
 // The grassy bank beside the landing.
 const BANK = { left: DOCK.right, right: 32, back: -8.5, front: DOCK.front };
-const WATER = { y: -0.5, far: -37, farHalf: 62, nearHalf: 30 };
 const SHORE = -38;
-const SUN_X = 8;
+// Where the far shore ends up once it has been pushed back.
+const SHORE_Z = -112;
+// The far shore is built at `SHORE`, then pushed a long way back and enlarged only a
+// little: the lake is wide, and the other side is small with distance yet can be made out.
+const FAR = { scale: 1.35, shift: -62 };
+const WATER = { y: -0.5, far: SHORE_Z, farHalf: 200, nearHalf: 36 };
+// Where the companion sits: on the very edge, turned a little so a cheek still shows.
+const SEAT = { x: 0.3, z: DOCK.back + 0.3, heading: Math.PI - 0.3 };
+const SUN_X = 14;
 
 const TONES = {
   day: {
@@ -42,7 +54,9 @@ const TONES = {
       glint: '255,244,200',
     },
     boards: {},
-    peaks: ['#b9c6d8', '#9fb2cc', '#8aa3bd'],
+    peaks: ['#c3cfdf', '#a9bbd2', '#97abc6'],
+    ridge: ['#93b3c0', '#7b9fb0'],
+    snowShade: '#dfe6ee',
     snow: '#f6f3ea',
     hills: ['#8fb59a', '#7aa888'],
     pine: ['#4f8f6f', '#437f63'],
@@ -79,7 +93,9 @@ const TONES = {
       glint: '255,214,150',
     },
     boards: {},
-    peaks: ['#8f7fa8', '#7d6d9a', '#6f6090'],
+    peaks: ['#a08fb4', '#8a79a4', '#7a6a98'],
+    ridge: ['#8a739c', '#75628a'],
+    snowShade: '#e8c4bf',
     snow: '#f6d9c8',
     hills: ['#86799a', '#75698c'],
     pine: ['#4d6f6a', '#41605c'],
@@ -110,7 +126,9 @@ const TONES = {
   night: {
     water: {},
     boards: {},
-    peaks: ['#27325c', '#222c52', '#1d2648'],
+    peaks: ['#2a3562', '#243058', '#1f294e'],
+    ridge: ['#202b52', '#1a2446'],
+    snowShade: '#4c5880',
     snow: '#5c6890',
     hills: ['#1f2c4a', '#1a2540'],
     pine: ['#1f3f48', '#1a363f'],
@@ -169,106 +187,162 @@ function build(env) {
   B.bevel = 1;
   const lit = night ? B : G;
 
-  /* ---- far away: mountains, wooded hills, the village ---- */
-  [
-    [-30, 8.6, 19, 0],
-    [-13, 7.2, 16, 1],
-    [4, 9.6, 21, 0],
-    [20, 7.6, 17, 2],
-    [36, 8.8, 19, 1],
-    [-44, 7, 17, 2],
-  ].forEach(([x, h, w, tone], i) => {
-    const z = SHORE - 18 - (i % 2) * 4;
-    G.cone(w / 2, h, c.peaks[tone], { x, y: WATER.y + h / 2, z, ry: i * 0.7 }, 5);
-    G.cone(w * 0.17, h * 0.34, c.snow, { x, y: WATER.y + h * 0.835, z: z + 0.2, ry: i * 0.7 }, 5);
+  /* ---- far away: range behind range of mountains, paler the further off ---- */
+  // Each peak is two halves, one catching the light and one in shade, like folded paper.
+  const slope = (r, h, light, shade, at) => {
+    G.add(new THREE.ConeGeometry(r, h, 3, 1, true, 0, Math.PI), light, at);
+    G.add(new THREE.ConeGeometry(r, h, 3, 1, true, Math.PI, Math.PI), shade, at);
+  };
+  const peak = rng(11);
+  const range = (z, count, [low, high], [narrow, broad], [light, shade], snowAbove) => {
+    for (let i = 0; i < count; i++) {
+      const x = -230 + (i + 0.2 + peak() * 0.6) * (460 / count),
+        h = low + peak() * (high - low),
+        w = narrow + peak() * (broad - narrow),
+        turn = 0.5 + peak() * 0.6,
+        depth = z - peak() * 8;
+      // A shoulder beside the main peak makes a ridge rather than a lone cone.
+      slope(w * 0.36, h * 0.6, light, shade, {
+        x: x + w * 0.36 * (i % 2 ? 1 : -1),
+        y: WATER.y + h * 0.3,
+        z: depth - 1,
+        ry: turn + 0.4,
+      });
+      slope(w / 2, h, light, shade, { x, y: WATER.y + h / 2, z: depth, ry: turn });
+      if (h > snowAbove)
+        slope(w * 0.168, h * 0.33, c.snow, c.snowShade, {
+          x,
+          y: WATER.y + h * 0.838,
+          z: depth,
+          ry: turn,
+        });
+    }
+  };
+  range(-205, 9, [27, 40], [60, 86], [c.peaks[0], c.peaks[2]], 29);
+  range(-155, 11, [13, 21], [38, 58], c.ridge, 99);
+  // Mist lying between the ranges and behind the far shore: thickest at the water, thinning
+  // to nothing higher up.
+  const mist = textures.canvasTexture('place:haven:mist:' + time, 4, 64, (g, w, h) => {
+    const fade = g.createLinearGradient(0, 0, 0, h);
+    fade.addColorStop(0, c.haze + '00');
+    fade.addColorStop(0.55, c.haze + '66');
+    fade.addColorStop(1, c.haze + 'cc');
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = fade;
+    g.fillRect(0, 0, w, h);
   });
-  [
-    [-24, 5.4, 15, 0],
-    [-4, 4.2, 13, 1],
-    [14, 5, 14, 0],
-    [32, 4.4, 14, 1],
-  ].forEach(([x, h, w, tone]) =>
-    G.ball(1, c.hills[tone], { x, y: WATER.y, z: SHORE - 7, sx: w, sy: h, sz: 4 }, 12),
-  );
-  S.box(120, 5, 0.1, c.haze, { y: WATER.y + 2.6, z: SHORE - 4.5 });
-  // The near shore across the water: a band of land with rocks along its edge.
-  G.box(110, 0.5, 5, c.hills[1], { y: WATER.y + 0.2, z: SHORE - 1.6 });
-  for (let i = 0; i < 46; i++) {
-    const x = -44 + i * 1.95 + random() * 0.8;
-    G.ball(
-      0.4 + random() * 0.5,
-      c.rock[i % 2],
-      { x, y: WATER.y + 0.15, z: SHORE + 0.9 + random() * 0.5, sy: 0.6 },
-      5,
-    );
+  for (const [z, tall] of [
+    [-180, 24],
+    [-138, 15],
+  ]) {
+    const band = env.flat(new THREE.PlaneGeometry(560, tall), mist, {
+      transparent: true,
+      depthWrite: false,
+    });
+    band.position.set(0, WATER.y + tall / 2, z);
+    group.add(band);
   }
+
+  /* ---- the far shore: wooded hills, a village, rocks at the water's edge ---- */
   const pine = (x, z, s, tone) => {
     G.cone(0.75 * s, 1.5 * s, c.pine[tone], { x, y: WATER.y + 0.5 + 1.0 * s, z }, 6);
     G.cone(0.55 * s, 1.3 * s, c.pine[tone], { x, y: WATER.y + 0.5 + 1.8 * s, z }, 6);
     G.cone(0.34 * s, 1.0 * s, c.pine[1 - tone], { x, y: WATER.y + 0.5 + 2.5 * s, z }, 6);
   };
   const shore = [];
-  for (let i = 0; i < 54; i++) {
-    const x = -46 + i * 1.72 + random() * 0.9,
-      z = SHORE - 1 - random() * 3.4,
-      s = 0.8 + random() * 0.9;
-    // Leave the village its clearing.
-    if (x > -17 && x < -4.5 && z > SHORE - 3) continue;
-    if (random() < 0.3) {
-      const tone = c.autumn[i % 3];
-      G.cylinder(0.08, 0.1, 0.8 * s, c.woodDark, { x, y: WATER.y + 0.5 + 0.4 * s, z }, 4);
-      G.ball(0.85 * s, tone, { x, y: WATER.y + 0.5 + 1.25 * s, z, sy: 0.95 }, 6);
-    } else pine(x, z, s, i % 2);
-    shore.push([x, 1.8 * s, 1.6 * s]);
-  }
-  // The village: cottages with mossy roofs around a chapel with a green dome.
-  const cottage = (x, z, w, h) => {
-    G.box(w, h, 1.6, c.wall, { x, y: WATER.y + 0.5 + h / 2, z });
-    G.add(new THREE.CylinderGeometry(0.01, 1, 0.9, 4, 1), c.roof[x > -11 ? 0 : 1], {
-      x,
-      y: WATER.y + 0.5 + h + 0.45,
-      z,
-      ry: Math.PI / 4,
-      sx: w * 0.82,
-      sz: 1.4,
-    });
-    for (const dx of [-0.2, 0.22])
-      if (!night || dx > 0)
-        G.box(0.24, 0.3, 0.05, c.woodDark, {
-          x: x + w * dx,
-          y: WATER.y + 0.5 + h * 0.5,
-          z: z + 0.82,
-        });
-    if (!night) return;
-    // A lit window.
-    G.box(0.26, 0.3, 0.05, '#ffd27a', { x: x - w * 0.2, y: WATER.y + 0.5 + h * 0.5, z: z + 0.82 });
-  };
-  cottage(-15.4, SHORE - 1.4, 2.6, 1.5);
-  cottage(-12.6, SHORE - 0.9, 2.2, 1.3);
-  cottage(-7.4, SHORE - 1.2, 2.4, 1.4);
-  cottage(-5.6, SHORE - 2.4, 2.0, 1.6);
-  const chapel = { x: -10.1, z: SHORE - 2 };
-  G.box(1.3, 3.6, 1.3, c.wall, { ...chapel, y: WATER.y + 0.5 + 1.8 });
-  G.ball(0.8, c.roof[0], { ...chapel, y: WATER.y + 4.3, sy: 1.05 }, 9);
-  G.cone(0.16, 0.9, c.roof[1], { ...chapel, y: WATER.y + 5.5 }, 6);
-  if (night) G.box(0.3, 0.5, 0.05, '#ffd27a', { ...chapel, y: WATER.y + 2.8, z: chapel.z + 0.67 });
-  shore.push([-10.1, 9, 5], [-15, 5, 3], [-6.5, 5, 3]);
-  // A little island out in the lake.
-  G.ball(1, c.hills[0], { x: 16, y: WATER.y, z: -25, sx: 5.4, sy: 0.9, sz: 2.4 }, 10);
-  for (let i = 0; i < 9; i++)
-    G.ball(
-      0.35 + random() * 0.3,
-      c.rock[i % 2],
-      { x: 11.6 + i * 1.1, y: WATER.y + 0.1, z: -23 + Math.sin(i) * 0.5, sy: 0.6 },
-      5,
+  G.within({ y: (1 - FAR.scale) * WATER.y, z: FAR.shift, s: FAR.scale }, () => {
+    [
+      [-64, 3.0, 15, 1],
+      [-44, 3.5, 14, 0],
+      [-24, 3.6, 15, 0],
+      [-4, 2.8, 13, 1],
+      [14, 3.3, 14, 0],
+      [32, 2.9, 14, 1],
+      [52, 3.6, 15, 0],
+      [70, 2.9, 14, 1],
+    ].forEach(([x, h, w, tone]) =>
+      G.ball(1, c.hills[tone], { x, y: WATER.y, z: SHORE - 7, sx: w, sy: h, sz: 4 }, 12),
     );
-  [
-    [13.6, -25.6, 1.1],
-    [15.4, -25, 1.5],
-    [17.2, -25.8, 1.2],
-    [18.6, -25.2, 0.9],
-  ].forEach(([x, z, s], i) => pine(x, z, s, i % 2));
-  G.ball(1.0, c.autumn[0], { x: 14.5, y: WATER.y + 1.5, z: -24.6 }, 6);
+    // The near shore across the water: a band of land with rocks along its edge.
+    G.box(170, 0.5, 5, c.hills[1], { y: WATER.y + 0.2, z: SHORE - 1.6 });
+    for (let i = 0; i < 80; i++) {
+      const x = -78 + i * 1.95 + random() * 0.8;
+      G.ball(
+        0.4 + random() * 0.5,
+        c.rock[i % 2],
+        { x, y: WATER.y + 0.15, z: SHORE + 0.9 + random() * 0.5, sy: 0.6 },
+        5,
+      );
+    }
+    for (let i = 0; i < 92; i++) {
+      const x = -79 + i * 1.72 + random() * 0.9,
+        z = SHORE - 1 - random() * 3.4,
+        s = 0.8 + random() * 0.9;
+      // Leave the village its clearing.
+      if (x > -17 && x < -4.5 && z > SHORE - 3) continue;
+      if (random() < 0.3) {
+        const tone = c.autumn[i % 3];
+        G.cylinder(0.08, 0.1, 0.8 * s, c.woodDark, { x, y: WATER.y + 0.5 + 0.4 * s, z }, 4);
+        G.ball(0.85 * s, tone, { x, y: WATER.y + 0.5 + 1.25 * s, z, sy: 0.95 }, 6);
+      } else pine(x, z, s, i % 2);
+      shore.push([x, 1.8 * s, 1.6 * s]);
+    }
+    // The village: cottages with mossy roofs around a chapel with a green dome.
+    const cottage = (x, z, w, h) => {
+      G.box(w, h, 1.6, c.wall, { x, y: WATER.y + 0.5 + h / 2, z });
+      G.add(new THREE.CylinderGeometry(0.01, 1, 0.9, 4, 1), c.roof[x > -11 ? 0 : 1], {
+        x,
+        y: WATER.y + 0.5 + h + 0.45,
+        z,
+        ry: Math.PI / 4,
+        sx: w * 0.82,
+        sz: 1.4,
+      });
+      for (const dx of [-0.2, 0.22])
+        if (!night || dx > 0)
+          G.box(0.24, 0.3, 0.05, c.woodDark, {
+            x: x + w * dx,
+            y: WATER.y + 0.5 + h * 0.5,
+            z: z + 0.82,
+          });
+      if (!night) return;
+      // A lit window.
+      G.box(0.26, 0.3, 0.05, '#ffd27a', {
+        x: x - w * 0.2,
+        y: WATER.y + 0.5 + h * 0.5,
+        z: z + 0.82,
+      });
+    };
+    cottage(-15.4, SHORE - 1.4, 2.6, 1.5);
+    cottage(-12.6, SHORE - 0.9, 2.2, 1.3);
+    cottage(-7.4, SHORE - 1.2, 2.4, 1.4);
+    cottage(-5.6, SHORE - 2.4, 2.0, 1.6);
+    const chapel = { x: -10.1, z: SHORE - 2 };
+    G.box(1.3, 3.6, 1.3, c.wall, { ...chapel, y: WATER.y + 0.5 + 1.8 });
+    G.ball(0.8, c.roof[0], { ...chapel, y: WATER.y + 4.3, sy: 1.05 }, 9);
+    G.cone(0.16, 0.9, c.roof[1], { ...chapel, y: WATER.y + 5.5 }, 6);
+    if (night)
+      G.box(0.3, 0.5, 0.05, '#ffd27a', { ...chapel, y: WATER.y + 2.8, z: chapel.z + 0.67 });
+    shore.push([-10.1, 9, 5], [-15, 5, 3], [-6.5, 5, 3]);
+  });
+  // A little island out in the lake.
+  G.within({ x: 1, z: -27 }, () => {
+    G.ball(1, c.hills[0], { x: 16, y: WATER.y, z: -25, sx: 5.4, sy: 0.9, sz: 2.4 }, 10);
+    for (let i = 0; i < 9; i++)
+      G.ball(
+        0.35 + random() * 0.3,
+        c.rock[i % 2],
+        { x: 11.6 + i * 1.1, y: WATER.y + 0.1, z: -23 + Math.sin(i) * 0.5, sy: 0.6 },
+        5,
+      );
+    [
+      [13.6, -25.6, 1.1],
+      [15.4, -25, 1.5],
+      [17.2, -25.8, 1.2],
+      [18.6, -25.2, 0.9],
+    ].forEach(([x, z, s], i) => pine(x, z, s, i % 2));
+    G.ball(1.0, c.autumn[0], { x: 14.5, y: WATER.y + 1.5, z: -24.6 }, 6);
+  });
 
   /* ---- the lake ---- */
   const wide = WATER.farHalf * 2;
@@ -279,7 +353,11 @@ function build(env) {
         time,
         tones: c.water,
         sun: 0.5 + SUN_X / wide,
-        shore: shore.map(([x, height, width]) => [0.5 + x / wide, width / wide, height / 9]),
+        shore: shore.map(([x, height, width]) => [
+          0.5 + (x * FAR.scale) / wide,
+          (width * FAR.scale) / wide,
+          height / 9,
+        ]),
       }),
     ),
   );
@@ -632,15 +710,14 @@ function build(env) {
   );
   B.torus(0.19, 0.015, c.woodDark, { x: DOCK.left + 0.75, y: 0.34, z: DOCK.back + 0.5 }, Math.PI);
 
-  /* a string of small lamps from the lantern post across to a pole on the far corner */
-  const pole = { x: DOCK.left + 0.3, z: DOCK.back + 0.25 };
-  B.cylinder(0.05, 0.07, 3.2, c.wood, { ...pole, y: 1.6, shade: 0.2 }, 6);
+  /* a string of small lamps from the lantern post to the apple tree on the bank */
+  const pole = { x: 8.9, z: -1.2 };
   const bulbs = ['#ffd98a', '#ffb7a0', '#fff3c4', '#bfe6c8'];
   // The string sags between its two ends.
   const along = (k) =>
     new THREE.Vector3(
       pole.x + (lamp.x - pole.x) * k,
-      3.15 + (4.25 - 3.15) * k - Math.sin(k * Math.PI) * 0.55,
+      3.5 + (4.25 - 3.5) * k - Math.sin(k * Math.PI) * 0.3,
       pole.z + (lamp.z - pole.z) * k,
     );
   const wire = [];
@@ -657,9 +734,9 @@ function build(env) {
       const k = i / 14;
       env.sprite(
         textures.radial('bulb', 'rgba(255,224,160,.5)', 'rgba(255,224,160,0)'),
-        pole.x + (lamp.x - pole.x) * k,
-        3.05 + (4.25 - 3.15) * k - Math.sin(k * Math.PI) * 0.55,
-        pole.z + (lamp.z - pole.z) * k + 0.1,
+        along(k).x,
+        along(k).y - 0.1,
+        along(k).z + 0.1,
         0.9,
         0.7,
       );
@@ -889,11 +966,11 @@ function build(env) {
     db.cone(0.1 * s, 0.2 * s, down, { x: x - 0.3 * s, y: 0.17 * s, z, rz: 1.0 }, 5);
   });
   ducks.add(db.build(materials.lit));
-  ducks.position.set(0.5, WATER.y, -7.5);
+  ducks.position.set(-3.2, WATER.y, -6.5);
   group.add(ducks);
   animated.push((t) => {
-    ducks.position.x = 0.5 + Math.sin(t * 0.05) * 3;
-    ducks.position.z = -7.5 + Math.cos(t * 0.05) * 0.8;
+    ducks.position.x = -3.2 + Math.sin(t * 0.05) * 2.4;
+    ducks.position.z = -6.5 + Math.cos(t * 0.05) * 0.8;
   });
   const yacht = new THREE.Group(),
     yb = env.builder();
@@ -920,14 +997,14 @@ function build(env) {
     yb.add(cloth, night ? '#d5d8ea' : '#fffdf6', { shade: 0.1 });
   }
   yacht.add(yb.build(materials.lit));
-  yacht.position.set(-11, WATER.y, -21);
-  yacht.scale.setScalar(1.7);
+  yacht.position.set(-9, WATER.y, -44);
+  yacht.scale.setScalar(2.0);
   group.add(yacht);
   animated.push((t) => {
-    yacht.position.x = -11 + Math.sin(t * 0.02) * 2.5;
+    yacht.position.x = -9 + Math.sin(t * 0.02) * 3;
     yacht.rotation.z = Math.sin(t * 0.5) * 0.025;
   });
-  const beacon = { x: 18.4, z: -25.3 };
+  const beacon = { x: 18.4 + 1, z: -25.3 - 27 };
   [
     ['#fbf7ee', 0.0, 0.62, 0.56],
     ['#e8593f', 1.0, 0.56, 0.5],
@@ -976,25 +1053,26 @@ function build(env) {
     hb.cone(0.7, 0.9, '#f29b7a', { y: -1.75, rx: Math.PI }, 10);
     hb.box(0.5, 0.42, 0.5, '#8a6040', { y: -2.75 });
     balloon.add(hb.build(materials.glow));
-    balloon.position.set(-13, 8.4, -46);
+    balloon.position.set(-30, 21, -110);
+    balloon.scale.setScalar(2.4);
     group.add(balloon);
     animated.push((t) => {
-      balloon.position.x = -13 + Math.sin(t * 0.015) * 5;
-      balloon.position.y = 8.4 + Math.sin(t * 0.09) * 0.25;
+      balloon.position.x = -30 + Math.sin(t * 0.015) * 8;
+      balloon.position.y = 21 + Math.sin(t * 0.09) * 0.4;
     });
   }
 
   /* ---- sky ---- */
   if (night) {
-    G.ball(1.5, c.sun, { x: SUN_X, y: 9.6, z: -60 }, 16);
+    G.ball(6, c.sun, { x: SUN_X * 4, y: 41, z: -235 }, 16);
     env.sprite(
       textures.radial('moon', 'rgba(243,230,180,.35)', 'rgba(243,230,180,0)'),
-      SUN_X,
-      9.6,
-      -59.5,
-      9,
+      SUN_X * 4,
+      41,
+      -234,
+      36,
     );
-    stars(env, { count: 90, seed: 5, x: [-50, 50], y: [6, 13], z: -66, size: 0.26 });
+    stars(env, { count: 130, seed: 5, x: [-230, 230], y: [22, 70], z: -240, size: 1.0 });
     // Fireflies over the reeds: a steady glow that wanders slowly.
     const fr = rng(13);
     for (let i = 0; i < 7; i++) {
@@ -1013,32 +1091,33 @@ function build(env) {
       });
     }
   } else {
-    G.ball(dusk ? 2.4 : 1.9, c.sun, { x: SUN_X, y: dusk ? 6.4 : 9.8, z: -64 }, 16);
+    // By day the sun stands above the peaks; at dusk it is going down behind them.
+    G.ball(dusk ? 9.5 : 7.5, c.sun, { x: SUN_X * 4, y: dusk ? 24 : 42, z: -235 }, 16);
     env.sprite(
       textures.radial(
         dusk ? 'sun-dusk' : 'sun',
         dusk ? 'rgba(255,194,122,.55)' : 'rgba(255,240,170,.55)',
         'rgba(255,220,150,0)',
       ),
-      SUN_X,
-      dusk ? 6.4 : 9.8,
-      -63.5,
-      dusk ? 20 : 14,
+      SUN_X * 4,
+      dusk ? 24 : 42,
+      -234,
+      dusk ? 62 : 46,
     );
   }
   clouds(
     env,
     [
-      [-18, 9.6, -52, 1.6, 0.03],
-      [-2, 10.6, -54, 1.2, 0.02],
-      [24, 9.2, -50, 1.5, 0.025],
+      [-34, 27, -150, 4.2, 0.03],
+      [-6, 31, -156, 3.2, 0.02],
+      [30, 26, -146, 4.0, 0.025],
     ],
     c.cloud,
   );
 }
 
 function createScene(ctx) {
-  return createOuting(ctx, { camera: CAMERA, lineZ: 1.7, standY: 0, build });
+  return createOuting(ctx, { camera: CAMERA, lineZ: 1.7, standY: 0, seat: SEAT, build });
 }
 
 export { createScene };

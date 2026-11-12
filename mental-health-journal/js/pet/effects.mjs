@@ -3,7 +3,7 @@ import { state } from '../state.mjs';
 import { petStage, petO, homeExpr } from './model.mjs';
 import { prefersReducedMotion } from '../shared/preferences.mjs';
 import { roamExpr } from './positions.mjs';
-import { scene3D, OUTING_SCENES } from '../scene3d/mount.mjs';
+import { scene3D, onOverlaySync, OUTING_SCENES } from '../scene3d/mount.mjs';
 
 let petBusy = false;
 
@@ -22,16 +22,36 @@ function placeBubble(b) {
   if (!W.width || !T.width) return;
   const sc =
     b.id === 'nbubble' ? PET.STAGES[1].s : PET.STAGES[state.pet ? petStage(state.pet) : 0].s;
-  const top = T.bottom - (T.height * (10 + 180 * sc)) / 200;
-  b.style.bottom = Math.max(8, W.bottom - top + 8) + 'px';
+  let top = T.bottom - (T.height * (10 + 180 * sc)) / 200;
+  // In 3D the companion's button is fitted to the model itself, so its top edge is the top
+  // of the head (the hidden 2D art inside it is only a rough guide).
+  const fitted = wrap.classList.contains('is-3d') && tgt.closest('.on-stage');
+  if (fitted) top = Math.min(top, fitted.getBoundingClientRect().top - 6);
   const bw = b.offsetWidth,
+    bh = b.offsetHeight,
     cx = T.left + T.width / 2 - W.left;
-  b.style.left = Math.max(6, Math.min(W.width - bw - 6, cx - bw / 2)) + 'px';
+  let bottom = Math.max(8, W.bottom - top + 8),
+    left = Math.max(6, Math.min(W.width - bw - 6, cx - bw / 2));
+  if (wrap.classList.contains('is-3d') && bottom + bh > W.height - 4) {
+    // No room above the head: sit beside it instead of over the face.
+    const half = (fitted ? fitted.getBoundingClientRect().width : T.width * 0.6) / 2 + 10,
+      onRight = cx + half + bw + 6 <= W.width;
+    bottom = Math.max(8, W.height - bh - 6);
+    left = onRight ? cx + half : Math.max(6, cx - half - bw);
+  }
+  b.style.bottom = bottom + 'px';
+  b.style.left = left + 'px';
   b.style.right = 'auto';
   b.style.transform = 'none';
-  const tail = Math.max(12, Math.min(bw - 12, cx - parseFloat(b.style.left)));
+  const tail = Math.max(12, Math.min(bw - 12, cx - left));
   b.style.setProperty('--tail', tail + 'px');
 }
+
+// A 3D scene moves the buttons to follow its pets (and may only arrive after a bubble has
+// been shown), so bubbles on show are put back over their speaker each time it does.
+onOverlaySync((container) => {
+  for (const b of container.querySelectorAll('.bubble:not([hidden])')) placeBubble(b);
+});
 
 function bubble(id, txt) {
   const b = document.getElementById(id);
