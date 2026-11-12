@@ -570,6 +570,7 @@
             <div class="field" style="margin-top:12px"><div class="label">想幾點瞓、幾點起身</div><div class="row"><input type="time" id="set-a" style="flex:1"><span class="muted">至</span><input type="time" id="set-b" style="flex:1"></div></div>
             <div class="field"><div class="label">右下角細寵物</div><div class="seg" data-name="buddy"><button data-v="on">顯示</button><button data-v="off">收埋</button></div></div>
             <div class="field"><div class="label">外觀</div><div class="seg" data-name="theme"><button data-v="auto">跟系統</button><button data-v="light">淺色</button><button data-v="dark">深色</button></div></div>
+            <div class="field"><div class="label">場景</div><div class="seg" data-name="scene3d"><button data-v="auto">自動</button><button data-v="on">3D</button><button data-v="off">平面</button></div><p class="muted" id="scene3d-note" style="margin-top:6px">呢個選擇只會記喺呢部裝置。安靜模式或者裝置唔支援 3D 時，會自動用返平面版；減少動態時，3D 場景會保持靜止。</p></div>
             <button class="btn ghost" id="set-save">儲存設定</button>
           </div>
           <div class="sheet">
@@ -610,6 +611,10 @@
 <script src="js/core.js"></script>
 <script src="js/storage.js"></script>
 <script src="js/auth.js"></script>
+  <script type="importmap">
+  { "imports": { "three": "./vendor/three/three.module.min.js",
+                 "three/addons/": "./vendor/three/addons/" } }
+  </script>
   <script type="module" src="js/app.js"></script>
 
 </body>

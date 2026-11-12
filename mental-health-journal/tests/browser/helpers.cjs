@@ -5,13 +5,25 @@ const DAY = '2026-10-25';
 const NOW = Date.parse(DAY + 'T20:00:00Z');
 const LS = 'dicky-care-v1';
 const OWNER = 'dicky-care-firebase-uid-v1';
+const SCENE3D = 'dicky-care-scene3d';
+
+// The "3d" project runs the same flows with the 3D scenes switched on.
+function is3D() {
+  try {
+    return base.info().project.name === '3d';
+  } catch (error) {
+    return false;
+  }
+}
 
 function sampleState(name = '測試伙伴') {
   return {
     checkins: {},
     draws: {},
     evidence: [],
-    settings: { a: '09:00', b: '16:30', theme: 'auto', quiet: true, buddy: true },
+    // Quiet mode always shows the flat scenes, so the 3D project leaves it off. Motion is
+    // still reduced there by the browser setting in playwright.config.cjs.
+    settings: { a: '09:00', b: '16:30', theme: 'auto', quiet: !is3D(), buddy: true },
     journey: Core.journey(),
     pet: {
       id: 'pet-' + Buffer.from(name).toString('hex'),
@@ -69,16 +81,17 @@ const test = base.extend({
   },
 });
 
-async function open(page, route = 'island', data = sampleState()) {
+async function open(page, route = 'island', data = sampleState(), scene3d = is3D() ? 'on' : 'off') {
   await page.addInitScript(
-    ({ data, LS }) => {
+    ({ data, LS, SCENE3D, scene3d }) => {
       if (!sessionStorage.getItem('test-seeded')) {
         if (data !== null)
           localStorage.setItem(LS, typeof data === 'string' ? data : JSON.stringify(data));
+        if (scene3d) localStorage.setItem(SCENE3D, scene3d);
         sessionStorage.setItem('test-seeded', 'yes');
       }
     },
-    { data, LS },
+    { data, LS, SCENE3D, scene3d },
   );
   await page.goto('/#' + route);
   await expect(page.locator('#page-' + route)).toHaveClass(/\bon\b/);
@@ -175,6 +188,8 @@ module.exports = {
   DAY,
   LS,
   OWNER,
+  SCENE3D,
+  is3D,
   sampleState,
   open,
   go,

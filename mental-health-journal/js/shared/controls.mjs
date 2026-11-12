@@ -26,9 +26,17 @@ function initializeControls({ onRangeChange }) {
     const seg = b.parentElement;
     const wasOn = b.classList.contains('on');
     const sticky =
-      ['evtype', 'range', 'theme', 'wth', 'drawtab', 'pettab', 'drawmode', 'buddy'].includes(
-        seg.dataset.name,
-      ) || /^phq/.test(seg.dataset.name);
+      [
+        'evtype',
+        'range',
+        'theme',
+        'wth',
+        'drawtab',
+        'pettab',
+        'drawmode',
+        'buddy',
+        'scene3d',
+      ].includes(seg.dataset.name) || /^phq/.test(seg.dataset.name);
     seg.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
     if (!wasOn || sticky) b.classList.add('on');
     if (seg.dataset.name === 'range') onRangeChange();

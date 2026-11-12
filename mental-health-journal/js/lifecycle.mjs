@@ -8,11 +8,13 @@ import { resetDrawSession } from './cards/draw.mjs';
 import { clearMemorySession } from './games/memory.mjs';
 import { closePhotoEditor } from './pet/photos.mjs';
 import { closeLB } from './shared/lightbox.mjs';
+import { unmount3D } from './scene3d/mount.mjs';
 
 function resetTransientViews() {
   stopGame();
   cancelTrip();
   roamStop();
+  unmount3D();
   stopHaven();
   clearMemorySession();
   resetDrawSession();
