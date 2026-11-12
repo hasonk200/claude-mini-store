@@ -122,6 +122,15 @@ test('3D is used only when hardware, the local setting and quiet mode all allow 
   assert.equal(resolve3D({ ...capable, setting: 'nonsense' }), true);
 });
 
+test('ambient animation backs off when the device cannot keep up', async () => {
+  const { ambientInterval } = await import('../js/scene3d/loop.mjs');
+  const normal = ambientInterval(16);
+  assert.ok(normal > 25 && normal < 34, 'about 30fps on a healthy device');
+  assert.equal(ambientInterval(40), normal);
+  assert.equal(ambientInterval(60), 180);
+  assert.equal(ambientInterval(500), 300, 'never slower than a few frames a second');
+});
+
 test('the vendored three.js matches the pinned npm package', () => {
   const { execFileSync } = require('node:child_process');
   const path = require('node:path');

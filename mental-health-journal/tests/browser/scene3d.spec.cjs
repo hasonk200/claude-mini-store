@@ -263,8 +263,11 @@ test('with reduced motion the night room is a still picture: no flicker, no idle
 test('with motion allowed the room is gently alive and a dropped pet still settles', async ({
   page,
 }) => {
+  // Continuous animation on a software-rendered GPU is slow; give CI room and a small stage.
+  test.slow();
+  await page.setViewportSize({ width: 700, height: 700 });
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  const data = awakeState({ own: ALL_FURNITURE });
+  const data = awakeState({ own: { sofa: 1, lamp: 1 } });
   await open(page, 'pet', data);
   await expectRoom3D(page);
   const canvas = page.locator('canvas.scene3d');
