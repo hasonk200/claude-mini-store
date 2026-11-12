@@ -42,3 +42,15 @@ test('without WebGL the island shows the painted map and its stops', async ({ pa
   await page.locator('.map-stop[data-destination="garden"]').click();
   await expect(page.locator('#island-destination')).toContainText('成長花園');
 });
+
+test('without WebGL the quiet lakeside shows its painted picture', async ({ page }) => {
+  const data = sampleState();
+  data.settings.quiet = false;
+  await open(page, 'haven', data, 'on');
+  await expect(page.locator('#haven-scene .haven-art')).toBeVisible();
+  await expect(page.locator('#haven-scene .haven-pet svg')).toHaveCount(1);
+  await expect(page.locator('canvas.scene3d')).toHaveCount(0);
+  await expect(page.locator('#haven-scene')).not.toHaveClass(/\bis-3d\b/);
+  await page.locator('#haven-rest').click();
+  await expect(page.locator('#haven-copy')).toContainText('60 秒');
+});

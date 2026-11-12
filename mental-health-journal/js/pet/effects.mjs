@@ -3,7 +3,7 @@ import { state } from '../state.mjs';
 import { petStage, petO, homeExpr } from './model.mjs';
 import { prefersReducedMotion } from '../shared/preferences.mjs';
 import { roamExpr } from './positions.mjs';
-import { scene3D } from '../scene3d/mount.mjs';
+import { scene3D, OUTING_SCENES } from '../scene3d/mount.mjs';
 
 let petBusy = false;
 
@@ -62,7 +62,9 @@ function fx(id, chars, n = 5) {
 
 // The 3D scene (if one is live) that mirrors this 2D stage.
 const stage3D = (stageId) =>
-  stageId === 'room' ? scene3D('home') : scene3D('park') || scene3D('cafe');
+  stageId === 'room'
+    ? scene3D('home')
+    : OUTING_SCENES.map((place) => scene3D(place)).find(Boolean) || null;
 
 function setPetExpr(stageId, expr, ms) {
   const petId = state.pet?.id;
