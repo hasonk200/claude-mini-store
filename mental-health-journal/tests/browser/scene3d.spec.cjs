@@ -315,8 +315,9 @@ test('leaving the pet page releases every 3D geometry and texture', async ({ pag
     expect(again.textures).toBe(inside.textures);
   }
   // Switching pet tabs releases the room too.
+  // (The tab's own handler runs a moment after the click.)
   await subtab(page, 'pettab', 'shop');
-  expect(await live(page)).toBe(null);
+  await expect.poll(() => live(page)).toBe(null);
   expect((await info()).geometries).toBeLessThanOrEqual(1);
   await subtab(page, 'pettab', 'home');
   await expectRoom3D(page);
@@ -422,7 +423,7 @@ test('the café is 3D, the lake stays 2D, and leaving releases everything', asyn
   // A place without a 3D scene shows its 2D artwork even with 3D switched on.
   await page.locator('#trip-home').click();
   await subtab(page, 'pettab', 'out');
-  expect(await live(page)).toBe(null);
+  await expect.poll(() => live(page)).toBe(null);
   await page.locator('[data-place="lake"]').click();
   await expect(page.locator('#outstage > svg.scene')).toHaveCount(1);
   await expect(page.locator('#outstage')).not.toHaveClass(/\bis-3d\b/);

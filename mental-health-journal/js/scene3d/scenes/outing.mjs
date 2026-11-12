@@ -286,7 +286,8 @@ function createOuting(ctx, place) {
   }
 
   function moving() {
-    if (!snapshot) return false;
+    // With reduced motion everything is shown already in place: nothing is ever under way.
+    if (!snapshot || reducedMotion) return false;
     const t = now(),
       active = (span) => span && t < span.start + span.ms;
     return !!(
