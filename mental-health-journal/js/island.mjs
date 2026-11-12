@@ -9,56 +9,11 @@ import { MILES } from './milestones.mjs';
 import { toast } from './shared/controls.mjs';
 import { prefersReducedMotion, applyTheme } from './shared/preferences.mjs';
 import { go } from './navigation.mjs';
+import { petO } from './pet/model.mjs';
+import { mount3D, use3D } from './scene3d/mount.mjs';
+import { DESTINATIONS } from './data/island.mjs';
 
 const JC = window.JournalCore;
-
-const DESTINATIONS = {
-  home: {
-    name: '暖暖屋',
-    icon: '⌂',
-    text: '探吓你嘅伙伴、佈置屋企，或者一齊去散步。',
-    button: '入屋坐吓',
-    page: 'pet',
-    x: 28,
-    y: 40,
-  },
-  library: {
-    name: '觀星書屋',
-    icon: '✦',
-    text: '留低今晚嘅故事，遇見一張屬於今日嘅牌。',
-    button: '推門入去',
-    page: 'draw',
-    x: 72,
-    y: 42,
-  },
-  garden: {
-    name: '成長花園',
-    icon: '❀',
-    text: '每一日嘅記錄都會留低，花園跟住你慢慢長大。',
-    button: '去花園',
-    page: null,
-    x: 28,
-    y: 70,
-  },
-  lake: {
-    name: '靜靜湖畔',
-    icon: '≈',
-    text: '望吓湖水，陪自己停一停。乜都唔做都可以。',
-    button: '去坐一陣',
-    page: 'haven',
-    x: 75,
-    y: 74,
-  },
-  plaza: {
-    name: '小遊戲廣場',
-    icon: '◇',
-    text: '帶伙伴去星光尋路、推箱解謎，或者慢慢玩配對。',
-    button: '去玩遊戲',
-    page: 'arcade',
-    x: 50,
-    y: 59,
-  },
-};
 
 let destination = 'home';
 
@@ -68,11 +23,41 @@ function worldHour() {
   return worldTime === 'night' ? 22 : worldTime === 'day' ? 13 : new Date().getHours();
 }
 
+// Shows the island map in 3D when that is available. The scene is drawn from the same
+// things the 2D map shows: the hour, the chosen stop, the garden's growth and the companion.
+function world3D() {
+  if (!$('#page-island').classList.contains('on')) return false;
+  return mount3D('island', $('#island-world'), () => {
+    const hour = worldHour(),
+      night = hour >= 19 || hour < 6,
+      p = JC.progress(state),
+      j = state.journey;
+    return {
+      // The map calls 7pm onwards night; before that the 3D sky may still be at dusk.
+      hour: night ? 22 : hour,
+      destination,
+      destinations: DESTINATIONS,
+      garden: { level: p.level, decor: j.decor || '', watered: !!j.watered[defaultDay()] },
+      pet: state.pet
+        ? { id: state.pet.id, ...petO('happy') }
+        : { sp: 'cloud', color: 'milktea', stage: 1, expr: 'happy' },
+    };
+  });
+}
+
 function renderWorldTime() {
   const hour = worldHour();
   const night = hour >= 19 || hour < 6;
   $('#island-world').dataset.time = night ? 'night' : 'day';
-  $('#island-world .world-art').src = 'assets/island-' + (night ? 'night' : 'day') + '.webp';
+  // The painted map is only fetched when the flat version is what will be shown.
+  const art = $('#island-world .world-art'),
+    flat = !use3D();
+  art.hidden = !flat;
+  if (flat) {
+    const source = 'assets/island-' + (night ? 'night' : 'day') + '.webp';
+    if (art.getAttribute('src') !== source) art.src = source;
+  }
+  world3D();
   $$('[data-world-time]').forEach((b) =>
     b.setAttribute('aria-pressed', String(b.dataset.worldTime === worldTime)),
   );
@@ -99,6 +84,7 @@ function chooseDestination(k) {
     '</p></div><button class="btn" id="destination-enter">' +
     d.button +
     ' →</button>';
+  world3D();
 }
 
 function gardenSVG(level, decor, watered) {
@@ -200,6 +186,7 @@ function renderGarden() {
   $$('[data-decor]').forEach((b) =>
     b.setAttribute('aria-pressed', String(b.dataset.decor === j.decor)),
   );
+  world3D();
 }
 
 function renderIsland() {

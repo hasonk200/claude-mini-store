@@ -34,6 +34,8 @@ module.exports = defineConfig({
     {
       name: '3d',
       testIgnore: '**/scene3d-no-webgl.spec.cjs',
+      // WebGL is drawn on the CPU here, so every scene that opens costs about a second.
+      timeout: 60000,
       use: { launchOptions: launch('--use-angle=swiftshader', '--enable-unsafe-swiftshader') },
     },
     {

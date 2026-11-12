@@ -58,4 +58,15 @@ function syncOverlay(THREE, camera, container, anchors) {
   }
 }
 
-export { projectPoint, syncOverlay };
+// Hands the elements back to their stylesheet positions (used when a scene is unmounted
+// but its controls stay in the page, like the island's map stops).
+function resetOverlay(container, anchors) {
+  for (const anchor of anchors) {
+    const element = container.querySelector(anchor.selector);
+    if (!element) continue;
+    for (const property of ['left', 'top', 'right', 'bottom', 'width', 'height', '--pet-box'])
+      element.style.removeProperty(property);
+  }
+}
+
+export { projectPoint, syncOverlay, resetOverlay };

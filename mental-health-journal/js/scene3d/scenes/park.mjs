@@ -1,6 +1,7 @@
 // 公園 in 3D: rolling grass, a sandy path, trees, a pond, a bench and a lamp post.
 // Colours follow the 2D park (js/art/pet-scenes.mjs) for day, dusk and night.
 import { createOuting } from './outing.mjs';
+import { leafyTree } from '../props.mjs';
 import { rng } from '../../art/math.mjs';
 
 const CAMERA = {
@@ -95,12 +96,17 @@ function build(env) {
   }
 
   /* trees */
+  let planted = 0;
   const tree = (x, z, h, leaf = c.leaf, dark = c.leafDark) => {
-    B.cylinder(0.14 * h, 0.2 * h, 1.1 * h, night ? '#5a463c' : '#8a5a33', { x, y: 0.55 * h, z }, 7);
-    B.ball(0.95 * h, dark, { x, y: 1.55 * h, z, shade: 0.22 }, 9);
-    B.ball(0.72 * h, leaf, { x: x - 0.5 * h, y: 1.95 * h, z: z + 0.2 * h, shade: 0.18 }, 8);
-    B.ball(0.68 * h, leaf, { x: x + 0.52 * h, y: 1.85 * h, z: z + 0.25 * h, shade: 0.18 }, 8);
-    B.ball(0.6 * h, leaf, { x, y: 2.45 * h, z, shade: 0.14 }, 8);
+    leafyTree(
+      THREE,
+      B,
+      { x, y: 0, z },
+      h * 1.65,
+      [leaf, dark],
+      night ? '#5a463c' : '#8a5a33',
+      planted++,
+    );
     S.cylinder(
       1.25 * h,
       1.25 * h,

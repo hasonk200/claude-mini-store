@@ -97,7 +97,7 @@ function createOuting(ctx, place) {
   camera.position.set(...orbitPosition(setup));
   camera.lookAt(...setup.target);
   const materials = createMaterials(THREE);
-  const shared = new Set([materials.lit, materials.glow, materials.soft]);
+  const shared = new Set([materials.lit, materials.glow, materials.soft, materials.leaf]);
   const textures = createTextureCache(THREE, requestRender);
   const petShared = { materials, textures, reducedMotion };
   const hemisphere = new THREE.HemisphereLight();
@@ -183,6 +183,7 @@ function createOuting(ctx, place) {
       },
     });
     group.add(B.build(materials.lit));
+    if (B.leaves) group.add(B.leaves.build(materials));
     if (!G.empty) group.add(G.build(materials.glow));
     if (!S.empty) {
       const haze = S.build(materials.soft);
@@ -438,7 +439,8 @@ function createOuting(ctx, place) {
         ? { id: npcId, visible: npc.group.visible, x: +npc.group.position.x.toFixed(2) }
         : null,
       found: found && found.visible ? foundKey : null,
-      ball: ball.visible,
+      // In play from the moment it is thrown, not only once a frame has shown it.
+      ball: ball.visible || !!throwing,
       moving: moving(),
     }),
     dispose() {
@@ -449,6 +451,7 @@ function createOuting(ctx, place) {
       ball.geometry.dispose();
       for (const material of shared) material.dispose();
       materials.ramp.dispose();
+      if (materials.leaf.map) materials.leaf.map.dispose();
       new THREE.Sprite().geometry.dispose();
       textures.dispose();
       pet = npc = found = scenery = snapshot = null;

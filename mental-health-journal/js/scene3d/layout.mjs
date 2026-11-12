@@ -106,7 +106,35 @@ function orbitPosition(camera, azimuthDegrees = camera.azimuth, polarDegrees = c
   ];
 }
 
+// ---- island map ----
+// The island sits at the origin with its lawn at y = 0. DESTINATIONS in js/island.mjs place
+// the five stops by x/y percent on the 2D map; the same numbers place the 3D buildings.
+const ISLAND = { radius: 5.7, spread: 7 };
+
+function destinationPosition(destination) {
+  return {
+    x: ((destination.x - 50) / 50) * ISLAND.spread,
+    z: ((destination.y - 55) / 50) * ISLAND.spread,
+  };
+}
+
+const ISLAND_CAMERA = {
+  fov: 35,
+  target: [0.5, 0.6, 0.55],
+  distance: 17,
+  azimuth: 0,
+  azimuthRange: 25,
+  polar: 55,
+  polarMin: 47,
+  polarMax: 62,
+  needWidth: 15.6,
+  needHeight: 11.4,
+};
+
 export {
+  ISLAND,
+  ISLAND_CAMERA,
+  destinationPosition,
   ROOM,
   PET_UNIT,
   PET_WIDTH,

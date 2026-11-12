@@ -48,7 +48,7 @@ function createScene(ctx) {
   camera.position.set(...orbitPosition(HOME_CAMERA));
   camera.lookAt(...HOME_CAMERA.target);
   const materials = createMaterials(THREE);
-  const shared = new Set([materials.lit, materials.glow, materials.soft]);
+  const shared = new Set([materials.lit, materials.glow, materials.soft, materials.leaf]);
   const textures = createTextureCache(THREE, requestRender);
   const petShared = { materials, textures, reducedMotion };
   const hemisphere = new THREE.HemisphereLight();

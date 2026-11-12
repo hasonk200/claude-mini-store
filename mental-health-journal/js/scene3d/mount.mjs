@@ -16,7 +16,7 @@ import {
   rendererInfo,
 } from './renderer.mjs';
 import { createLoop } from './loop.mjs';
-import { syncOverlay, projectPoint } from './overlay.mjs';
+import { syncOverlay, resetOverlay, projectPoint } from './overlay.mjs';
 import { spotPosition } from './layout.mjs';
 import { forwardClicks } from './picking.mjs';
 import { palette } from './palette.mjs';
@@ -25,6 +25,7 @@ const SCENES = {
   home: () => import('./scenes/home.mjs'),
   park: () => import('./scenes/park.mjs'),
   cafe: () => import('./scenes/cafe.mjs'),
+  island: () => import('./scenes/island.mjs'),
 };
 const loadedScenes = {};
 const radians = (degrees) => (degrees * Math.PI) / 180;
@@ -173,7 +174,9 @@ function mount3D(kind, container, makeSnapshot) {
             mount3D(kind, container, makeSnapshot);
         })
         .catch(() => {
+          // three.js or the scene could not be fetched: stay in 2D for this visit.
           loadFailed = true;
+          fallback();
         });
       return false;
     }
@@ -201,6 +204,7 @@ function unmount3D(kind) {
   controls.dispose();
   observer.disconnect();
   stopClicks();
+  resetOverlay(container, scene.anchors());
   scene.dispose();
   getRenderer().domElement.remove();
   container.classList.remove('is-3d');
@@ -221,19 +225,16 @@ function initializeScene3D({ onFallback }) {
     live: () => (current ? current.kind : null),
     use3D,
     describe: () => (current ? current.scene.describe() : null),
-    // Where a pet spot currently is on the page, in viewport pixels.
-    spotOnPage(spotId) {
+    // Where a point of the scene (or a home pet spot) currently is, in viewport pixels.
+    pointOnPage(point) {
       if (!current) return null;
       const { container, scene } = current;
       const box = container.getBoundingClientRect();
-      const p = projectPoint(
-        loadedThree().THREE,
-        scene.camera,
-        spotPosition(spotId),
-        box.width,
-        box.height,
-      );
+      const p = projectPoint(loadedThree().THREE, scene.camera, point, box.width, box.height);
       return { x: box.left + p.x, y: box.top + p.y };
+    },
+    spotOnPage(spotId) {
+      return this.pointOnPage(spotPosition(spotId));
     },
   };
 }
