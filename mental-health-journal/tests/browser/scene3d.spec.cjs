@@ -54,6 +54,10 @@ async function expectRoom3D(page) {
 
 // Two captures of the 3D canvas some time apart. Speech bubbles, toasts and floating
 // effects are DOM drawn over the canvas and come and go on timers, so they are hidden.
+// Tests that let the scenes animate draw every frame on the CPU, and the cost is per pixel:
+// a phone-sized stage keeps them from starving whatever else is running beside them.
+const MOTION_VIEWPORT = { width: 420, height: 700 };
+
 async function twoFrames(page, gap = 800) {
   await page.addStyleTag({
     content: '.bubble,.toast,.fx,.nest-tag{visibility:hidden!important}',
@@ -274,7 +278,7 @@ test('with motion allowed the room is gently alive and a dropped pet still settl
 }) => {
   // Continuous animation on a software-rendered GPU is slow; give CI room and a small stage.
   test.slow();
-  await page.setViewportSize({ width: 700, height: 700 });
+  await page.setViewportSize(MOTION_VIEWPORT);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const data = awakeState({ own: { sofa: 1, lamp: 1 } });
   await open(page, 'pet', data);
@@ -650,7 +654,7 @@ test('with motion allowed the pet walks into the park and fetches a thrown ball'
   page,
 }) => {
   test.slow();
-  await page.setViewportSize({ width: 700, height: 700 });
+  await page.setViewportSize(MOTION_VIEWPORT);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await fixedDice(page);
   await open(page, 'pet', awakeState());
@@ -852,7 +856,7 @@ test('quiet mode swaps the 3D map for the painted one and back, with the stops b
 
 test('with motion allowed the companion strolls to the chosen place', async ({ page }) => {
   test.slow();
-  await page.setViewportSize({ width: 700, height: 700 });
+  await page.setViewportSize(MOTION_VIEWPORT);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await open(page, 'island', awakeState());
   await expectStage3D(page, '#island-world');
