@@ -25,8 +25,13 @@ const SCENES = {
   home: () => import('./scenes/home.mjs'),
   park: () => import('./scenes/park.mjs'),
   cafe: () => import('./scenes/cafe.mjs'),
+  lake: () => import('./scenes/lake.mjs'),
+  street: () => import('./scenes/street.mjs'),
   island: () => import('./scenes/island.mjs'),
+  haven: () => import('./scenes/haven.mjs'),
 };
+// The places a pet can go out to that have a 3D scene.
+const OUTING_SCENES = ['park', 'cafe', 'lake', 'street'];
 const loadedScenes = {};
 const radians = (degrees) => (degrees * Math.PI) / 180;
 
@@ -248,4 +253,5 @@ export {
   local3DSetting,
   setLocal3DSetting,
   initializeScene3D,
+  OUTING_SCENES,
 };

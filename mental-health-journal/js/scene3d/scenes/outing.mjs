@@ -1,4 +1,5 @@
-// Shared stage for the outing scenes (park, café): the pet walking in, a friend arriving,
+// Shared stage for the outing scenes (park, café, lake, night street): the pet walking in, a
+// friend arriving,
 // a found treasure, and the ball game. Each place supplies its own scenery.
 //
 // The outing itself (who is met, what is found, scores, rewards) is decided by
@@ -75,6 +76,38 @@ function buildFound(THREE, name, materials) {
         b.box(0.008, 0.13, 0.01, '#3d2616', { x, y: 0.08, z: 0.05, rz: r });
       }
       break;
+    case '貝殼':
+      // A scallop: a fan of ribs over a pale shell.
+      b.ball(1, '#f6d9c8', { y: 0.13, sx: 0.15, sy: 0.13, sz: 0.05 }, 10);
+      for (let i = 0; i < 5; i++) {
+        const a = ((i - 2) / 5) * 1.5;
+        b.box(0.02, 0.2, 0.03, '#eab9a6', { x: Math.sin(a) * 0.07, y: 0.14, z: 0.035, rz: -a });
+      }
+      b.box(0.1, 0.05, 0.05, '#eab9a6', { y: 0.025 });
+      break;
+    case '光滑石仔':
+      b.ball(1, '#9aa3b5', { y: 0.07, sx: 0.14, sy: 0.07, sz: 0.11 }, 10);
+      b.ball(1, '#c3cad6', { x: 0.03, y: 0.1, z: 0.03, sx: 0.07, sy: 0.03, sz: 0.05 }, 8);
+      break;
+    case '海鷗羽毛':
+      b.box(0.012, 0.34, 0.012, '#c9cfdc', { y: 0.18, rz: 0.35 });
+      b.ball(1, '#fbf7ee', { x: -0.035, y: 0.21, sx: 0.06, sy: 0.14, sz: 0.012, rz: 0.35 }, 8);
+      b.ball(1, '#aeb6c6', { x: -0.075, y: 0.3, sx: 0.035, sy: 0.05, sz: 0.013, rz: 0.35 }, 6);
+      break;
+    case '瓶蓋':
+      b.cylinder(0.11, 0.12, 0.04, '#e8593f', { y: 0.1, rx: 0.9 }, 14);
+      b.cylinder(0.075, 0.075, 0.045, '#f7f2e4', { y: 0.1, rx: 0.9 }, 12);
+      break;
+    case '霓虹貼紙':
+      // A star-shaped sticker; bright, but not a light.
+      g.cylinder(0.13, 0.13, 0.012, '#ff9fd0', { y: 0.16, rx: Math.PI / 2 }, 5);
+      g.cylinder(0.07, 0.07, 0.016, '#7fe6ff', { y: 0.16, rx: Math.PI / 2, ry: 0.6 }, 5);
+      break;
+    case '舊車票':
+      b.box(0.24, 0.13, 0.012, '#f1e3c2', { y: 0.12, rz: 0.18 });
+      b.box(0.24, 0.03, 0.014, '#d9826a', { x: -0.007, y: 0.155, rz: 0.18 });
+      b.box(0.1, 0.012, 0.014, '#8a7a66', { x: 0.02, y: 0.1, rz: 0.18 });
+      break;
     case 'egg':
       b.ball(1, '#e8ecf6', { y: 0.16, sx: 0.12, sy: 0.16, sz: 0.12 }, 12);
       g.torus(0.118, 0.008, '#9ff0ff', { y: 0.14, rx: Math.PI / 2 });
@@ -107,6 +140,8 @@ function createOuting(ctx, place) {
   const world = new THREE.Group();
   scene.add(hemisphere, sun, world);
 
+  // A place can be the same time of day whatever the clock says (the night street).
+  const hourOf = (snap) => place.hour ?? snap.hour;
   const lineZ = place.lineZ ?? 1.5,
     standY = place.standY ?? 0;
   let scenery = null,
@@ -134,7 +169,7 @@ function createOuting(ctx, place) {
   })();
 
   function rebuild(snap) {
-    const pal = ctx.palette(snap.hour);
+    const pal = ctx.palette(hourOf(snap));
     if (scenery) {
       world.remove(scenery);
       disposeTree(scenery, shared);
@@ -300,7 +335,7 @@ function createOuting(ctx, place) {
   }
 
   function update(snap) {
-    const key = ctx.palette(snap.hour).time;
+    const key = ctx.palette(hourOf(snap)).time;
     if (key !== sceneryKey) {
       sceneryKey = key;
       rebuild(snap);

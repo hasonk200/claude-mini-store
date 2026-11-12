@@ -552,6 +552,8 @@ canvas.scene3d{position:absolute;inset:0;width:100%;height:100%;display:block;z-
 #room.is-3d{aspect-ratio:4/3}
 @media(max-width:560px){#room.is-3d{aspect-ratio:5/4}}
 /* Island map in 3D: the painted map, its shade and sparkles and the flat companion step aside. */
+.haven-scene.is-3d,.haven-scene.awaits-3d{aspect-ratio:3/2}
+@media(max-width:560px){.haven-scene.is-3d,.haven-scene.awaits-3d{aspect-ratio:4/3}}
 .world.is-3d .world-shade,.world.is-3d .world-sparkles,.world.is-3d .world-companion{display:none}
 .world-art[hidden]{display:none}
 /* In 3D the stops are compact name tags so they do not hide the buildings; the short

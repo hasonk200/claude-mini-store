@@ -11,10 +11,10 @@ import { keyOf, defaultDay } from '../shared/dates.mjs';
 import { bubble, setPetExpr, fx } from './effects.mjs';
 import { showPetTab } from './page.mjs';
 import { openPhoto } from './photos.mjs';
-import { mount3D, ready3D, scene3D, unmount3D } from '../scene3d/mount.mjs';
+import { mount3D, ready3D, scene3D, unmount3D, OUTING_SCENES } from '../scene3d/mount.mjs';
 
 // Places that have a 3D scene; the others (lake, night street) stay 2D.
-const OUTING_3D = ['park', 'cafe'];
+const OUTING_3D = OUTING_SCENES;
 
 let trip = null;
 
@@ -441,4 +441,12 @@ function initializePetOutings() {
   });
 }
 
-export { stopGame, cancelTrip, trip, renderOutChoose, initializePetOutings };
+// If 3D stops working in the middle of an outing, put the place's 2D picture back behind
+// everyone on the stage.
+function restoreOutingArt() {
+  const stage = $('#outstage');
+  if (!trip || !stage || stage.querySelector(':scope > svg.scene')) return;
+  stage.insertAdjacentHTML('afterbegin', PET.PLACES[trip.place].f({ hour: new Date().getHours() }));
+}
+
+export { stopGame, cancelTrip, trip, renderOutChoose, initializePetOutings, restoreOutingArt };

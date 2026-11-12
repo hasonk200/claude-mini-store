@@ -405,7 +405,7 @@ test('a park outing plays out in 3D with the same friend, treasure, game and pho
   await expect(page.locator('#outstage canvas')).toHaveCount(0);
 });
 
-test('the café is 3D, the lake stays 2D, and leaving releases everything', async ({ page }) => {
+test('the café and the lake are 3D, and leaving releases everything', async ({ page }) => {
   await fixedDice(page);
   await open(page, 'pet', awakeState());
   await subtab(page, 'pettab', 'out');
@@ -420,15 +420,23 @@ test('the café is 3D, the lake stays 2D, and leaving releases everything', asyn
   expect(info.triangles).toBeLessThanOrEqual(50000);
   expect(info.calls).toBeLessThanOrEqual(80);
 
-  // A place without a 3D scene shows its 2D artwork even with 3D switched on.
+  // The lake: the boardwalk in 3D, with the ball game on offer as in 2D.
   await page.locator('#trip-home').click();
   await subtab(page, 'pettab', 'out');
   await expect.poll(() => live(page)).toBe(null);
   await page.locator('[data-place="lake"]').click();
-  await expect(page.locator('#outstage > svg.scene')).toHaveCount(1);
-  await expect(page.locator('#outstage')).not.toHaveClass(/\bis-3d\b/);
-  expect(await live(page)).toBe(null);
+  await expectStage3D(page, '#outstage');
+  expect(await live(page)).toBe('lake');
   await expect(page.locator('#out-panel')).toContainText('返屋企');
+  await expect(page.locator('#game-go')).toHaveCount(1);
+  const lake = await scene(page);
+  expect(lake.pet).not.toBe(null);
+  expect(['egg', '貝殼', null]).toContain(lake.found);
+  const lakeInfo = await page.evaluate(() => window.JournalScene3D.info());
+  expect(lakeInfo.triangles).toBeLessThanOrEqual(50000);
+  expect(lakeInfo.calls).toBeLessThanOrEqual(80);
+  // Reduced motion: the water, the boats and the gulls all hold still.
+  expect(await twoFrames(page)).toBe(true);
 
   // Back to the café, then away from the pet page altogether: nothing stays on the GPU.
   await page.locator('#trip-home').click();
@@ -458,6 +466,95 @@ async function clickAndDescribe(page, selector) {
   await page.locator(selector).click();
   return page.evaluate(() => window.__atClick);
 }
+
+test('the night street is 3D, and is night at any hour', async ({ page }) => {
+  // 16:00 UTC is 11:00 in Toronto: broad daylight everywhere else.
+  await page.clock.setFixedTime(new Date('2026-10-25T16:00:00Z'));
+  await fixedDice(page);
+  await open(page, 'pet', awakeState());
+  await subtab(page, 'pettab', 'out');
+  await page.locator('[data-place="street"]').click();
+  await expectStage3D(page, '#outstage');
+  expect(await live(page)).toBe('street');
+  const street = await scene(page);
+  expect(street.time).toBe('night');
+  expect(street.pet).not.toBe(null);
+  expect(['egg', '瓶蓋', null]).toContain(street.found);
+  await expect(page.locator('#game-go')).toHaveCount(0);
+  const info = await page.evaluate(() => window.JournalScene3D.info());
+  expect(info.triangles).toBeLessThanOrEqual(50000);
+  expect(info.calls).toBeLessThanOrEqual(80);
+  // Reduced motion: steady lights, no drifting steam.
+  expect(await twoFrames(page)).toBe(true);
+  // Photos are still composed from the 2D artwork.
+  await page.locator('#trip-photo').click();
+  await expect(page.locator('#ph-prev svg').first()).toBeVisible();
+  await page.locator('#trip-home').click();
+  await expectRoom3D(page);
+  expect(await live(page)).toBe('home');
+});
+
+test('the quiet lakeside is 3D, keeps its one-minute rest, and frees itself on leaving', async ({
+  page,
+}) => {
+  const painted = [];
+  page.on('request', (request) => {
+    if (request.url().includes('lakeside.webp')) painted.push(request.url());
+  });
+  await open(page, 'haven', awakeState());
+  await expectStage3D(page, '#haven-scene');
+  expect(await live(page)).toBe('haven');
+  // The painted picture is neither shown nor fetched; the box says what it shows instead.
+  await expect(page.locator('#haven-scene .haven-art')).toHaveCount(0);
+  await expect(page.locator('#haven-scene .haven-pet')).toHaveCount(0);
+  await expect(page.locator('#haven-scene')).toHaveAttribute('role', 'img');
+  await expect(page.locator('#haven-scene')).toHaveAttribute('aria-label', /湖畔碼頭/);
+  await expect(page.locator('#haven-scene canvas.scene3d')).toHaveAttribute('aria-hidden', 'true');
+  expect(painted).toEqual([]);
+  const haven = await scene(page);
+  expect(haven.pet).toMatchObject({ expr: 'normal', x: 0 });
+  expect(haven.moving).toBe(false);
+  const info = await page.evaluate(() => window.JournalScene3D.info());
+  expect(info.triangles).toBeLessThanOrEqual(50000);
+  expect(info.calls).toBeLessThanOrEqual(80);
+  expect(await twoFrames(page)).toBe(true);
+
+  // The rest itself is the same code as in 2D.
+  await page.locator('#haven-rest').click();
+  await expect(page.locator('#haven-copy')).toContainText('60 秒');
+  await expect(page.locator('#haven-rest')).toHaveText('隨時結束');
+  expect(await live(page)).toBe('haven');
+
+  await go(page, 'island');
+  await expectStage3D(page, '#island-world');
+  expect(await live(page)).toBe('island');
+  await expect(page.locator('#haven-scene canvas')).toHaveCount(0);
+  await go(page, 'today');
+  expect(await live(page)).toBe(null);
+  const after = await page.evaluate(() => window.JournalScene3D.info());
+  expect(after.geometries).toBeLessThanOrEqual(1);
+  expect(after.textures).toBe(0);
+});
+
+test('the 3D lakeside shows a companion even before one is adopted', async ({ page }) => {
+  const data = awakeState();
+  data.pet = null;
+  await open(page, 'haven', data);
+  await expectStage3D(page, '#haven-scene');
+  expect((await scene(page)).pet).toMatchObject({ expr: 'normal' });
+});
+
+test('quiet mode always shows the painted lakeside', async ({ page }) => {
+  const data = awakeState();
+  data.settings.quiet = true;
+  await open(page, 'haven', data);
+  await expect(page.locator('#haven-scene .haven-art')).toBeVisible();
+  await expect(page.locator('#haven-scene .haven-pet svg')).toHaveCount(1);
+  await expect(page.locator('#haven-scene')).not.toHaveClass(/\bis-3d\b/);
+  await expect(page.locator('#haven-scene')).not.toHaveAttribute('role', 'img');
+  await expect(page.locator('canvas.scene3d')).toHaveCount(0);
+  expect(await live(page)).toBe(null);
+});
 
 test('with motion allowed the pet walks into the park and fetches a thrown ball', async ({
   page,
@@ -717,7 +814,7 @@ test('review screenshots of the 3D room', async ({ page }) => {
   }
 });
 
-test('review screenshots of the 3D outings and island', async ({ page }) => {
+test('review screenshots of the 3D outings, lakeside and island', async ({ page }) => {
   test.skip(!process.env.UPDATE_3D_SCREENSHOTS, 'only when refreshing docs/screenshots');
   test.slow();
   const folder = path.join(__dirname, '..', '..', 'docs', 'screenshots');
@@ -726,6 +823,12 @@ test('review screenshots of the 3D outings and island', async ({ page }) => {
   for (const [name, time, place] of [
     ['park-day', '2026-10-25T16:00:00Z', 'park'],
     ['cafe-dusk', '2026-10-25T22:00:00Z', 'cafe'],
+    ['lake-day', '2026-10-25T16:00:00Z', 'lake'],
+    ['lake-dusk', '2026-10-25T22:30:00Z', 'lake'],
+    ['lake-night', '2026-10-26T03:00:00Z', 'lake'],
+    ['street-night', '2026-10-26T03:00:00Z', 'street'],
+    ['haven-day', '2026-10-25T16:00:00Z', 'haven'],
+    ['haven-night', '2026-10-26T03:00:00Z', 'haven'],
     ['island-day', '2026-10-25T16:00:00Z', 'island'],
     ['island-dusk', '2026-10-25T22:30:00Z', 'island'],
     ['island-night', '2026-10-26T03:00:00Z', 'island'],
@@ -741,15 +844,16 @@ test('review screenshots of the 3D outings and island', async ({ page }) => {
     await page
       .evaluate(({ LS, data }) => localStorage.setItem(LS, JSON.stringify(data)), { LS, data })
       .catch(() => {});
-    const island = place === 'island';
-    await open(page, island ? 'island' : 'pet', data);
+    const island = place === 'island',
+      own = island || place === 'haven';
+    await open(page, own ? place : 'pet', data);
     await page.reload();
-    if (!island) {
+    if (!own) {
       await subtab(page, 'pettab', 'out');
       await page.locator('[data-place="' + place + '"]').click();
       await expect(page.locator('#trip-home')).toBeVisible({ timeout: 15000 });
     }
-    const stage = island ? '#island-world' : '#outstage';
+    const stage = island ? '#island-world' : place === 'haven' ? '#haven-scene' : '#outstage';
     await expectStage3D(page, stage);
     await page.waitForTimeout(800);
     await page.locator(stage).screenshot({ path: path.join(folder, '3d-' + name + '.png') });

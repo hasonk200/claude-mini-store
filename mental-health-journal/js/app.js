@@ -26,6 +26,7 @@ import {
   trip,
   renderOutChoose,
   initializePetOutings,
+  restoreOutingArt,
 } from './pet/outings.mjs';
 import { roamStop, initializePetRoaming } from './pet/roaming.mjs';
 import { updBuddy, initializePetBuddy } from './pet/buddy.mjs';
@@ -109,6 +110,7 @@ initializeNavigation({
       unmount3D();
     }
     if (page !== 'island') unmount3D('island');
+    if (page !== 'haven') unmount3D('haven');
     if (page !== 'haven') stopHaven();
   },
   afterNavigate: updBuddy,
@@ -167,6 +169,8 @@ initializeScene3D({
   onFallback() {
     if (state.pet && $('#page-pet').classList.contains('on') && !$('#pv-home').hidden) renderRoom();
     if ($('#page-island').classList.contains('on')) renderIsland();
+    if ($('#page-haven').classList.contains('on')) renderHaven();
+    restoreOutingArt();
   },
 });
 initializeAccount({
