@@ -3,6 +3,7 @@ import { state } from '../state.mjs';
 import { petStage, petO, homeExpr } from './model.mjs';
 import { prefersReducedMotion } from '../shared/preferences.mjs';
 import { roamExpr } from './positions.mjs';
+import { scene3D } from '../scene3d/mount.mjs';
 
 let petBusy = false;
 
@@ -64,11 +65,15 @@ function setPetExpr(stageId, expr, ms) {
   const el = document.querySelector('#' + stageId + ' .on-stage:not(.other)');
   if (!el) return;
   el.innerHTML = PET.svg(petO(expr));
+  if (stageId === 'room') scene3D('home')?.setExpr(petId, expr);
   if (ms)
     setTimeout(() => {
       if (!state.pet || state.pet.id !== petId) return;
       const e2 = document.querySelector('#' + stageId + ' .on-stage:not(.other)');
-      if (e2) e2.innerHTML = PET.svg(petO(stageId === 'room' ? roamExpr() : homeExpr()));
+      if (!e2) return;
+      const settled = stageId === 'room' ? roamExpr() : homeExpr();
+      e2.innerHTML = PET.svg(petO(settled));
+      if (stageId === 'room') scene3D('home')?.setExpr(petId, settled);
     }, ms);
 }
 

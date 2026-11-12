@@ -15,7 +15,7 @@ import { renderPet, petGreet, initializePetPage } from './pet/page.mjs';
 import { renderMemory, initializeMemory } from './games/memory.mjs';
 import { renderAdventure, initializeAdventure } from './games/adventure.mjs';
 import { renderHaven, stopHaven, initializeHaven } from './games/haven.mjs';
-import { initializeState, journalStore } from './state.mjs';
+import { initializeState, journalStore, state } from './state.mjs';
 import { fbDb, setSync, storageStatus, initializeAccount, googleLogin } from './account.mjs';
 import { milesSoon } from './milestones.mjs';
 import { initializeControls, toast } from './shared/controls.mjs';
@@ -47,6 +47,7 @@ import { initializeLightbox } from './shared/lightbox.mjs';
 import { initializePetChat } from './pet/chat.mjs';
 import { initializeSos } from './sos.mjs';
 import { initializeLifecycle, resetTransientViews } from './lifecycle.mjs';
+import { initializeScene3D, unmount3D } from './scene3d/mount.mjs';
 
 function render() {
   applyTheme();
@@ -105,6 +106,7 @@ initializeNavigation({
       stopGame();
       cancelTrip();
       roamStop();
+      unmount3D();
     }
     if (page !== 'haven') stopHaven();
   },
@@ -159,6 +161,12 @@ initializeMemory();
 initializeHaven();
 initializeAdventure();
 initializeLifecycle();
+initializeScene3D({
+  // A lost WebGL context drops back to the 2D room for the rest of this visit.
+  onFallback() {
+    if (state.pet && $('#page-pet').classList.contains('on') && !$('#pv-home').hidden) renderRoom();
+  },
+});
 initializeAccount({
   onSessionChange() {
     resetTransientViews();

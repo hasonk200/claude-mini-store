@@ -13,6 +13,7 @@ import { stopHaven } from './games/haven.mjs';
 import { clearOwnerDrafts } from './shared/drafts.mjs';
 import { clearMemorySession } from './games/memory.mjs';
 import { go, PAGES } from './navigation.mjs';
+import { local3DSetting, setLocal3DSetting } from './scene3d/mount.mjs';
 
 function renderSettings() {
   renderRecoveryStatus();
@@ -20,6 +21,7 @@ function renderSettings() {
   $('#set-b').value = state.settings.b;
   segSet('theme', state.settings.theme);
   segSet('buddy', state.settings.buddy === false ? 'off' : 'on');
+  segSet('scene3d', local3DSetting());
 }
 
 let pendingImport = null;
@@ -32,10 +34,12 @@ function initializeSettings({ renderAll }) {
     state.settings.b = $('#set-b').value || '16:30';
     state.settings.theme = segGet('theme') || 'auto';
     state.settings.buddy = segGet('buddy') !== 'off';
+    // The 3D choice stays on this device; it is deliberately not part of the synced state.
+    const scene3dSaved = setLocal3DSetting(segGet('scene3d') || 'auto');
     applyTheme();
     updBuddy();
     persist();
-    toast('設定儲存咗');
+    toast(scene3dSaved ? '設定儲存咗' : '設定儲存咗，不過呢部裝置記唔到場景選擇。');
   });
   $('#bk-export').addEventListener('click', async () => {
     const data = JSON.stringify(state, null, 2);

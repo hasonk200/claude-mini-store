@@ -10,6 +10,7 @@ import { keyOf, parseKey, defaultDay } from '../shared/dates.mjs';
 import { pick } from '../shared/helpers.mjs';
 import { PLN, TLN } from '../data/pet.mjs';
 import { bubble, fx } from './effects.mjs';
+import { unmount3D } from '../scene3d/mount.mjs';
 
 let petViews, adoptionView, statusView, stopOuting;
 
@@ -18,7 +19,10 @@ function showPetTab() {
   if (v !== 'out') {
     stopOuting();
   }
-  if (v !== 'home') roamStop();
+  if (v !== 'home') {
+    roamStop();
+    unmount3D('home');
+  }
   ['home', 'out', 'friends', 'album', 'shop'].forEach((k) => {
     $('#pv-' + k).hidden = v !== k;
   });
@@ -33,6 +37,7 @@ function renderPet() {
   if (p) ensurePet();
   updBuddy();
   if (!p) {
+    unmount3D('home');
     adoptionView();
     return;
   }

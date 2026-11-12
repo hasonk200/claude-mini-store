@@ -14,7 +14,15 @@ import {
   household,
   petNew,
 } from './model.mjs';
-import { roamPlace, spotOf, roamExpr, othersHTML, resetRoamingPositions } from './positions.mjs';
+import {
+  roamPlace,
+  spotOf,
+  roamExpr,
+  othersHTML,
+  stagePets,
+  resetRoamingPositions,
+} from './positions.mjs';
+import { mount3D, ready3D } from '../scene3d/mount.mjs';
 import { roamArm, consumeRoamDrag } from './roaming.mjs';
 import { NEEDS, TRAITS, PFOOD, PLN, HOUSE_MAX } from '../data/pet.mjs';
 import { keyOf } from '../shared/dates.mjs';
@@ -86,14 +94,17 @@ function renderRoom() {
   ensurePet();
   roamPlace();
   const sp = spotOf(p.id);
+  const room = {
+    hour: new Date().getHours(),
+    own: p.own,
+    rain: rainingToday(),
+    books: Math.max(6, Math.min(40, Object.keys(state.draws || {}).length + 6)),
+    frameCard: frame,
+  };
+  // The buttons, bubble and effects below are the same in 2D and 3D. Only the backdrop
+  // differs: the SVG room, or (once it is ready) the 3D canvas mounted behind them.
   $('#room').innerHTML =
-    PET.room({
-      hour: new Date().getHours(),
-      own: p.own,
-      rain: rainingToday(),
-      books: Math.max(6, Math.min(40, Object.keys(state.draws || {}).length + 6)),
-      frameCard: frame,
-    }) +
+    (ready3D('home') ? '' : PET.room(room)) +
     nestHTML() +
     '<button class="on-stage" data-pid="' +
     p.id +
@@ -108,6 +119,12 @@ function renderRoom() {
     '</button>' +
     othersHTML() +
     '<div class="bubble" id="bubble" hidden></div><div class="fx" id="fx"></div>';
+  mount3D('home', $('#room'), () => ({
+    ...room,
+    own: state.pet.own,
+    pets: stagePets(),
+    eggs: state.pet.eggs || [],
+  }));
   roamArm();
 }
 

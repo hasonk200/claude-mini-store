@@ -29,6 +29,8 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - run: npm ci
+      # vendor/three must be byte-identical to the pinned three package in package-lock.json.
+      - run: npm run vendor:check
       - run: npm run check
       - run: npm test
       - run: npm run format:check

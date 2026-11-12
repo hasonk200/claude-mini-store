@@ -14,6 +14,12 @@ import {
   near,
 } from './positions.mjs';
 import { PET } from '../art/pet.mjs';
+import { scene3D } from '../scene3d/mount.mjs';
+import { nearestSpot } from '../scene3d/layout.mjs';
+import { toNDC } from '../scene3d/picking.mjs';
+
+// In the 3D room a pet glides to its new spot more briskly than the 2D CSS walk.
+const WALK_3D_MS = 1200;
 
 let roamT = 0;
 
@@ -60,20 +66,28 @@ function roamTick() {
     const b = $('#bubble');
     if (b) b.hidden = true;
   }
+  const room3d = scene3D('home');
   el.classList.add('walking');
-  el.style.left = to.x + '%';
-  el.style.bottom = to.b + '%';
-  setTimeout(() => {
-    el.classList.remove('walking');
-    arriveSpot(el, mover, to, main && Math.random() < 0.45);
-  }, 3000);
+  if (room3d) room3d.movePet(mover.id, to.id, WALK_3D_MS);
+  else {
+    el.style.left = to.x + '%';
+    el.style.bottom = to.b + '%';
+  }
+  setTimeout(
+    () => {
+      el.classList.remove('walking');
+      arriveSpot(el, mover, to, main && Math.random() < 0.45);
+    },
+    room3d ? WALK_3D_MS : 3000,
+  );
 }
 
 function arriveSpot(el, pet, to, talk) {
   if (!el.isConnected) return;
   const main = pet === state.pet;
+  const expr = main ? roamExpr() : to.ex;
   el.innerHTML = main
-    ? PET.svg(petO(roamExpr()))
+    ? PET.svg(petO(expr))
     : PET.svg({
         sp: pet.sp,
         color: pet.color,
@@ -81,8 +95,9 @@ function arriveSpot(el, pet, to, talk) {
         acc: pet.acc,
         shiny: pet.shiny,
         trait: traitOf(pet),
-        expr: to.ex,
+        expr,
       });
+  scene3D('home')?.setExpr(pet.id, expr);
   if (talk) bubble('bubble', pick(to.l));
 }
 
@@ -102,15 +117,20 @@ function endDrag(e) {
     pet = allPets().find((q) => q.id === pid);
   if (!pet) return;
   const prev = roamingPositions[pid];
+  const room3d = scene3D('home');
+  const dropped = room3d && room3d.petPosition(pid);
   let best = null,
     bd = 1e9;
-  spotsAvail().forEach((s) => {
-    const dd = Math.hypot(s.x - x, (s.b - b) * 1.6);
-    if (dd < bd) {
-      bd = dd;
-      best = s;
-    }
-  });
+  // Same rule in both views: the pet settles on the closest spot that exists right now.
+  if (dropped) best = nearestSpot(dropped, spotsAvail());
+  else
+    spotsAvail().forEach((s) => {
+      const dd = Math.hypot(s.x - x, (s.b - b) * 1.6);
+      if (dd < bd) {
+        bd = dd;
+        best = s;
+      }
+    });
   if (!best) best = spotOf(pid);
   allPets().forEach((q) => {
     if (q.id === pid) return;
@@ -131,8 +151,11 @@ function endDrag(e) {
     const qe = document.querySelector('#room .on-stage[data-pid="' + q.id + '"]');
     if (qe) {
       qe.classList.add('settle');
-      qe.style.left = to.x + '%';
-      qe.style.bottom = to.b + '%';
+      if (room3d) room3d.movePet(q.id, to.id, 450);
+      else {
+        qe.style.left = to.x + '%';
+        qe.style.bottom = to.b + '%';
+      }
       setTimeout(() => {
         qe.classList.remove('settle');
         arriveSpot(qe, q, to, false);
@@ -141,8 +164,11 @@ function endDrag(e) {
   });
   roamingPositions[pid] = best.id;
   d.el.classList.add('settle');
-  d.el.style.left = best.x + '%';
-  d.el.style.bottom = best.b + '%';
+  if (room3d) room3d.movePet(pid, best.id, 300);
+  else {
+    d.el.style.left = best.x + '%';
+    d.el.style.bottom = best.b + '%';
+  }
   setTimeout(() => d.el.classList.remove('settle'), 450);
   roamNext = Date.now() + 9000;
   setTimeout(() => arriveSpot(d.el, pet, best, pet === state.pet), 300);
@@ -195,6 +221,21 @@ function initializePetRoaming() {
                 trait: traitOf(pet),
                 expr: 'wow',
               });
+      scene3D('home')?.setExpr(pid, 'wow');
+      // Remember where the pointer grabbed the pet so its feet do not jump under it.
+      const box = drag.el.getBoundingClientRect();
+      drag.grabX = box.left + box.width / 2 - e.clientX;
+      drag.grabY = box.bottom - e.clientY;
+    }
+    const room3d = scene3D('home');
+    if (room3d) {
+      // 3D: carry the pet across the floor under the pointer; the button follows it.
+      room3d.dragPet(
+        drag.el.dataset.pid,
+        toNDC(e.clientX + drag.grabX, e.clientY + drag.grabY, drag.W),
+      );
+      e.preventDefault();
+      return;
     }
     const W = drag.W;
     const x = Math.max(8, Math.min(92, ((e.clientX - W.left) / W.width) * 100));

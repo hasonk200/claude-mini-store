@@ -109,6 +109,26 @@ function othersHTML() {
     .join('');
 }
 
+// The same cast as the 2D stage (main pet first, then housemates), as plain data for the
+// 3D room: who is there, how they look, their expression and which spot they are on.
+function stagePets() {
+  const p = state.pet;
+  const look = (o, expr) => ({
+    id: o.id,
+    sp: o.sp,
+    color: o.color,
+    stage: petStage(o),
+    acc: o.acc,
+    shiny: o.shiny,
+    trait: traitOf(o),
+    expr,
+    spot: spotOf(o.id).id,
+  });
+  return [look(p, roamExpr())].concat(
+    (p.others || []).map((o) => look(o, inSleep() ? 'sleep' : spotOf(o.id).ex)),
+  );
+}
+
 function resetRoamingPositions() {
   roamingPositions = {};
 }
@@ -118,6 +138,7 @@ export {
   roamPlace,
   spotOf,
   othersHTML,
+  stagePets,
   resetRoamingPositions,
   freeSpots,
   roamingPositions,
