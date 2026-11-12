@@ -339,6 +339,138 @@ test('the 3D room stays within its performance budget with everything owned', as
   ).toBeLessThanOrEqual(1.75);
 });
 
+/* ---------- stage 3: park and café outings ---------- */
+
+async function expectStage3D(page, selector) {
+  await expect(page.locator(selector)).toHaveClass(/\bis-3d\b/);
+  await expect(page.locator(selector + ' > canvas.scene3d')).toHaveCount(1);
+  await expect(page.locator(selector + ' > svg.scene')).toHaveCount(0);
+}
+
+// Outings roll dice for who is met and what is found; pin them so the test is repeatable.
+const fixedDice = (page) =>
+  page.addInitScript(() => {
+    Math.random = () => 0.1;
+  });
+
+test('a park outing plays out in 3D with the same friend, treasure, game and photo', async ({
+  page,
+}) => {
+  await fixedDice(page);
+  await open(page, 'pet', awakeState());
+  await subtab(page, 'pettab', 'out');
+  // The destination picker keeps its 2D thumbnails.
+  await expect(page.locator('#out-choose .place .th svg.scene')).toHaveCount(4);
+  await page.locator('[data-place="park"]').click();
+  await expectStage3D(page, '#outstage');
+  expect(await live(page)).toBe('park');
+  await expect(page.locator('#out-panel')).toContainText('遇到豆豆');
+  await expect(page.locator('#outstage .on-stage')).toHaveAttribute('aria-label', '測試伙伴');
+  await expect(page.locator('#obubble')).toBeVisible();
+  const stage = await scene(page);
+  expect(stage.pet.x).toBe(-2);
+  expect(stage.npc).toMatchObject({ id: 'dodo', visible: true, x: 2.9 });
+  expect(['egg', '楓葉']).toContain(stage.found);
+  expect(stage.moving).toBe(false);
+  const info = await page.evaluate(() => window.JournalScene3D.info());
+  expect(info.triangles).toBeLessThanOrEqual(50000);
+  expect(info.calls).toBeLessThanOrEqual(80);
+  // Reduced motion: a still picture.
+  const canvas = page.locator('canvas.scene3d');
+  const first = await canvas.screenshot();
+  await page.waitForTimeout(700);
+  expect(first.equals(await canvas.screenshot())).toBe(true);
+
+  // Friendship, the five-throw game and its reward are the same code as in 2D.
+  await page.locator('[data-soc="hi"]').click();
+  expect((await saved(page)).pet.friends.dodo).toMatchObject({ xp: 3, met: 1 });
+  await page.locator('#game-go').click();
+  for (let i = 0; i < 5; i++) await page.locator('#game-throw').click();
+  await expect(page.locator('#game')).toContainText('五球完成！15 分');
+  expect((await saved(page)).pet.best).toBe(15);
+  expect((await scene(page)).pet.x).toBe(-2);
+
+  // Photos are still composed from the 2D artwork.
+  await page.locator('#trip-photo').click();
+  await expect(page.locator('#ph-prev svg').first()).toBeVisible();
+
+  // Going home swaps the park for the 3D room and frees the park.
+  await page.locator('#trip-home').click();
+  await expectRoom3D(page);
+  expect(await live(page)).toBe('home');
+  await expect(page.locator('#outstage canvas')).toHaveCount(0);
+});
+
+test('the café is 3D, the lake stays 2D, and leaving releases everything', async ({ page }) => {
+  await fixedDice(page);
+  await open(page, 'pet', awakeState());
+  await subtab(page, 'pettab', 'out');
+  await page.locator('[data-place="cafe"]').click();
+  await expectStage3D(page, '#outstage');
+  expect(await live(page)).toBe('cafe');
+  const stage = await scene(page);
+  expect(stage.npc).toMatchObject({ id: 'bobo', visible: true });
+  await expect(page.locator('#nbubble')).toBeVisible();
+  await expect(page.locator('#game-go')).toHaveCount(0);
+  const info = await page.evaluate(() => window.JournalScene3D.info());
+  expect(info.triangles).toBeLessThanOrEqual(50000);
+  expect(info.calls).toBeLessThanOrEqual(80);
+
+  // A place without a 3D scene shows its 2D artwork even with 3D switched on.
+  await page.locator('#trip-home').click();
+  await subtab(page, 'pettab', 'out');
+  expect(await live(page)).toBe(null);
+  await page.locator('[data-place="lake"]').click();
+  await expect(page.locator('#outstage > svg.scene')).toHaveCount(1);
+  await expect(page.locator('#outstage')).not.toHaveClass(/\bis-3d\b/);
+  expect(await live(page)).toBe(null);
+  await expect(page.locator('#out-panel')).toContainText('返屋企');
+
+  // Back to the café, then away from the pet page altogether: nothing stays on the GPU.
+  await page.locator('#trip-home').click();
+  await subtab(page, 'pettab', 'out');
+  await page.locator('[data-place="cafe"]').click();
+  await expectStage3D(page, '#outstage');
+  await go(page, 'today');
+  expect(await live(page)).toBe(null);
+  const after = await page.evaluate(() => window.JournalScene3D.info());
+  expect(after.geometries).toBeLessThanOrEqual(1);
+  expect(after.textures).toBe(0);
+});
+
+test('with motion allowed the pet walks into the park and fetches a thrown ball', async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 700, height: 700 });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await fixedDice(page);
+  await open(page, 'pet', awakeState());
+  await subtab(page, 'pettab', 'out');
+  await page.locator('[data-place="park"]').click();
+  await expectStage3D(page, '#outstage');
+  // The walk-in is under way: the pet has not reached its stop yet.
+  expect((await scene(page)).moving).toBe(true);
+  await expect(page.locator('#trip-home')).toBeVisible({ timeout: 15000 });
+  await expect.poll(async () => (await scene(page)).npc.visible, { timeout: 15000 }).toBe(true);
+  await expect.poll(async () => (await scene(page)).pet.x, { timeout: 15000 }).toBe(-2);
+
+  await page.locator('#game-go').click();
+  await page.locator('#game-throw').click();
+  expect((await scene(page)).ball).toBe(true);
+  await expect(page.locator('#game-score')).toContainText('1 球', { timeout: 15000 });
+  // Pausing the game mid-throw clears the ball from the scene at once.
+  await page.locator('#game-throw').click();
+  expect((await scene(page)).ball).toBe(true);
+  await page.locator('#trip-photo').click();
+  await page.locator('#game-go').click();
+  expect((await scene(page)).ball).toBe(false);
+  // Leaving mid-throw stops everything.
+  await page.locator('#game-throw').click();
+  await go(page, 'today');
+  expect(await live(page)).toBe(null);
+});
+
 // Refreshes the review screenshots in docs/screenshots. Not a pixel comparison: software
 // and hardware GPUs differ slightly. Run with UPDATE_3D_SCREENSHOTS=1.
 test('review screenshots of the 3D room', async ({ page }) => {

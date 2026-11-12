@@ -23,6 +23,8 @@ import { palette } from './palette.mjs';
 
 const SCENES = {
   home: () => import('./scenes/home.mjs'),
+  park: () => import('./scenes/park.mjs'),
+  cafe: () => import('./scenes/cafe.mjs'),
 };
 const loadedScenes = {};
 const radians = (degrees) => (degrees * Math.PI) / 180;
@@ -202,8 +204,7 @@ function unmount3D(kind) {
   scene.dispose();
   getRenderer().domElement.remove();
   container.classList.remove('is-3d');
-  const fx = container.querySelector('#fx');
-  if (fx) fx.style.transform = '';
+  for (const fx of container.querySelectorAll('.fx')) fx.style.transform = '';
 }
 
 // Called with a function that redraws the current page in 2D.

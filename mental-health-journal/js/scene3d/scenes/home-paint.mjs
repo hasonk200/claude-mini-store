@@ -426,6 +426,8 @@ function paintBackdrop(g, w, h, time) {
     );
 }
 
+// Shared with the other scenes' painters.
+export { U, soft, shade, glowSpot, mood, WARM, BULB_GLOW };
 export {
   FLOOR_SIZE,
   BACK_SIZE,
