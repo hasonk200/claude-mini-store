@@ -33,6 +33,7 @@ const BACK = -HALF_D,
   LEFT = -HALF_W;
 const WINDOW = { x: 1.4, y: 2.08, w: 1.96, h: 1.36 };
 const ease = (t) => t * t * (3 - 2 * t);
+const petSelector = (id) => '.on-stage[data-pid="' + CSS.escape(id) + '"]';
 const hash = (text) => {
   let h = 0;
   for (let i = 0; i < text.length; i++) h = (Math.imul(h, 31) + text.charCodeAt(i)) | 0;
@@ -47,7 +48,7 @@ function createScene(ctx) {
   camera.position.set(...orbitPosition(HOME_CAMERA));
   camera.lookAt(...HOME_CAMERA.target);
   const materials = createMaterials(THREE);
-  const shared = new Set([materials.lit, materials.glow, materials.soft]);
+  const shared = new Set([materials.lit, materials.glow, materials.soft, materials.leaf]);
   const textures = createTextureCache(THREE, requestRender);
   const petShared = { materials, textures, reducedMotion };
   const hemisphere = new THREE.HemisphereLight();
@@ -1092,8 +1093,8 @@ function createScene(ctx) {
           best = id;
         }
       };
-      for (const [id, entry] of pets) test(entry.pet.group, 'pet:' + id);
-      if (nest) test(nest, 'nest');
+      for (const [id, entry] of pets) test(entry.pet.group, petSelector(id));
+      if (nest) test(nest, '#nest');
       return best;
     },
     // World positions the DOM overlay follows: each pet's feet and the egg nest.
@@ -1102,7 +1103,10 @@ function createScene(ctx) {
       for (const [id, entry] of pets) {
         const g = entry.pet.group.position;
         list.push({
-          id: 'pet:' + id,
+          selector: petSelector(id),
+          kind: 'pet',
+          // Hearts and sparkles follow the pet being cared for (the first on stage).
+          fx: snapshot && snapshot.pets[0] && snapshot.pets[0].id === id ? '#fx' : null,
           x: g.x,
           y: g.y + (entry.held ? 0.42 : 0),
           z: g.z,
@@ -1112,7 +1116,8 @@ function createScene(ctx) {
           height: 176 * entry.pet.scale,
         });
       }
-      if (nest) list.push({ id: 'nest', x: NEST_3D.x, y: 0, z: NEST_3D.z, size: 1.0 });
+      if (nest)
+        list.push({ selector: '#nest', kind: 'box', x: NEST_3D.x, y: 0, z: NEST_3D.z, size: 1.0 });
       return list;
     },
     // What is on stage right now, for the diagnostics the browser tests read.

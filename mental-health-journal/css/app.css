@@ -538,14 +538,23 @@ hr.sep{border:0;border-top:1px solid var(--rule);margin:16px 0}
   .toast{transition:none}
 }
 
-/* 3D scenes: the canvas sits behind the same buttons, bubble and effects as the 2D stage. */
+/* 3D scenes: the canvas sits behind the same buttons, bubbles and effects as the 2D stage. */
 canvas.scene3d{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0;outline:0;cursor:grab}
-#room.is-3d .on-stage,#room.is-3d .on-stage.settle,#room.is-3d .on-stage.other{transition:none}
-#room.is-3d .on-stage .petsvg,#room.is-3d .nest-bed,#room.is-3d .nest-egg{opacity:0}
-#room.is-3d .on-stage .petsvg{position:absolute;left:50%;bottom:calc(var(--pet-box,100%)*-.05);width:var(--pet-box,100%);max-width:none;transform:translateX(-50%);pointer-events:none}
-#room.is-3d .on-stage.dragging .petsvg{transform:translateX(-50%);filter:none}
-#room.is-3d .fx{overflow:visible}
-#room.is-3d .nest-bar{bottom:-8px}
+.is-3d .on-stage,.is-3d .on-stage.settle,.is-3d .on-stage.other,.is-3d .on-stage.walking,.is-3d .npc-on{transition:none}
+.is-3d .on-stage .petsvg,.is-3d .npc-on .petsvg,.is-3d .nest-bed,.is-3d .nest-egg{opacity:0}
+.is-3d .on-stage .petsvg{position:absolute;left:50%;bottom:calc(var(--pet-box,100%)*-.05);width:var(--pet-box,100%);max-width:none;transform:translateX(-50%);pointer-events:none}
+.is-3d .on-stage.dragging .petsvg{transform:translateX(-50%);filter:none}
+.is-3d .fx{overflow:visible}
+.is-3d .nest-bar{bottom:-8px}
+/* In 3D the ball is drawn inside the scene; the DOM ball keeps timing the throw, unseen. */
+.is-3d .ball{opacity:0}
 /* A slightly taller stage gives the dollhouse view room to breathe. */
 #room.is-3d{aspect-ratio:4/3}
 @media(max-width:560px){#room.is-3d{aspect-ratio:5/4}}
+/* Island map in 3D: the painted map, its shade and sparkles and the flat companion step aside. */
+.world.is-3d .world-shade,.world.is-3d .world-sparkles,.world.is-3d .world-companion{display:none}
+.world-art[hidden]{display:none}
+/* In 3D the stops are compact name tags so they do not hide the buildings; the short
+   description stays in the accessible name, just not on screen. */
+.world.is-3d .map-stop{min-width:0;padding:3px 10px 4px;border-radius:11px}
+.world.is-3d .map-stop small{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

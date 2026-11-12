@@ -60,12 +60,16 @@ function fx(id, chars, n = 5) {
   }
 }
 
+// The 3D scene (if one is live) that mirrors this 2D stage.
+const stage3D = (stageId) =>
+  stageId === 'room' ? scene3D('home') : scene3D('park') || scene3D('cafe');
+
 function setPetExpr(stageId, expr, ms) {
   const petId = state.pet?.id;
   const el = document.querySelector('#' + stageId + ' .on-stage:not(.other)');
   if (!el) return;
   el.innerHTML = PET.svg(petO(expr));
-  if (stageId === 'room') scene3D('home')?.setExpr(petId, expr);
+  stage3D(stageId)?.setExpr(petId, expr);
   if (ms)
     setTimeout(() => {
       if (!state.pet || state.pet.id !== petId) return;
@@ -73,7 +77,7 @@ function setPetExpr(stageId, expr, ms) {
       if (!e2) return;
       const settled = stageId === 'room' ? roamExpr() : homeExpr();
       e2.innerHTML = PET.svg(petO(settled));
-      if (stageId === 'room') scene3D('home')?.setExpr(petId, settled);
+      stage3D(stageId)?.setExpr(petId, settled);
     }, ms);
 }
 

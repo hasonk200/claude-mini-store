@@ -13,36 +13,44 @@ function projectPoint(THREE, camera, point, width, height, scratch = new THREE.V
   return { x: ((scratch.x + 1) / 2) * width, y: ((1 - scratch.y) / 2) * height, unit };
 }
 
+// Each anchor names the element it drives (`selector`, looked up inside the container) and
+// how to fit it (`kind`):
+//   pet  – a pet button: covers just the pet, its hidden SVG keeps the 2D art's square box
+//   box  – a plain square centred on the point (the egg nest, an NPC)
+//   pin  – a control floating above the point (map stops)
 function syncOverlay(THREE, camera, container, anchors) {
   const width = container.clientWidth,
     height = container.clientHeight;
   if (!width || !height) return;
   camera.updateMatrixWorld();
   for (const anchor of anchors) {
+    const element = container.querySelector(anchor.selector);
+    if (!element) continue;
     const p = projectPoint(THREE, camera, anchor, width, height);
     const size = anchor.size * p.unit;
-    if (anchor.id === 'nest') {
-      const nest = container.querySelector('#nest');
-      if (!nest) continue;
-      nest.style.left = p.x - size / 2 + 'px';
-      nest.style.bottom = height - p.y - size * 0.12 + 'px';
-      nest.style.width = size + 'px';
+    if (anchor.kind === 'pin') {
+      element.style.left = (p.x / width) * 100 + '%';
+      element.style.top = (p.y / height) * 100 + '%';
       continue;
     }
-    const button = container.querySelector(
-      '.on-stage[data-pid="' + CSS.escape(anchor.id.slice(4)) + '"]',
-    );
-    if (!button) continue;
+    if (anchor.kind === 'box') {
+      // `lift` is how far above its bottom edge the element's feet sit (5% for pet art).
+      element.style.left = p.x - size / 2 + 'px';
+      element.style.right = 'auto';
+      element.style.bottom = height - p.y - size * (anchor.lift ?? 0.12) + 'px';
+      element.style.width = size + 'px';
+      continue;
+    }
     // The button covers just the pet. Its (invisible) SVG keeps the full square box of the
     // 2D art, feet 5% above the bottom edge, which is what the speech bubble aims at.
-    button.style.left = p.x + 'px';
-    button.style.bottom = height - p.y + 'px';
-    button.style.width = Math.max(MIN_TARGET, anchor.width * p.unit) + 'px';
-    button.style.height = Math.max(MIN_TARGET, anchor.height * p.unit) + 'px';
-    button.style.setProperty('--pet-box', size + 'px');
-    if (!button.classList.contains('other')) {
-      // Floating hearts and sparkles rise from around the main pet instead of mid-stage.
-      const fx = container.querySelector('#fx');
+    element.style.left = p.x + 'px';
+    element.style.bottom = height - p.y + 'px';
+    element.style.width = Math.max(MIN_TARGET, anchor.width * p.unit) + 'px';
+    element.style.height = Math.max(MIN_TARGET, anchor.height * p.unit) + 'px';
+    element.style.setProperty('--pet-box', size + 'px');
+    if (anchor.fx) {
+      // Floating hearts and sparkles rise from around this pet instead of mid-stage.
+      const fx = container.querySelector(anchor.fx);
       if (fx)
         fx.style.transform =
           'translate(' + (p.x - width / 2) + 'px,' + (p.y - size * 0.3 - height * 0.69) + 'px)';
@@ -50,4 +58,15 @@ function syncOverlay(THREE, camera, container, anchors) {
   }
 }
 
-export { projectPoint, syncOverlay };
+// Hands the elements back to their stylesheet positions (used when a scene is unmounted
+// but its controls stay in the page, like the island's map stops).
+function resetOverlay(container, anchors) {
+  for (const anchor of anchors) {
+    const element = container.querySelector(anchor.selector);
+    if (!element) continue;
+    for (const property of ['left', 'top', 'right', 'bottom', 'width', 'height', '--pet-box'])
+      element.style.removeProperty(property);
+  }
+}
+
+export { projectPoint, syncOverlay, resetOverlay };

@@ -9,7 +9,7 @@ function toNDC(clientX, clientY, rect) {
 }
 
 // A click that lands on the 3D pet just outside its DOM button still counts: the scene
-// says what was hit and the existing button handler does the rest.
+// returns the selector of the control that was hit and its existing handler does the rest.
 function forwardClicks(canvas, getScene, getContainer) {
   let downX = 0,
     downY = 0;
@@ -24,11 +24,7 @@ function forwardClicks(canvas, getScene, getContainer) {
     // Turning the camera ends with a click too; that is not a tap on a pet.
     if (Math.hypot(event.clientX - downX, event.clientY - downY) > 6) return;
     const hit = scene.pick(toNDC(event.clientX, event.clientY, canvas.getBoundingClientRect()));
-    if (!hit) return;
-    const target =
-      hit === 'nest'
-        ? container.querySelector('#nest')
-        : container.querySelector('.on-stage[data-pid="' + CSS.escape(hit.slice(4)) + '"]');
+    const target = hit && container.querySelector(hit);
     if (target) target.click();
   };
   canvas.addEventListener('pointerdown', onDown);

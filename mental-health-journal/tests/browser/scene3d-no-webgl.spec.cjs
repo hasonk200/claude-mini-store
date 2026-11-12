@@ -27,3 +27,18 @@ test('without WebGL the flat room is used automatically, with no errors', async 
   expect(requested).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
+
+test('without WebGL the island shows the painted map and its stops', async ({ page }) => {
+  const data = sampleState();
+  data.settings.quiet = false;
+  await open(page, 'island', data, 'on');
+  await expect(page.locator('#island-world .world-art')).toBeVisible();
+  await expect(page.locator('#island-world .world-art')).toHaveAttribute(
+    'src',
+    /assets\/island-(day|night)\.webp/,
+  );
+  await expect(page.locator('canvas.scene3d')).toHaveCount(0);
+  await expect(page.locator('#world-companion')).toBeVisible();
+  await page.locator('.map-stop[data-destination="garden"]').click();
+  await expect(page.locator('#island-destination')).toContainText('成長花園');
+});

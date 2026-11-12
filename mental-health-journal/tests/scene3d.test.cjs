@@ -80,6 +80,30 @@ test('the home camera stays inside its orbit limits and frames phones more tight
   assert.ok(tall.distance > desktop.distance, 'a narrow aspect moves back to keep the room in');
 });
 
+test('the five map destinations land on the island, apart from each other', async () => {
+  const [layout] = await load();
+  const { DESTINATIONS } = await import('../js/data/island.mjs');
+  const keys = Object.keys(DESTINATIONS);
+  assert.deepEqual(keys.sort(), ['garden', 'home', 'lake', 'library', 'plaza']);
+  const at = Object.fromEntries(keys.map((k) => [k, layout.destinationPosition(DESTINATIONS[k])]));
+  for (const k of keys) {
+    const fromCentre = Math.hypot(at[k].x, at[k].z);
+    assert.ok(fromCentre <= layout.ISLAND.radius - 1, k + ' is too close to the shore');
+  }
+  for (const a of keys)
+    for (const b of keys) {
+      if (a >= b) continue;
+      const gap = Math.hypot(at[a].x - at[b].x, at[a].z - at[b].z);
+      assert.ok(gap >= 3, `${a} and ${b} are only ${gap.toFixed(2)} apart`);
+    }
+  // Left/right and near/far match the 2D map.
+  assert.ok(at.home.x < at.plaza.x && at.plaza.x < at.library.x);
+  assert.ok(at.home.z < at.garden.z && at.library.z < at.lake.z);
+  const c = layout.ISLAND_CAMERA;
+  assert.equal(c.azimuthRange, 25);
+  assert.ok(c.polarMin < c.polar && c.polar < c.polarMax);
+});
+
 test('palette uses the same day, dusk and night boundaries as the 2D art', async () => {
   const [, { palette }, , , { tod }] = await load();
   for (let hour = 0; hour < 24; hour++) assert.equal(palette(hour).time, tod(hour), 'hour ' + hour);

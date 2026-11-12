@@ -108,6 +108,7 @@ initializeNavigation({
       roamStop();
       unmount3D();
     }
+    if (page !== 'island') unmount3D('island');
     if (page !== 'haven') stopHaven();
   },
   afterNavigate: updBuddy,
@@ -162,9 +163,10 @@ initializeHaven();
 initializeAdventure();
 initializeLifecycle();
 initializeScene3D({
-  // A lost WebGL context drops back to the 2D room for the rest of this visit.
+  // A lost WebGL context (or a failed download) drops back to 2D for the rest of this visit.
   onFallback() {
     if (state.pet && $('#page-pet').classList.contains('on') && !$('#pv-home').hidden) renderRoom();
+    if ($('#page-island').classList.contains('on')) renderIsland();
   },
 });
 initializeAccount({

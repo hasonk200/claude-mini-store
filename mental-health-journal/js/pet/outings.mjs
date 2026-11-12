@@ -11,6 +11,10 @@ import { keyOf, defaultDay } from '../shared/dates.mjs';
 import { bubble, setPetExpr, fx } from './effects.mjs';
 import { showPetTab } from './page.mjs';
 import { openPhoto } from './photos.mjs';
+import { mount3D, ready3D, scene3D, unmount3D } from '../scene3d/mount.mjs';
+
+// Places that have a 3D scene; the others (lake, night street) stay 2D.
+const OUTING_3D = ['park', 'cafe'];
 
 let trip = null;
 
@@ -20,6 +24,28 @@ function cancelTrip() {
   clearTimeout(tripTimer);
   tripTimer = null;
   trip = null;
+  for (const place of OUTING_3D) unmount3D(place);
+}
+
+const outing3D = () => (trip ? scene3D(trip.place) : null);
+
+// Describes the outing as it stands to the 3D scene (when this place has one). The scene
+// only draws this; who is met, what is found and every reward are decided below as in 2D.
+function stage3D() {
+  if (!trip || !state.pet || !OUTING_3D.includes(trip.place)) return false;
+  const current = trip;
+  return mount3D(current.place, $('#outstage'), () => ({
+    hour: new Date().getHours(),
+    pet: { id: state.pet.id, ...petO('happy') },
+    npc: current.npc
+      ? { ...PET.NPC.find((n) => n.id === current.npc), stage: 1, expr: 'happy' }
+      : null,
+    walk: current.walk,
+    npcIn: current.npcIn,
+    arrivedAt: current.arrivedAt,
+    found: current.found,
+    egg: current.egg,
+  }));
 }
 
 function renderOutChoose() {
@@ -63,11 +89,14 @@ function startTrip(place) {
   const found = Math.random() < 0.5 ? pick(info.find) : null;
   const egg = canFindEgg() && Math.random() < 0.3;
   trip = { place, npc, found, egg, met: false, game: null };
+  // Timeline for the 3D scene: when the walk started and how long it takes.
+  const walkMs = prefersReducedMotion() ? 50 : 3100;
+  trip.walk = prefersReducedMotion() ? null : { start: performance.now(), ms: walkMs };
   traitBump('adv');
   $('#out-choose').hidden = true;
   $('#out-trip').hidden = false;
   $('#outstage').innerHTML =
-    PET.PLACES[place].f({ hour: new Date().getHours() }) +
+    (ready3D(place) ? '' : PET.PLACES[place].f({ hour: new Date().getHours() })) +
     '<button class="on-stage walking" style="left:-14%" aria-label="' +
     esc(p.name) +
     '">' +
@@ -85,6 +114,7 @@ function startTrip(place) {
       : '') +
     '<div class="bubble" id="obubble" hidden></div><div class="bubble npc" id="nbubble" hidden></div><div class="fx" id="ofx"></div><div class="ball" id="ball" hidden></div>';
   $('#out-panel').innerHTML = '<p>同' + esc(p.name) + '行緊去' + PET.PLACES[place].n + '……</p>';
+  stage3D();
   try {
     $('#outstage').scrollIntoView({
       behavior: prefersReducedMotion() ? 'auto' : 'smooth',
@@ -103,14 +133,11 @@ function startTrip(place) {
   petAward('walk', 5, 3);
   persist();
   const current = trip;
-  tripTimer = setTimeout(
-    () => {
-      if (trip !== current) return;
-      pe.classList.remove('walking');
-      arrive();
-    },
-    prefersReducedMotion() ? 50 : 3100,
-  );
+  tripTimer = setTimeout(() => {
+    if (trip !== current) return;
+    pe.classList.remove('walking');
+    arrive();
+  }, walkMs);
 }
 
 function arrive() {
@@ -130,6 +157,8 @@ function arrive() {
     persist();
     msg = '咦，草叢入面有隻發光嘅蛋！我哋帶佢返屋企孵！';
   }
+  trip.arrivedAt = performance.now();
+  stage3D();
   bubble('obubble', msg);
   if (trip.npc) {
     const n = $('#outstage .npc-on');
@@ -138,6 +167,8 @@ function arrive() {
         if (trip !== current || !n.isConnected) return;
         n.style.right = '10%';
         n.style.opacity = '1';
+        current.npcIn = { start: performance.now(), ms: prefersReducedMotion() ? 0 : 1600 };
+        stage3D();
         setTimeout(
           () => {
             if (trip === current) bubble('nbubble', pick(NPCLINES[current.npc]));
@@ -201,6 +232,7 @@ function stopGame() {
   cancelAnimationFrame(ballGame.flight);
   clearTimeout(ballGame.timer);
   ballGame = null;
+  outing3D()?.stopBall();
   const ball = $('#ball');
   if (ball) ball.hidden = true;
   const box = $('#game');
@@ -257,6 +289,7 @@ function finishBall(g, pts) {
     pe.classList.remove('walking');
     pe.style.left = trip.npc ? '30%' : '50%';
   }
+  outing3D()?.runTo(0, 600, true);
   setPetExpr('outstage', pts === 3 ? 'love' : pts ? 'happy' : 'wow', 1500);
   bubble('obubble', pts === 3 ? '接得好靚！' : pts ? '接住咗！' : '跑遠咗少少，再試就得。');
   $('#game-score').textContent = g.n + ' 球・' + g.score + ' 分';
@@ -310,6 +343,8 @@ function throwBall() {
   ball.hidden = false;
   let st = null;
   const dist = pts === 3 ? 78 : pts === 1 ? 64 : 45;
+  // In 3D the ball arcs through the scene to where the pet will run.
+  outing3D()?.throwBall(Math.min(72, dist * 0.8), 900);
   const anim = (t) => {
     if (ballGame !== g) return;
     if (st === null) st = t;
@@ -324,6 +359,7 @@ function throwBall() {
         pe.style.transition = 'left .6s ease';
         pe.style.left = Math.min(72, dist * 0.8) + '%';
       }
+      outing3D()?.runTo(Math.min(72, dist * 0.8), 600);
       g.timer = setTimeout(() => finishBall(g, pts), 700);
     }
   };
