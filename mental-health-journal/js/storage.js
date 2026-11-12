@@ -140,19 +140,22 @@
       onStatus(false, '正在載入你嘅手帳…');
       try {
         const previous = storage.getItem(CLOUD_UID_KEY);
-        if (previous && previous !== user.uid) {
+        const accountChanged = previous && previous !== user.uid;
+        if (accountChanged) {
           // Keep previous account's data offline, never upload it to a different account.
           if (!saveLocal()) throw new Error('Cannot preserve previous account data');
           storage.setItem(LS + '-account-' + previous, JSON.stringify(state));
           const own = storage.getItem(LS + '-account-' + user.uid);
           state = readLocalState(own);
           saveLocal();
-          onChange(state);
           dirty.core = false;
           dirty.years.clear();
           dirty.months.clear();
         }
         storage.setItem(CLOUD_UID_KEY, user.uid);
+        // Drafts are scoped by this key. Set the new owner before any screen restores them,
+        // including when the following server read fails and there is no second redraw.
+        if (accountChanged) onChange(state);
         const base = 'users/' + user.uid + '/mentalHealthJournal';
         const session = {
           core: getDatabase().doc(base + '/core'),
