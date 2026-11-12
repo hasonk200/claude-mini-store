@@ -73,7 +73,13 @@ function draw() {
   const { THREE } = loadedThree();
   getRenderer().render(current.scene.scene, current.scene.camera);
   syncOverlay(THREE, current.scene.camera, current.container, current.scene.anchors());
+  afterOverlay(current.container);
 }
+
+// Called after the controls have been moved over their 3D objects, so anything that hangs
+// off them (speech bubbles) can follow.
+let afterOverlay = () => {};
+const onOverlaySync = (handler) => (afterOverlay = handler);
 
 function resize() {
   if (!current) return;
@@ -335,5 +341,6 @@ export {
   setLocal3DSetting,
   initializeScene3D,
   picture3D,
+  onOverlaySync,
   OUTING_SCENES,
 };

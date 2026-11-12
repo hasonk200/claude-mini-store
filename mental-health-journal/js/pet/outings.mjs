@@ -16,6 +16,14 @@ import { mount3D, ready3D, scene3D, unmount3D, OUTING_SCENES } from '../scene3d/
 // Places that have a 3D scene; the others (lake, night street) stay 2D.
 const OUTING_3D = OUTING_SCENES;
 
+// Where an egg turns up, place by place (a café has no long grass to find one in).
+const EGG_SPOT = {
+  park: '草叢入面',
+  cafe: '坐墊後面',
+  lake: '木板路邊',
+  street: '行人路邊',
+};
+
 let trip = null;
 
 let tripTimer = null;
@@ -155,7 +163,7 @@ function arrive() {
     addEgg('normal');
     p.eggDay = keyOf(new Date());
     persist();
-    msg = '咦，草叢入面有隻發光嘅蛋！我哋帶佢返屋企孵！';
+    msg = '咦，' + (EGG_SPOT[trip.place] || '呢度') + '有隻發光嘅蛋！我哋帶佢返屋企孵！';
   }
   trip.arrivedAt = performance.now();
   stage3D();

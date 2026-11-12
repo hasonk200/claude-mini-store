@@ -352,6 +352,17 @@ test('the 3D room stays within its performance budget with everything owned', as
 
 /* ---------- stage 3: park and café outings ---------- */
 
+// A speech bubble sits clear of its speaker's head instead of over the face.
+async function expectBubbleAbove(page, bubble, speaker) {
+  await expect
+    .poll(async () => {
+      const b = await page.locator(bubble).boundingBox(),
+        s = await page.locator(speaker).boundingBox();
+      return b && s ? Math.round(b.y + b.height - s.y) : null;
+    })
+    .toBeLessThanOrEqual(0);
+}
+
 async function expectStage3D(page, selector) {
   await expect(page.locator(selector)).toHaveClass(/\bis-3d\b/);
   await expect(page.locator(selector + ' > canvas.scene3d')).toHaveCount(1);
@@ -378,6 +389,7 @@ test('a park outing plays out in 3D with the same friend, treasure, game and pho
   await expect(page.locator('#out-panel')).toContainText('遇到豆豆');
   await expect(page.locator('#outstage .on-stage')).toHaveAttribute('aria-label', '測試伙伴');
   await expect(page.locator('#obubble')).toBeVisible();
+  await expectBubbleAbove(page, '#obubble', '#outstage .on-stage');
   const stage = await scene(page);
   expect(stage.pet.x).toBe(-2);
   expect(stage.npc).toMatchObject({ id: 'dodo', visible: true, x: 2.9 });
@@ -422,6 +434,9 @@ test('the café and the lake are 3D, and leaving releases everything', async ({ 
   expect(stage.npc).toMatchObject({ id: 'bobo', visible: true });
   await expect(page.locator('#nbubble')).toBeVisible();
   await expect(page.locator('#game-go')).toHaveCount(0);
+  // Indoors, an egg is found behind a cushion – not in long grass.
+  if (stage.found === 'egg') await expect(page.locator('#obubble')).toContainText('坐墊後面');
+  await expectBubbleAbove(page, '#obubble', '#outstage .on-stage');
   const info = await page.evaluate(() => window.JournalScene3D.info());
   expect(info.triangles).toBeLessThanOrEqual(50000);
   expect(info.calls).toBeLessThanOrEqual(80);
@@ -606,7 +621,8 @@ test('the quiet lakeside is 3D, keeps its one-minute rest, and frees itself on l
   await expect(page.locator('#haven-scene canvas.scene3d')).toHaveAttribute('aria-hidden', 'true');
   expect(painted).toEqual([]);
   const haven = await scene(page);
-  expect(haven.pet).toMatchObject({ expr: 'normal', x: 0 });
+  // The companion sits at the edge of the landing, not on the walking line.
+  expect(haven.pet).toMatchObject({ expr: 'normal', x: 0.3 });
   expect(haven.moving).toBe(false);
   const info = await page.evaluate(() => window.JournalScene3D.info());
   expect(info.triangles).toBeLessThanOrEqual(50000);

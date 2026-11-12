@@ -126,7 +126,8 @@ function createOuting(ctx, place) {
   const requestRender = ctx.requestRender || (() => {});
   const setup = place.camera;
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(setup.fov, 8 / 5, 0.5, 140);
+  // Most places end well within 140 units; one with a long view says how far it reaches.
+  const camera = new THREE.PerspectiveCamera(setup.fov, 8 / 5, 0.5, setup.far || 140);
   camera.position.set(...orbitPosition(setup));
   camera.lookAt(...setup.target);
   const materials = createMaterials(THREE);
@@ -273,6 +274,12 @@ function createOuting(ctx, place) {
     }
     pet.group.position.set(x, y, lineZ);
     pet.group.rotation.y = heading;
+    // A place can seat the companion somewhere of its own (the lakeside's edge) instead of
+    // on the walking line.
+    if (place.seat) {
+      pet.group.position.set(place.seat.x, standY, place.seat.z);
+      pet.group.rotation.y = place.seat.heading;
+    }
     pet.hop(hop);
     world.position.x = pan;
 
