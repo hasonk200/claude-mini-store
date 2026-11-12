@@ -21,8 +21,9 @@ import { spotPosition } from './layout.mjs';
 import { forwardClicks } from './picking.mjs';
 import { palette } from './palette.mjs';
 
-// Scene modules register here as they are added; each is fetched only when first shown.
-const SCENES = {};
+const SCENES = {
+  home: () => import('./scenes/home.mjs'),
+};
 const loadedScenes = {};
 const radians = (degrees) => (degrees * Math.PI) / 180;
 
