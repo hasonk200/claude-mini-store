@@ -13,6 +13,28 @@
 
 ![尋路與機關](docs/screenshots/adventure.jpg)
 
+## 3D 場景
+
+暖暖屋、公園、毛孩茶室及小島地圖可以用低多邊形 3D 顯示；原有平面版全部保留，隨時可以換回。
+
+![3D 小島地圖](docs/screenshots/3d-island-day.png)
+
+| 場景 | 3D 內容 |
+| --- | --- |
+| 暖暖屋 | 房間、已擁有的傢俬、窩及蛋、同住伙伴；可拖動伙伴到其他位置，日／黃昏／夜晚光線不同 |
+| 公園、毛孩茶室 | 伙伴走入場景、朋友到訪、發現的小物及拋波仔；湖畔仍是平面 |
+| 小島地圖 | 五個地點是可以點選的建築；成長花園隨等級、裝飾及澆水改變，伙伴會走到所選地點 |
+
+- **開關**：設定 →「場景」可選「自動／3D／平面」。這個選擇只記在這部裝置（`localStorage` 的 `dicky-care-scene3d`），不會寫入手帳資料，也不會同步。
+- **自動**：裝置支援 WebGL2、記憶體不少於 4 GB 而且處理器多於 4 核心時才用 3D；其餘裝置顯示平面版，仍可手動選「3D」。
+- **一定顯示平面版的情況**：安靜模式、裝置不支援 WebGL2、記憶體少於 2 GB，或繪圖環境中途失效。
+- **減少動態**：3D 場景只畫靜止畫面，鏡頭固定，沒有待機動畫。
+- **無障礙**：所有操作仍是原本的按鈕（鍵盤可到達、有文字標籤），3D 畫面只是襯在按鈕後面的裝飾，對讀屏軟件隱藏。
+- **效能上限**：每個場景不多於 50,000 個三角面及 80 次繪圖呼叫，像素比例上限 1.75，不使用即時陰影；待機動畫約每秒 30 格，畫面靜止時停止重畫。實測數字見[升級檢視](docs/UPGRADE_REVIEW.md#3d-場景升級)。
+- **沒有編譯步驟**：three.js 0.170.0（MIT）放在 `vendor/three/`，由 `index.html` 的 import map 直接載入，而且只在開啟 3D 並進入有 3D 場景的頁面時才下載。模型全部以程式生成，沒有外部模型或貼圖；來源見 [assets/README.md](assets/README.md)。
+
+更新 three.js：修改 `package.json` 的版本及 `scripts/vendor-three.cjs` 的 `EXPECTED_VERSION`，執行 `npm run vendor:three`；`npm run vendor:check` 會核對 `vendor/three/` 與套件內容一致。更新檢視用截圖：`UPDATE_3D_SCREENSHOTS=1 npx playwright test --project=3d -g "review screenshots"`。
+
 ## 本機開發
 
 純 HTML、CSS、JavaScript，執行網頁毋須編譯，沒有新增瀏覽器套件。開發時使用 Prettier 統一代碼格式。以靜態伺服器服務本資料夾，例如在本資料夾執行 `python3 -m http.server 8080`，再開啟 `http://localhost:8080`。直接部署時請保留 `index.html`、`css/`、`js/`、`assets/` 的相對位置。
@@ -50,13 +72,15 @@ npm run format:check
 | `js/games/` | 尋路、配對及湖畔頁面的顯示與操作 |
 | `js/checkin.mjs` 等頁面模組 | 打卡、習慣、證據、階梯、週回顧、應急卡、設定及小島 |
 | `js/shared/`、`js/model/` | DOM、日期、草稿、下載與共用計算 |
+| `js/scene3d/` | 3D 場景：能否使用 3D 的判斷、共用繪圖器及重畫循環、按鈕對位、低多邊形建構工具，以及 `scenes/` 內的暖暖屋、外出場景和小島 |
+| `vendor/three/` | 原封不動的 three.js 0.170.0；由 `npm run vendor:three` 複製，不要手改 |
 | `js/auth.js` | Google 登入初始化、單一視窗、錯誤與登出流程 |
 | `js/storage.js` | 本機儲存、復原、備份還原及帳戶同步；透過注入介面直接測試 |
 | `js/core.js` | 共用核心欄位、資料檢查、成長及配對遊戲規則 |
 | `js/sync.js` | 按帳戶依序送出待同步分區 |
 | `js/adventure.js` | 解謎關卡、移動、存檔及獎勵規則 |
 
-測試涵蓋關卡可達性、碰撞／推箱／機關、存檔、一次性獎勵、配對遊戲、備份驗證、花園成長及雲端寫入佇列。另有 180 個 SVG 樣本比對，以及可在 CI 重跑的完整瀏覽器操作；拆分方式及驗證範圍見 [畫面模組重構](docs/UI_REFACTOR.md)。
+測試涵蓋關卡可達性、碰撞／推箱／機關、存檔、一次性獎勵、配對遊戲、備份驗證、花園成長及雲端寫入佇列。瀏覽器操作測試分三組執行：平面版、3D 版（以軟件繪圖，CI 無需顯示卡）及停用 WebGL 的後備情況。另有 180 個 SVG 樣本比對，以及可在 CI 重跑的完整瀏覽器操作；拆分方式及驗證範圍見 [畫面模組重構](docs/UI_REFACTOR.md)。
 
 ## 資料與同步
 

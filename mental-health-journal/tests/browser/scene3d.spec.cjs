@@ -590,6 +590,28 @@ test('the island map is 3D with the same five keyboard-reachable stops, and no p
   expect(await art.getAttribute('src')).toBe(null);
 });
 
+test('the island at its fullest, at night, stays within the performance budget', async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date('2026-10-26T03:00:00Z'));
+  const data = awakeState();
+  // Forty recorded days and the flower decoration: every garden stage and the most flowers,
+  // with all the lamps lit.
+  for (let i = 0; i < 40; i++) {
+    const day = new Date(Date.UTC(2026, 9, 24 - i)).toISOString().slice(0, 10);
+    data.draws[day] = { date: day, card: 'c00', text: '記低', mode: 'one' };
+  }
+  data.journey = { ...(data.journey || {}), decor: 'flowers' };
+  await open(page, 'island', data);
+  await expectStage3D(page, '#island-world');
+  const island = await scene(page);
+  expect(island.time).toBe('night');
+  expect(island.garden).toEqual({ level: 4, decor: 'flowers', watered: false });
+  const info = await page.evaluate(() => window.JournalScene3D.info());
+  expect(info.triangles).toBeLessThanOrEqual(50000);
+  expect(info.calls).toBeLessThanOrEqual(80);
+});
+
 test('the 3D garden grows with the journey and shows its decoration and watering', async ({
   page,
 }) => {
@@ -691,5 +713,44 @@ test('review screenshots of the 3D room', async ({ page }) => {
     await expectRoom3D(page);
     await page.waitForTimeout(500);
     await page.locator('#room').screenshot({ path: path.join(folder, '3d-home-' + name + '.png') });
+  }
+});
+
+test('review screenshots of the 3D outings and island', async ({ page }) => {
+  test.skip(!process.env.UPDATE_3D_SCREENSHOTS, 'only when refreshing docs/screenshots');
+  test.slow();
+  const folder = path.join(__dirname, '..', '..', 'docs', 'screenshots');
+  fs.mkdirSync(folder, { recursive: true });
+  await fixedDice(page);
+  for (const [name, time, place] of [
+    ['park-day', '2026-10-25T16:00:00Z', 'park'],
+    ['cafe-dusk', '2026-10-25T22:00:00Z', 'cafe'],
+    ['island-day', '2026-10-25T16:00:00Z', 'island'],
+    ['island-dusk', '2026-10-25T22:30:00Z', 'island'],
+    ['island-night', '2026-10-26T03:00:00Z', 'island'],
+  ]) {
+    await page.clock.setFixedTime(new Date(time));
+    const data = awakeState({ acc: 'scarf' });
+    // Forty recorded days and the flower decoration: the garden at its fullest.
+    for (let i = 0; i < 40; i++) {
+      const day = new Date(Date.UTC(2026, 9, 24 - i)).toISOString().slice(0, 10);
+      data.draws[day] = { date: day, card: 'c00', text: '記低', mode: 'one' };
+    }
+    data.journey = { ...(data.journey || {}), decor: 'flowers' };
+    await page
+      .evaluate(({ LS, data }) => localStorage.setItem(LS, JSON.stringify(data)), { LS, data })
+      .catch(() => {});
+    const island = place === 'island';
+    await open(page, island ? 'island' : 'pet', data);
+    await page.reload();
+    if (!island) {
+      await subtab(page, 'pettab', 'out');
+      await page.locator('[data-place="' + place + '"]').click();
+      await expect(page.locator('#trip-home')).toBeVisible({ timeout: 15000 });
+    }
+    const stage = island ? '#island-world' : '#outstage';
+    await expectStage3D(page, stage);
+    await page.waitForTimeout(800);
+    await page.locator(stage).screenshot({ path: path.join(folder, '3d-' + name + '.png') });
   }
 });
