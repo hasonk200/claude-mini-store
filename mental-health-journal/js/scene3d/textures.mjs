@@ -4,6 +4,9 @@ import { rng } from '../art/math.mjs';
 
 const VISOR = '#1c2136';
 
+// Pictures still decoding, across every cache.
+const decoding = new Set();
+
 function createTextureCache(THREE, onLoad = () => {}) {
   const store = new Map();
   let disposed = false;
@@ -202,7 +205,10 @@ function createTextureCache(THREE, onLoad = () => {}) {
       g.fillRect(0, 0, width, height);
     });
     const image = new Image();
+    decoding.add(image);
+    image.onerror = () => decoding.delete(image);
     image.onload = () => {
+      decoding.delete(image);
       if (disposed || store.get(cacheKey) !== texture) return;
       context.drawImage(image, 0, 0, width, height);
       texture.needsUpdate = true;
@@ -234,4 +240,12 @@ function createTextureCache(THREE, onLoad = () => {}) {
   };
 }
 
-export { createTextureCache, VISOR };
+// Resolves once no texture is still waiting for its picture to decode (or after `limit`
+// milliseconds), so a still photo is not taken with a blank frame on the wall.
+async function texturesSettled(limit = 1500) {
+  const started = performance.now();
+  while (decoding.size && performance.now() - started < limit)
+    await new Promise((resolve) => setTimeout(resolve, 20));
+}
+
+export { createTextureCache, texturesSettled, VISOR };

@@ -15,6 +15,7 @@ import {
   contextLost,
   rendererInfo,
 } from './renderer.mjs';
+import { texturesSettled } from './textures.mjs';
 import { createLoop } from './loop.mjs';
 import { syncOverlay, resetOverlay, projectPoint } from './overlay.mjs';
 import { spotPosition } from './layout.mjs';
@@ -202,6 +203,8 @@ const scene3D = (kind) => (current && current.kind === kind ? current.scene : nu
 
 function unmount3D(kind) {
   pendingToken++;
+  // Leaving 3D altogether (not just one scene) also puts the photo studio away.
+  if (!kind && !use3D()) closeStudio();
   if (!current || (kind && current.kind !== kind)) return;
   const { scene, loop, controls, observer, stopClicks, container } = current;
   current = null;
@@ -214,6 +217,84 @@ function unmount3D(kind) {
   getRenderer().domElement.remove();
   container.classList.remove('is-3d');
   for (const fx of container.querySelectorAll('.fx')) fx.style.transform = '';
+}
+
+/* ---- still pictures, for the photo album ---- */
+
+// The scene a photo is being taken of. It is kept while photos are taken one after another
+// (an album full of them) and let go a moment after the last one.
+let studio = null,
+  studioLine = Promise.resolve(),
+  studioClose = 0;
+
+function closeStudio() {
+  clearTimeout(studioClose);
+  if (!studio) return;
+  studio.scene.dispose();
+  studio = null;
+}
+
+async function takePicture(kind, snapshot, width, height, zoom) {
+  if (!SCENES[kind] || !use3D()) return null;
+  await loadThree();
+  loadedScenes[kind] ||= await SCENES[kind]();
+  if (!use3D()) return null;
+  const { THREE } = loadedThree(),
+    renderer = getRenderer();
+  clearTimeout(studioClose);
+  if (!studio || studio.kind !== kind) {
+    closeStudio();
+    studio = {
+      kind,
+      // Photos are stills: everyone is already in place and nothing is mid-animation.
+      scene: loadedScenes[kind].createScene({
+        THREE,
+        renderer,
+        palette,
+        reducedMotion: true,
+        requestRender: () => {},
+      }),
+    };
+  }
+  const { scene } = studio;
+  scene.update(snapshot);
+  await texturesSettled();
+  if (!studio || studio.scene !== scene || !use3D()) return null;
+  // From here to the end nothing waits, so the page never shows the borrowed canvas.
+  const ratio = renderer.getPixelRatio(),
+    size = renderer.getSize(new THREE.Vector2());
+  renderer.setPixelRatio(1);
+  renderer.setSize(width, height, false);
+  const view = scene.frame(width, height),
+    target = new THREE.Vector3(...view.target),
+    offset = scene.camera.position
+      .clone()
+      .sub(new THREE.Vector3(...scene.cameraSetup.target))
+      .setLength(view.distance * zoom);
+  scene.camera.position.copy(target).add(offset);
+  scene.camera.lookAt(target);
+  renderer.render(scene.scene, scene.camera);
+  const picture = renderer.domElement.toDataURL('image/jpeg', 0.9);
+  // Put the camera back for the next photo, and the canvas back for the live scene.
+  scene.camera.position.sub(target).add(new THREE.Vector3(...scene.cameraSetup.target));
+  renderer.setPixelRatio(ratio);
+  renderer.setSize(size.x, size.y, false);
+  if (current) resize();
+  return picture;
+}
+
+// A photo of `kind` showing `snapshot`, as an image address – or null when 3D is not in
+// use (the caller then draws the 2D version). `zoom` below 1 steps the camera closer than
+// the live view. Photos are taken one at a time.
+function picture3D(kind, snapshot, width = 800, height = 500, zoom = 1) {
+  const taken = studioLine.then(() =>
+    takePicture(kind, snapshot, width, height, zoom).catch(() => null),
+  );
+  studioLine = taken.then(() => {
+    clearTimeout(studioClose);
+    studioClose = setTimeout(closeStudio, 400);
+  });
+  return taken;
 }
 
 // Called with a function that redraws the current page in 2D.
@@ -253,5 +334,6 @@ export {
   local3DSetting,
   setLocal3DSetting,
   initializeScene3D,
+  picture3D,
   OUTING_SCENES,
 };

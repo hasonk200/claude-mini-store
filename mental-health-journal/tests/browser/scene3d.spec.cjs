@@ -54,6 +54,10 @@ async function expectRoom3D(page) {
 
 // Two captures of the 3D canvas some time apart. Speech bubbles, toasts and floating
 // effects are DOM drawn over the canvas and come and go on timers, so they are hidden.
+// Tests that let the scenes animate draw every frame on the CPU, and the cost is per pixel:
+// a phone-sized stage keeps them from starving whatever else is running beside them.
+const MOTION_VIEWPORT = { width: 420, height: 700 };
+
 async function twoFrames(page, gap = 800) {
   await page.addStyleTag({
     content: '.bubble,.toast,.fx,.nest-tag{visibility:hidden!important}',
@@ -274,7 +278,7 @@ test('with motion allowed the room is gently alive and a dropped pet still settl
 }) => {
   // Continuous animation on a software-rendered GPU is slow; give CI room and a small stage.
   test.slow();
-  await page.setViewportSize({ width: 700, height: 700 });
+  await page.setViewportSize(MOTION_VIEWPORT);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const data = awakeState({ own: { sofa: 1, lamp: 1 } });
   await open(page, 'pet', data);
@@ -394,9 +398,11 @@ test('a park outing plays out in 3D with the same friend, treasure, game and pho
   expect((await saved(page)).pet.best).toBe(15);
   expect((await scene(page)).pet.x).toBe(-2);
 
-  // Photos are still composed from the 2D artwork.
+  // The photo shows the park as it looks here: a still picture taken of the 3D scene.
   await page.locator('#trip-photo').click();
   await expect(page.locator('#ph-prev svg').first()).toBeVisible();
+  await expect(page.locator('#ph-prev svg image')).toHaveAttribute('href', /^data:image\/jpeg/);
+  expect(await live(page)).toBe('park');
 
   // Going home swaps the park for the 3D room and frees the park.
   await page.locator('#trip-home').click();
@@ -467,6 +473,95 @@ async function clickAndDescribe(page, selector) {
   return page.evaluate(() => window.__atClick);
 }
 
+test('photos show the 3D place, are stored as before, and fall back to the 2D artwork', async ({
+  page,
+}) => {
+  test.slow();
+  await fixedDice(page);
+  await open(page, 'pet', awakeState());
+  await expectRoom3D(page);
+  await page.locator('[data-care="photo"]').click();
+  const preview = page.locator('#ph-prev svg image');
+  await expect(preview).toHaveAttribute('href', /^data:image\/jpeg/);
+  const first = await preview.getAttribute('href');
+  // The frame, sticker and date are still drawn over the picture.
+  await expect(page.locator('#ph-prev svg.photo-svg')).toHaveAttribute('viewBox', '0 0 860 640');
+  await expect(page.locator('#ph-prev svg.photo-svg path')).not.toHaveCount(0);
+  // The room is still live behind the editor, at its own size.
+  expect(await live(page)).toBe('home');
+  expect(await twoFrames(page)).toBe(true);
+  // A different expression is a different picture; typing a caption is not.
+  await page.locator('[data-ph="expr"] [data-v="sleep"]').click();
+  await expect.poll(() => preview.getAttribute('href')).not.toBe(first);
+  const asleep = await preview.getAttribute('href');
+  await page.locator('#ph-cap').fill('屋企');
+  expect(await preview.getAttribute('href')).toBe(asleep);
+  await page.locator('#ph-shoot').click();
+  await expect(page.locator('#photo-ed')).toBeHidden();
+
+  // What is saved is the same handful of facts as ever – no image.
+  const shot = (await saved(page)).pet.album[0];
+  expect(Object.keys(shot).sort()).toEqual(
+    [
+      'acc',
+      'books',
+      'caption',
+      'cardId',
+      'color',
+      'date',
+      'expr',
+      'frame',
+      'hour',
+      'id',
+      'npc',
+      'place',
+      'pname',
+      'rain',
+      'shiny',
+      'sp',
+      'stage',
+      'stickers',
+      't',
+      'trait',
+    ].sort(),
+  );
+  expect(JSON.stringify(shot)).not.toContain('data:image');
+
+  // The album shows it the same way, small and large.
+  await subtab(page, 'pettab', 'album');
+  await expect(page.locator('#album .photo svg image')).toHaveAttribute(
+    'href',
+    /^data:image\/jpeg/,
+  );
+  await page.locator('[data-shot]').first().click();
+  await expect(page.locator('#album-view .ph-big svg image')).toHaveAttribute(
+    'href',
+    /^data:image\/jpeg/,
+  );
+  await expect(page.locator('#album-view')).toContainText('屋企');
+  // Downloading turns the same framed picture into an image (this page has nowhere to save
+  // it to, which is the message that follows a successful conversion).
+  await page.locator('#al-dl').click();
+  await expect(page.locator('#al-msg')).toHaveText('呢度唔可以直接下載，可以撳住張相儲存。');
+  // Nothing of the photo's scene stays on the GPU once it has been taken.
+  await expect
+    .poll(async () => (await page.evaluate(() => window.JournalScene3D.info())).textures, {
+      timeout: 10000,
+    })
+    .toBe(0);
+  expect((await page.evaluate(() => window.JournalScene3D.info())).geometries).toBeLessThanOrEqual(
+    1,
+  );
+
+  // With 3D switched off the same photo is drawn from the 2D artwork.
+  await page.evaluate(() => localStorage.setItem('dicky-care-scene3d', 'off'));
+  await page.reload();
+  await subtab(page, 'pettab', 'album');
+  await expect(page.locator('#album .photo svg.photo-svg')).toHaveCount(1);
+  await expect(page.locator('#album .photo svg image')).toHaveCount(0);
+  await expect(page.locator('#album .photo svg.photo-svg svg.scene')).toHaveCount(1);
+});
+
 test('the night street is 3D, and is night at any hour', async ({ page }) => {
   // 16:00 UTC is 11:00 in Toronto: broad daylight everywhere else.
   await page.clock.setFixedTime(new Date('2026-10-25T16:00:00Z'));
@@ -486,9 +581,8 @@ test('the night street is 3D, and is night at any hour', async ({ page }) => {
   expect(info.calls).toBeLessThanOrEqual(80);
   // Reduced motion: steady lights, no drifting steam.
   expect(await twoFrames(page)).toBe(true);
-  // Photos are still composed from the 2D artwork.
   await page.locator('#trip-photo').click();
-  await expect(page.locator('#ph-prev svg').first()).toBeVisible();
+  await expect(page.locator('#ph-prev svg image')).toHaveAttribute('href', /^data:image\/jpeg/);
   await page.locator('#trip-home').click();
   await expectRoom3D(page);
   expect(await live(page)).toBe('home');
@@ -560,7 +654,7 @@ test('with motion allowed the pet walks into the park and fetches a thrown ball'
   page,
 }) => {
   test.slow();
-  await page.setViewportSize({ width: 700, height: 700 });
+  await page.setViewportSize(MOTION_VIEWPORT);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await fixedDice(page);
   await open(page, 'pet', awakeState());
@@ -762,7 +856,7 @@ test('quiet mode swaps the 3D map for the painted one and back, with the stops b
 
 test('with motion allowed the companion strolls to the chosen place', async ({ page }) => {
   test.slow();
-  await page.setViewportSize({ width: 700, height: 700 });
+  await page.setViewportSize(MOTION_VIEWPORT);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await open(page, 'island', awakeState());
   await expectStage3D(page, '#island-world');
