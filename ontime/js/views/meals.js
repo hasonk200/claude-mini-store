@@ -34,7 +34,8 @@ export function mealForm({ data, now, ui, meal = null, key, defaultStart, inShee
   const wdMode = meal ? v('wdMode', meal.workdayManual && meal.workdayDate ? 'manual' : 'auto') : wd ? 'sheet' : '';
   const wdValue = meal ? v('wd', wdMode === 'manual' ? meal.workdayDate : auto) : wd;
   const wdField = wdMode ? workdayField({ mode: wdMode, value: wdValue }) : '';
-  const openMore = name || place || note || photo || favNames.length || favPlaces.length;
+  // 新增時只顯示日期和開始時間；其他全部收入「更多」。修改一餐，或者已經填過其他欄位，才預設展開。
+  const openMore = !!meal || name || place || note || photo || endT || confirmed === '0' || verified;
   const hasDraft = Object.keys(dr).length > 0;
   const foot = meal
     ? `<div class="sheet-foot"><button class="btn btn-meal btn-block btn-lg" type="submit" name="after" value="close">儲存修改</button></div>
@@ -48,10 +49,10 @@ export function mealForm({ data, now, ui, meal = null, key, defaultStart, inShee
       <label class="field"><span>開始</span><input type="time" name="start" value="${esc(startT)}" required></label></div>
       ${wdField}
       <div class="cross-note" data-meal-preview data-wd-preview aria-live="polite">${mealPreview(data, t, now, wdMode ? { wd: wdValue, mode: wdMode } : {})}</div>
-      ${verifyToggle(verified)}
-      <div class="field-pair"><label class="field"><span>結束（可空白）</span><input type="time" name="end" value="${esc(endT)}"></label>
-      <label class="field"><span>狀態</span><select name="confirmed"><option value="1"${confirmed !== '0' ? ' selected' : ''}>已經吃了</option><option value="0"${confirmed === '0' ? ' selected' : ''}>只是計畫</option></select></label></div>
-      <details class="more"${openMore ? ' open' : ''}><summary>餐點、地點、備註、相片（選填）</summary>
+      <details class="more"${openMore ? ' open' : ''}><summary>更多：結束、計畫、餐點、相片</summary>
+        <div class="field-pair"><label class="field"><span>結束（可空白）</span><input type="time" name="end" value="${esc(endT)}"></label>
+        <label class="field"><span>狀態</span><select name="confirmed"><option value="1"${confirmed !== '0' ? ' selected' : ''}>已經吃了</option><option value="0"${confirmed === '0' ? ' selected' : ''}>只是計畫</option></select></label></div>
+        ${verifyToggle(verified)}
         <div class="field-pair"><div class="stack-tight"><label class="field"><span>餐點</span><input name="name" value="${esc(name)}" placeholder="例如：便當"></label>${chips(favNames, 'name')}</div>
         <div class="stack-tight"><label class="field"><span>地點</span><input name="place" value="${esc(place)}" placeholder="例如：公司休息室"></label>${chips(favPlaces, 'place')}</div></div>
         <label class="field"><span>備註</span><textarea name="note" rows="2">${esc(note)}</textarea></label>
@@ -97,10 +98,11 @@ export function mealsView(ctx) {
     </button></li>`;
   }).join('');
   const listHTML = `${dayNav('wd-shift', `${wdOfKey(wd)}工作日 · ${fmtMD(wd)}`, `${meals.length} 餐 · 點一餐可以修改`)}${list ? `<section class="card card-flush"><ul class="rec-list">${list}</ul></section>` : '<p class="card muted">這個工作日還沒有用餐紀錄。</p>'}`;
-  const form = `<section class="card" aria-label="記一餐"><div class="card-head"><h2 class="card-title">記一餐</h2></div>
+  const form = `<section class="card" aria-label="補記或安排一餐"><div class="card-head"><div><h2 class="card-title">補記或安排一餐</h2><span class="muted small">啱啱食完用上面的掣就得；這裡補舊的或者安排之後的</span></div></div>
     ${mealForm({ data, now, ui, key: 'meal:new', defaultStart: timeOnWorkday(data, wd, now) })}</section>`;
   const body = ctx.isDesktop
     ? `<div class="grid-2-1"><div class="stack">${pendingHTML}${listHTML}</div><div class="stack">${form}</div></div>`
     : `${pendingHTML}${form}${listHTML}`;
-  return `${pageHead('用餐', '先記時間，其他選填')}<section class="card">${lastMealLine(data, now)}</section>${body}`;
+  const quick = `<section class="card" aria-label="一撳記一餐">${lastMealLine(data, now)}<button type="button" class="btn btn-meal btn-block" data-action="quick-meal">食咗飯 · 記低現在</button></section>`;
+  return `${pageHead('用餐', '啱啱食完一撳就記，其他之後先加')}${quick}${body}`;
 }

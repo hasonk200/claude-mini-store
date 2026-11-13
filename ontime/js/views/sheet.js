@@ -1,6 +1,7 @@
 import { esc, icon, bubble, STEP_ICON, STEP_KIND, verifyToggle } from '../ui.js';
-import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN, fromInputs, normTime } from '../time.js';
-import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isFlag, eventVerified, journeyOfSession, sessionsOfWorkday, defaultStepTime, SHIFT_BOUND_STEPS, recentShiftRanges, jobOf, timeOnWorkday, restAutoWorkday, journeyAutoWorkday } from '../logic.js';
+import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN, fromInputs, normTime, fmtDurLong } from '../time.js';
+import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isFlag, eventVerified, journeyOfSession, sessionsOfWorkday, defaultStepTime, SHIFT_BOUND_STEPS, recentShiftRanges, jobOf, timeOnWorkday, restAutoWorkday, journeyAutoWorkday,
+  quickWakeState, WAKE_AGO, QUICK_WAKE_ERROR, MAIN_SLEEP_MS, dayKeyOfWake, mealWorkday, lastClockBefore } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
 import { sleepPairForm } from './sleep.js';
 import { mealForm } from './meals.js';
@@ -349,6 +350,83 @@ function sheetWrap(title, body, small = true) {
   </section>`;
 }
 
+// ---------- 一撳就記的小面板 ----------
+const whenText = (t) => `${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}`;
+
+// 「我瞓醒喇」存之前的確認行：真實日期、瞓咗幾耐、計入邊個工作日，一行睇晒。
+export function quickWakePreview(data, st) {
+  if (st.error === 'no-start') return `<span class="muted">${QUICK_WAKE_ERROR['no-start']}</span>`;
+  if (st.error) return `<span class="c-danger">${QUICK_WAKE_ERROR[st.error] || '這個時間存不到'}</span>`;
+  const rec = { ...(st.open || {}), id: st.open?.id || '_preview', start: st.start, end: st.wake };
+  const wk = sleepWorkday(rec, { ...data, sleeps: [...data.sleeps.filter((x) => x.id !== rec.id), rec] });
+  const ms = st.wake - st.start;
+  const after = ms >= MAIN_SLEEP_MS ? `<br>起身之後開始 <strong>${wdOfKey(dayKeyOfWake(st.wake))} ${fmtMD(dayKeyOfWake(st.wake))}</strong> 工作日` : '';
+  const long = ms > 14 * 60 * MIN ? '<br><span class="c-danger">瞓咗超過 14 個鐘，時間啱唔啱？</span>' : '';
+  return `<span class="nw"><strong>${whenText(st.start)}</strong> 瞓</span> → <span class="nw"><strong>${whenText(st.wake)}</strong> 起身</span><br>瞓咗 <strong>${fmtDurLong(ms)}</strong> · 計入 <strong>${wdOfKey(wk)} ${fmtMD(wk)}</strong> 工作日${after}${long}`;
+}
+
+// 起身時間、入睡時間的快捷掣（畫面和打字時即時更新共用）。
+export function quickWakeChips(st, now) {
+  const wake = WAKE_AGO.map(([key, min, label]) => ({ key, label, sub: fmtTime(now - min * MIN), on: st.wakeSel === key }));
+  const start = st.options.map((o) => ({ key: o.key, label: o.label, sub: fmtTime(o.t), on: st.startSel === o.key, disabled: !!o.disabled, dur: o.dur != null }));
+  return { wake, start };
+}
+
+function quickWakeSheet(ctx) {
+  const { data, now, ui } = ctx;
+  const sh = ui.sheet;
+  const st = quickWakeState(data, now, sh);
+  const chips = quickWakeChips(st, now);
+  const chip = (action, c) => `<button type="button" class="qw-chip" data-action="${action}" data-key="${c.key}" aria-pressed="${c.on}"${c.disabled ? ' disabled' : ''}><strong>${c.label}</strong><small>${c.sub}</small></button>`;
+  const guess = chips.start.filter((c) => !c.dur);
+  const durs = chips.start.filter((c) => c.dur);
+  const startBlock = st.open
+    ? `<div class="saved-note"><span>入睡時間已經記低</span><strong>${whenText(st.open.start)}</strong></div>`
+    : `<div class="sheet-step-title"><span class="step-no">2</span>大概幾點瞓？</div>
+      ${guess.length ? `<div class="qw-chips">${guess.map((c) => chip('qw-start', c)).join('')}</div>` : ''}
+      <span class="chip-group-name">或者揀瞓咗幾耐</span>
+      <div class="qw-chips qw-durs">${durs.map((c) => chip('qw-start', c)).join('')}</div>
+      <label class="field"><span>或者自己打入睡時間（日期自動計）</span><input type="time" name="startTime" value="${esc(sh.startSel === 'custom' ? sh.startTime || '' : '')}"></label>`;
+  return sheetWrap('我瞓醒喇', `<form class="form" data-form="quick-wake">
+      <div class="sheet-step-title"><span class="step-no">1</span>幾時起身？</div>
+      <div class="qw-chips qw-wakes">${chips.wake.map((c) => chip('qw-wake', c)).join('')}</div>
+      <label class="field"><span>或者自己打起身時間（日期自動計）</span><input type="time" name="wakeTime" value="${esc(st.wakeSel === 'custom' ? sh.wakeTime || '' : '')}"></label>
+      ${startBlock}
+      ${st.open ? '' : '<button type="button" class="btn btn-text btn-block" data-action="open-record" data-step="sleepPair">要補更早嘅睡眠？用完整表格</button>'}
+      <div class="sheet-foot qw-foot"><div class="cross-note qw-preview" data-qw-preview aria-live="polite">${quickWakePreview(data, st)}</div><button class="btn btn-ink btn-block btn-lg" type="submit">存低</button></div>
+    </form>`);
+}
+
+// 「食咗飯」之後的小面板：唔係啱啱食就揀幾耐之前；餐名相片想加先加。
+export const MEAL_AGO = [[0, '啱啱'], [15, '15 分鐘前'], [30, '半個鐘前'], [60, '1 個鐘前'], [120, '2 個鐘前']];
+export function mealMovePreview(hhmm, now) {
+  const t = hhmm ? lastClockBefore(hhmm, now, { inclusive: true }) : null;
+  return t == null ? '' : `會改成 <strong>${whenText(t)}</strong>`;
+}
+function mealQuickSheet(ctx) {
+  const { data, now, ui } = ctx;
+  const sh = ui.sheet;
+  const m = data.meals.find((x) => x.id === sh.id);
+  if (!m) return '';
+  const base = sh.base ?? m.start;
+  const wk = mealWorkday(m, data, now);
+  const chips = MEAL_AGO.map(([min, label]) => {
+    const t = base - min * MIN;
+    return `<button type="button" class="qw-chip" data-action="meal-shift" data-min="${min}" aria-pressed="${m.start === t}"><strong>${label}</strong><small>${fmtTime(t)}</small></button>`;
+  }).join('');
+  return sheetWrap('這一餐', `<div class="saved-note is-meal" role="status"><span>已記低一餐</span><strong>${whenText(m.start)}</strong><span>計入 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日</span></div>
+    <div class="sheet-step-title">唔係啱啱食？</div>
+    <div class="qw-chips">${chips}</div>
+    <form class="form" data-form="meal-move"><input type="hidden" name="id" value="${esc(m.id)}">
+      <label class="field"><span>或者自己打時間（日期自動計）</span><input type="time" name="time" required></label>
+      <div class="cross-note" data-mm-preview aria-live="polite"></div>
+      <button class="btn btn-line btn-block" type="submit">改做這個時間</button>
+    </form>
+    <button type="button" class="btn btn-soft btn-block" data-action="meal-open" data-id="${esc(m.id)}">加餐名、地點、相片</button>
+    <button type="button" class="btn btn-text-danger btn-block" data-action="meal-delete" data-id="${esc(m.id)}">撳錯咗？刪除這一餐</button>
+    <div class="sheet-foot"><button type="button" class="btn btn-ink btn-block btn-lg" data-action="close-sheet">得喇</button></div>`);
+}
+
 // 由列表點一筆睡眠：入睡、起床一起改；計畫改計畫時間。刪除放在最底（次要）。
 function sleepSheet(ctx) {
   const { data, now, ui } = ctx;
@@ -393,6 +471,8 @@ export function sheetView(ctx) {
   const sh = ctx.ui.sheet;
   if (!sh) return '';
   if (sh.type === 'sync') return syncSheet(ctx);
+  if (sh.type === 'quick-wake') return quickWakeSheet(ctx);
+  if (sh.type === 'meal-quick') return mealQuickSheet(ctx);
   if (sh.type === 'sleep') return sleepSheet(ctx);
   if (sh.type === 'meal') return mealSheet(ctx);
   if (sh.type === 'expected-end') return expectedEndSheet(ctx);

@@ -33,6 +33,28 @@
   ],
   "shortcuts": [
     {
+      "name": "食咗飯",
+      "short_name": "食咗飯",
+      "url": "./?do=meal#/today",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "瞓醒喇",
+      "short_name": "瞓醒喇",
+      "url": "./?do=wake#/today",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
       "name": "出門",
       "short_name": "出門",
       "url": "./?do=out#/today",
@@ -55,20 +77,9 @@
       ]
     },
     {
-      "name": "入睡",
-      "short_name": "入睡",
+      "name": "去瞓",
+      "short_name": "去瞓",
       "url": "./?do=sleep#/today",
-      "icons": [
-        {
-          "src": "icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "記一餐",
-      "short_name": "記一餐",
-      "url": "./?do=meal#/meals",
       "icons": [
         {
           "src": "icons/icon-192.png",

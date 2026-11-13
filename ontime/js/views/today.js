@@ -2,7 +2,8 @@ import { esc, icon, bubble, durHTML, STEP_ICON, STEP_KIND, seg, stateTag } from 
 import { dateKey, fmtTime, wdOf, fmtDayMD, wdOfKey, fmtMD, MIN, HOUR, fmtDur, fmtDurLong, toDateInput, toTimeInput } from '../time.js';
 import {
   STEPS, STEP_LABEL, lastMeal, awakeSince, sleepLast24h, currentCycle, nextStep, statusOf, beforeBedBudget, shiftOf, sessionWorkMs,
-  workdaySpan, workdayEvents, jobOf, shiftsOfWorkday, currentWorkday, pendingItems, activeSession, workEndEstimate
+  workdaySpan, workdayEvents, jobOf, shiftsOfWorkday, currentWorkday, pendingItems, activeSession, workEndEstimate,
+  homeSuggestion, latestOpenSleep
 } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
 import { ribbon, legend, syncSummary } from './shared.js';
@@ -98,24 +99,32 @@ function statusCard(data, wd, cycle, now, manual = false) {
     sub = upcoming ? `下一班 ${wdOf(upcoming.start)} ${fmtMD(dateKey(upcoming.start))} ${fmtTime(upcoming.start)} · ${esc(jobOf(data, upcoming.jobId)?.name ?? '')}` : '目前沒有排班';
   }
 
+  // 主掣跟場合變：瞓醒、去瞓、食飯、通勤下一步，估你而家最可能想記邊樣；其他一樣一撳就到。
   const buttons = [];
+  let wakeFix = '';
   if (st.key === 'sleep') {
-    buttons.push(`<button type="button" class="btn btn-lime btn-block" data-action="wake">現在起床</button>`);
+    buttons.push(`<button type="button" class="btn btn-lime btn-block main-act" data-action="wake">現在起床</button>`);
+    wakeFix = '<button type="button" class="link-ink" data-action="quick-wake">唔係啱啱起身？改起身時間</button>';
   } else {
     const ns = nextStep(cycle) || 'out';
-    buttons.push(`<button type="button" class="btn btn-lime btn-block" data-action="step" data-step="${ns}">記錄${STEP_LABEL[ns]} · 現在</button>`);
+    const sug = homeSuggestion(data, now, cycle);
+    const nowTag = manual ? ' · 現在' : '';
+    const main = sug === 'wake' ? ['quick-wake', '', '我瞓醒喇']
+      : sug === 'sleep' ? ['sleep-start', '', '去瞓 · 現在入睡']
+      : sug === 'meal' ? ['quick-meal', '', '食咗飯 · 現在']
+      : ['step', ` data-step="${ns}"`, `記錄${STEP_LABEL[ns]} · 現在`];
+    buttons.push(`<button type="button" class="btn btn-lime btn-block main-act" data-action="${main[0]}"${main[1]}>${main[2]}</button>`);
     const alt = [];
+    if (main[0] !== 'step') alt.push([ns, `記錄${STEP_LABEL[ns]}`]);
     if (ns === 'out') alt.push(['clockIn', '直接上班']);
     if (ns === 'ride') alt.push(['arrive', '步行直接抵達']);
     if (ns === 'arrive') alt.push(['clockIn', '直接上班']);
     if (ns === 'ride2') alt.push(['home', '直接到家']);
-    const nowTag = manual ? ' · 現在' : '';
     const altHTML = alt.map(([k, l]) => `<button type="button" class="btn btn-ghost-dark" data-action="step" data-step="${k}">${l}${nowTag}</button>`).join('');
     // 休息一律可以按：上班中記的是班內休息，沒班時記獨立休息。
     const resting = st.key === 'break' || st.key === 'rest';
     const brk = `<button type="button" class="btn btn-ghost-dark" data-action="break">${resting ? '結束休息' : '開始休息'}${nowTag}</button>`;
-    const sleepBtn = ['free', 'off'].includes(st.key) || ns === 'out' ? '<button type="button" class="btn btn-ghost-dark" data-action="sleep-start">現在入睡</button>' : '';
-    if (altHTML || brk || sleepBtn) buttons.push(`<div class="btn-row">${altHTML}${brk}${sleepBtn}</div>`);
+    buttons.push(`<div class="btn-row">${altHTML}${brk}</div>`);
   }
   // 切到別的工作日時，這張卡的按鈕仍然是「記錄現在」；講清楚，補舊日請用補登。
   const nowNote = manual ? `<div class="status-now-note">這裡的按鈕記錄的是<strong>現在 ${wdOf(now)} ${fmtMD(dateKey(now))} ${fmtTime(now)}</strong>，不是 ${wdOfKey(wd)} ${fmtMD(wd)}。</div>` : '';
@@ -125,6 +134,7 @@ function statusCard(data, wd, cycle, now, manual = false) {
     ${progress}
     ${nowNote}
     ${buttons.join('')}
+    ${wakeFix}
     <button type="button" class="link-ink" data-action="open-record">${manual ? `補登 ${wdOfKey(wd)} ${fmtMD(wd)} 的時間` : '補登其他時間'}</button>
   </section>`;
 }
@@ -171,7 +181,7 @@ export function lastMealLine(data, now) {
   const lm = lastMeal(data, now);
   if (!lm) return '<div class="last-meal">還沒有用餐紀錄</div>';
   const long = lm.ms >= 6 * HOUR;
-  return `<div class="last-meal${long ? ' is-long' : ''}">${icon('clock', 15, 2)}<span>距離上一餐已過 <b>${fmtDurLong(lm.ms)}</b> · 上一餐 ${esc(lm.meal.name || '用餐')} ${wdOf(lm.at)} ${fmtTime(lm.at)}</span></div>`;
+  return `<div class="last-meal${long ? ' is-long' : ''}">${icon('clock', 15, 2)}<span>距離上一餐已過 <b>${fmtDurLong(lm.ms)}</b> · 上一餐 ${esc(lm.meal.name || '用餐')} ${wdOf(lm.at)} ${fmtTime(lm.at)}</span><button type="button" class="link-inline" data-action="meal-quick-open" data-id="${esc(lm.meal.id)}" aria-label="修改上一餐的時間">改</button></div>`;
 }
 
 // 首頁「需要補的紀錄」：待補收工、未記到家、未記錄睡眠、計畫中但未確認的餐。
@@ -186,6 +196,7 @@ export function pendingCard(data, now) {
       : [stateTag('plan'), `${x.name} ${fmtTime(x.t)}`, `${wdOf(x.t)} ${fmtMD(dateKey(x.t))} · 吃了嗎？`];
     const btn = x.kind === 'meal'
       ? `<button type="button" class="btn btn-soft btn-sm" data-action="meal-confirm" data-id="${esc(x.id)}" aria-label="${esc(x.name)}已經吃了">已經吃了</button>`
+      : x.kind === 'sleep' ? '<button type="button" class="btn btn-soft btn-sm" data-action="quick-wake" aria-label="補上睡眠：我瞓醒喇">補上</button>'
       : `<button type="button" class="btn btn-soft btn-sm" data-action="open-record"${x.wd ? ` data-wd="${x.wd}"` : ''} data-step="${x.step}" aria-label="補上${esc(title)}">補上</button>`;
     return `<li class="todo-row">${tag}<div class="todo-text"><strong>${esc(title)}</strong><span>${note}</span></div>${btn}</li>`;
   }).join('');
@@ -209,7 +220,7 @@ function nextCard(data, now) {
   rows.push(meal
     ? `<li class="todo-row">${stateTag('plan')}<div class="todo-text"><strong>${esc(meal.name || '用餐')} ${fmtTime(meal.start)}</strong><span>${wdOf(meal.start)} ${fmtMD(dateKey(meal.start))} · 工作中用餐不扣休息</span></div><button type="button" class="btn btn-soft btn-sm" data-action="meal-confirm" data-id="${esc(meal.id)}" aria-label="${esc(meal.name || '用餐')}已經吃了">已經吃了</button></li>`
     : `<li class="todo-row">${stateTag('none', '未安排')}<div class="todo-text"><strong>下一餐</strong><span>還沒安排</span></div><a class="btn btn-soft btn-sm" href="#/meals">安排</a></li>`);
-  return `<section class="card next-card" aria-label="下一件事"><h2 class="card-title">下一件事</h2><ul class="todo-list">${rows.join('')}</ul>${lastMealLine(data, now)}</section>`;
+  return `<section class="card next-card" aria-label="下一件事"><div class="card-head"><h2 class="card-title">下一件事</h2><a class="link" href="#/meals">用餐紀錄 ${icon('arrow', 16, 2)}</a></div><ul class="todo-list">${rows.join('')}</ul>${lastMealLine(data, now)}</section>`;
 }
 
 // 手機首頁頂部：一行內有工作日切換、現在時間、同步入口和「我的」。
@@ -232,14 +243,18 @@ function compactHead(ctx, wd, isAuto) {
   </header>`;
 }
 
-function quickTiles(cycle, data, now) {
-  const st = statusOf(cycle, data, now);
-  const resting = st.key === 'break' || st.key === 'rest';
-  return `<section class="tiles" aria-label="快捷記錄">
-    <a class="tile" href="#/meals"><span class="tile-icon k-meal">${icon('meal', 20)}</span>用餐</a>
-    <button type="button" class="tile" data-action="open-record"><span class="tile-icon k-work">${icon('clockPlus', 20)}</span>補登</button>
-    <button type="button" class="tile" data-action="break"><span class="tile-icon k-commute">${icon('cup', 20)}</span>${resting ? '結束休息' : '休息'}</button>
-    <a class="tile" href="#/stats"><span class="tile-icon k-deliv">${icon('wallet', 20)}</span>收入</a>
+// 一撳就記：食咗飯、瞓醒喇、去瞓。永遠喺狀態卡下面同一個位置，唔使入表格。
+// 睡眠中唔顯示（主掣已經係「現在起床」）。
+export function lifeTiles(data, now) {
+  if (latestOpenSleep(data)) return '';
+  const lm = lastMeal(data, now);
+  const aw = awakeSince(data, now);
+  const mealNote = lm ? `上一餐 ${fmtDur(lm.ms)} 前` : '一撳記低現在';
+  const wakeNote = aw && aw.ms < 20 * HOUR ? `上次起身 ${fmtDur(aw.ms)} 前` : '記返啱啱嗰覺';
+  return `<section class="life-tiles" aria-label="一撳就記">
+    <button type="button" class="tile life-tile" data-action="quick-meal"><span class="tile-icon k-meal">${icon('meal', 22)}</span><strong>食咗飯</strong><small>${mealNote}</small></button>
+    <button type="button" class="tile life-tile" data-action="quick-wake"><span class="tile-icon k-sleep">${icon('sun', 22)}</span><strong>瞓醒喇</strong><small>${wakeNote}</small></button>
+    <button type="button" class="tile life-tile" data-action="sleep-start"><span class="tile-icon k-sleep">${icon('moon', 22)}</span><strong>去瞓</strong><small>而家開始計</small></button>
   </section>`;
 }
 
@@ -298,10 +313,18 @@ export function todayView(ctx) {
   </section>`;
   const stepCard = `<section class="card" aria-label="這趟通勤與出勤"><h2 class="card-title">這趟通勤與出勤</h2>${stepper(data, wd, cycle, now)}</section>`;
   const status = statusCard(data, wd, cycle, now, other);
+  const tiles = lifeTiles(data, now);
   const todo = pendingCard(data, now);
-  const next = `${nextCard(data, now)}${budgetCards(data, now)}`;
+  // 睡前時間：有計畫可以計時先放上面；冇睡眠計畫（兩格都係「未記錄」）就收入「詳細」，唔好成日提你漏咗。
+  const budgetState = beforeBedBudget(data, now).state;
+  const budgetUp = budgetState === 'ok' || budgetState === 'unknown-end';
+  const budget = budgetCards(data, now);
+  const next = `${nextCard(data, now)}${budgetUp ? budget : ''}`;
+  // 正在返工途中／上班中：通勤進度有用，放上面；其餘時間收入「詳細」。
+  const stepUp = !!(cycle.session || cycle.journey);
+  const more = (inner) => `<details class="today-more" data-pref="todayMore"${ui.todayMore ? ' open' : ''}><summary class="section-label">詳細<span class="today-more-hint">時間軸、通勤進度、睡眠數字</span></summary><div class="today-more-body">${inner}</div></details>`;
 
-  // 次序：現在狀態 → 主動作（在狀態卡裡）→ 需要補的紀錄 → 下一件事；詳細分析放下面。
+  // 次序：現在狀態（主掣）→ 一撳就記 → 需要補的紀錄 → 下一件事；詳細分析收起。
   if (isDesktop) {
     const head = `<header class="today-head">
     <div class="today-head-text">
@@ -316,13 +339,13 @@ export function todayView(ctx) {
   </header>`;
     return `${head}
       <div class="grid-today">
-        ${status}
-        <div class="today-side">${todo}${next}</div>
+        <div class="stack today-main">${status}${tiles}</div>
+        <div class="today-side">${todo}${nextCard(data, now)}${budget}</div>
       </div>
       <h2 class="section-label">詳細</h2>
       ${ribbonCard}
-      <div class="grid-2">${stepCard}${quickTiles(cycle, data, now)}</div>
+      ${stepCard}
       ${eventTable(data, wd, now, ui)}`;
   }
-  return `${compactHead(ctx, wd, isAuto)}${status}${todo}${next}<h2 class="section-label">詳細</h2>${ribbonCard}${stepCard}${quickTiles(cycle, data, now)}`;
+  return `${compactHead(ctx, wd, isAuto)}${status}${tiles}${stepUp ? stepCard : ''}${todo}${next}${more(`${budgetUp ? '' : budget}${ribbonCard}${stepUp ? '' : stepCard}`)}`;
 }

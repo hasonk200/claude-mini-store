@@ -1,6 +1,6 @@
 import { esc, icon, bubble } from '../ui.js';
-import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, HOUR, DAY, dayStart, toDateInput, toTimeInput, at, fromInputs, normTime } from '../time.js';
-import { sleepWorkday, sleepByWorkday, sleepAverage, nextSleepPlan, latestOpenSleep } from '../logic.js';
+import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, HOUR, MIN, DAY, dayStart, toDateInput, toTimeInput, at, fromInputs, normTime } from '../time.js';
+import { sleepWorkday, sleepByWorkday, sleepAverage, nextSleepPlan, latestOpenSleep, sessionsOfWorkday, journeyOfSession } from '../logic.js';
 import { checkSleepPair } from '../actions.js';
 import { pageHead } from './shared.js';
 
@@ -30,7 +30,7 @@ function hero(data, now) {
   }
   return `<section class="card sleep-hero" aria-label="睡眠計時">
     <div class="ring-wrap">${ring(last ? 1 : 0)}<div class="ring-text"><span class="eyebrow c-sleep">${last ? '上一次睡眠' : '還沒有紀錄'}</span><strong>${last ? fmtDur(last.end - last.start).replace(' ', '') : '—'}</strong><span>${last ? `${wdOf(last.start)} ${fmtTime(last.start)} → ${wdOf(last.end)} ${fmtTime(last.end)}` : '按下面的按鈕開始計時'}</span></div></div>
-    <button type="button" class="btn btn-night btn-block" data-action="sleep-start">現在入睡</button>
+    <div class="btn-pair"><button type="button" class="btn btn-night" data-action="quick-wake">我瞓醒喇</button><button type="button" class="btn btn-soft-night" data-action="sleep-start">現在入睡</button></div>
   </section>`;
 }
 
@@ -75,6 +75,18 @@ export const SLEEP_PAIR_ERROR = {
 // 補記的預設時段：這個工作日晚上 23:00 → 隔天 07:00；還沒發生、或者那晚已經有紀錄，就往前一晚找。
 export function defaultSleepPair(wd, now, data = null) {
   const taken = (a, b) => (data?.sleeps || []).some((x) => x.start != null && x.start < b && (x.end ?? now) > a);
+  // 這個工作日有收工紀錄（例如夜班朝早收工、日頭先瞓）：預設放在到家後半個鐘／收工後一個鐘開始，
+  // 唔好一律估 23:00–07:00。取整到 5 分鐘；還沒過完 8 小時就計到現在。
+  if (data) {
+    const s = sessionsOfWorkday(data, wd).filter((x) => x.end != null && x.end < now).sort((a, b) => b.end - a.end)[0];
+    if (s) {
+      const home = journeyOfSession(data, s)?.home;
+      const raw = home != null && home >= s.end ? home + 30 * MIN : s.end + 60 * MIN;
+      const start = Math.ceil(raw / (5 * MIN)) * 5 * MIN;
+      const end = Math.min(start + 8 * HOUR, Math.floor(now / (5 * MIN)) * 5 * MIN);
+      if (end - start >= HOUR && !taken(start, end)) return { start, end };
+    }
+  }
   let k = wd;
   let first = null;
   for (let i = 0; i < 8; i++) {
@@ -124,7 +136,9 @@ export function sleepPairForm({ data, now, ui, sleep = null, key, wd, inSheet = 
       <div class="field-pair"><label class="field"><span>入睡日期</span><input type="date" name="sd" value="${esc(sd)}" required></label><label class="field field-strong"><span>入睡時間</span><input type="time" name="st" value="${esc(st)}" required></label></div>
       <div class="field-pair"><label class="field"><span>起床日期</span><input type="date" name="ed" value="${esc(ed)}"${open ? '' : ' required'}></label><label class="field field-strong"><span>起床時間${open ? '（進行中可空白）' : ''}</span><input type="time" name="et" value="${esc(et)}"${open ? '' : ' required'}></label></div>
       <div class="cross-note sleep-preview" data-sleep-preview aria-live="polite">${sleepPairPreview(data, start, end, { id: sleep?.id ?? null, now })}</div>
-      <label class="fine"><input type="checkbox" name="mainSleep"${main ? ' checked' : ''}> 當作工作日分界（不到 4 小時也算）</label>
+      <details class="more"${main ? ' open' : ''}><summary>進階：短睡眠當作工作日分界</summary>
+        <label class="fine"><input type="checkbox" name="mainSleep"${main ? ' checked' : ''}> 當作工作日分界（不到 4 小時也算）</label>
+        <p class="fine">平時唔使理：瞓夠 4 個鐘會自動當作新一日開始。只有真係換日嘅短睡眠先勾。</p></details>
       ${foot}
       ${!sleep && Object.keys(dr).length ? `<button type="button" class="btn btn-text btn-block" data-action="draft-clear" data-key="${esc(key)}">清除未儲存的內容</button>` : ''}
     </form>`;

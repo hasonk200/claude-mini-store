@@ -378,7 +378,7 @@ button.chip { cursor: pointer; min-height: 30px; }
 details.more { border-radius: 16px; background: var(--surface-2); }
 details.more > summary { list-style: none; cursor: pointer; min-height: 48px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 700; }
 details.more > summary::-webkit-details-marker { display: none; }
-details.more > summary::after { content: '展開'; font-size: 12px; color: var(--muted); font-weight: 600; }
+details.more > summary::after { content: '展開'; font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; flex-shrink: 0; margin-left: 8px; }
 details.more[open] > summary::after { content: '收起'; }
 details.more > :not(summary) { padding: 0 14px 14px; }
 details.more .form { padding: 0 14px 14px; }
@@ -949,3 +949,38 @@ details.more .form { padding: 0 14px 14px; }
 /* 修改一餐：歸屬工作日欄 */
 .wd-pick { align-items: end; }
 .wd-pick-side { display: flex; align-items: center; min-height: 48px; }
+
+/* ---------- 一撳就記（2.31）：首頁三粒大掣、瞓醒／食飯小面板、收起的詳細 ---------- */
+.life-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.life-tile { min-height: 96px; padding: 12px 6px 10px; gap: 4px; color: var(--ink); font-family: inherit; }
+.life-tile strong { font-size: 15px; font-weight: 800; margin-top: 4px; }
+.life-tile small { font-size: 11px; font-weight: 600; color: var(--muted); text-align: center; line-height: 1.3; }
+.today-main .status-card { flex: 1; }
+
+.qw-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.qw-chips.qw-durs { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.qw-chips.qw-wakes { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.qw-wakes .qw-chip strong { font-size: 12.5px; }
+.qw-foot { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; }
+.qw-chip { min-height: 56px; padding: 6px 8px; border-radius: 16px; border: 1.5px solid var(--surface-2); background: var(--surface-2); color: var(--ink); font-family: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; min-width: 0; }
+.qw-chip strong { font-size: 14px; font-weight: 800; white-space: nowrap; }
+.qw-chip small { font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.qw-durs .qw-chip strong { font-size: 13px; }
+.qw-chip[aria-pressed="true"] { background: var(--solid); border-color: var(--solid); color: var(--on-solid); }
+.qw-chip[aria-pressed="true"] small { color: var(--on-solid-accent); }
+.qw-chip:disabled { opacity: .4; cursor: not-allowed; }
+.cross-note.qw-preview { display: block; line-height: 1.7; font-size: 13px; padding: 12px 14px; }
+.cross-note.qw-preview strong { font-size: 14px; }
+.qw-preview .nw { white-space: nowrap; }
+.cross-note[data-mm-preview] { display: block; }
+.cross-note[data-mm-preview]:empty { display: none; }
+.saved-note.is-meal { background: var(--meal-tint); color: var(--meal-deep); }
+
+.btn-toast { background: transparent; border: 1.5px solid #4A515C; color: #fff; }
+
+details.today-more > summary { list-style: none; cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 8px; margin: 4px 4px 0; }
+details.today-more > summary::-webkit-details-marker { display: none; }
+details.today-more > summary::after { content: '展開'; margin-left: auto; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: 0; }
+details.today-more[open] > summary::after { content: '收起'; }
+.today-more-hint { font-size: 12px; font-weight: 600; letter-spacing: 0; color: var(--muted); opacity: .8; }
+.today-more-body { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }

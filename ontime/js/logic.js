@@ -905,3 +905,118 @@ export function frequentMealValues(data, field, n = 5, recent = 30) {
   }
   return [...counts.values()].sort((a, b) => b.count - a.count || b.last - a.last).slice(0, n).map((c) => c.value);
 }
+
+// ---------- 一撳就記：瞓醒、食飯 ----------
+// 設計原則：你只答「幾點」或者「幾耐之前」，日期由現在倒數返去，唔使自己揀日期。
+
+// 某個鐘數（HH:MM）在 ref 之前最近一次出現的時間；inclusive 時可以等於 ref。
+// 用日曆日逐日往回找，夏令時間轉換那天也不會差一小時。
+export function lastClockBefore(hhmm, ref, { inclusive = false } = {}) {
+  if (!hhmm || ref == null) return null;
+  let k = dateKey(ref);
+  for (let i = 0; i < 3; i++) {
+    const t = at(k, hhmm);
+    if (t != null && (inclusive ? t <= ref : t < ref)) return t;
+    k = addDays(k, -1);
+  }
+  return null;
+}
+
+// 起身時間的快捷：啱啱、15 分鐘前、半個鐘前、1 個鐘前。
+export const WAKE_AGO = [['now', 0, '啱啱'], ['m15', 15, '15 分鐘前'], ['m30', 30, '半個鐘前'], ['m60', 60, '1 個鐘前']];
+// 「瞓咗幾耐」的快捷（小時）。
+export const SLEEP_DUR_H = [1, 2, 6, 7, 8];
+export const QUICK_WAKE_ERROR = {
+  'no-wake': '請輸入起身時間',
+  'no-start': '揀一個入睡時間，或者自己打',
+  'before-start': '起身時間要晚過入睡時間',
+  overlap: '同另一筆睡眠重疊咗，請揀另一個時間',
+  'too-long': '超過 24 個鐘，時間係咪打錯？'
+};
+
+// 「我瞓醒喇」面板的全部計算：起身時間、入睡時間的候選、揀中的那一個、可以不可以存。
+// sel = { wakeSel, wakeTime, startSel, startTime }；全部留空就用預設（啱啱起身、最似的入睡時間）。
+// 一覺不會超過 24 小時，所以入睡時間只會落在「起身前 24 小時內、上一筆睡眠之後」，日期只有一個答案。
+export function quickWakeState(data, now, sel = {}) {
+  const open = latestOpenSleep(data);
+  const wakeSel = sel.wakeSel || 'now';
+  const ago = WAKE_AGO.find(([k]) => k === wakeSel);
+  const wake = wakeSel === 'custom'
+    ? (sel.wakeTime ? lastClockBefore(sel.wakeTime, now, { inclusive: true }) : null)
+    : now - (ago ? ago[1] : 0) * MIN;
+  const base = { open, wakeSel, wake, options: [], startSel: null, start: null };
+  if (wake == null) return { ...base, error: 'no-wake' };
+  // 已經撳過「現在入睡」：入睡時間已經有，只需要起身時間。
+  if (open) {
+    if (wake <= open.start) return { ...base, start: open.start, error: 'before-start' };
+    if (wake - open.start > 24 * HOUR) return { ...base, start: open.start, error: 'too-long' };
+    return { ...base, start: open.start, error: null };
+  }
+  const done = data.sleeps.filter((s) => s.start != null && s.end != null);
+  const prevEnd = done.filter((s) => s.end <= wake).reduce((m, s) => Math.max(m, s.end), -Infinity);
+  const floor = Math.max(wake - 24 * HOUR, prevEnd);
+  const valid = (t) => t != null && t < wake && t >= floor;
+  const options = [];
+  // 同上次一樣：最近一次主睡眠的入睡鐘數。
+  const lastMain = done.filter((s) => s.end <= wake && s.end - s.start >= 3 * HOUR).sort((a, b) => b.end - a.end)[0];
+  if (lastMain) {
+    const d = new Date(lastMain.start);
+    const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const t = lastClockBefore(hhmm, wake);
+    if (valid(t)) options.push({ key: 'last', label: '同上次一樣', t });
+  }
+  // 到家後半個鐘：最近一次到家（沒有到家紀錄就用下班時間）。
+  let home = null;
+  for (const j of data.journeys) if (j.home != null && j.home < wake && j.home >= floor && (home == null || j.home > home)) home = j.home;
+  if (home == null) for (const s of data.sessions) if (s.end != null && s.end < wake && s.end >= floor && (home == null || s.end > home)) home = s.end;
+  if (home != null && valid(home + 30 * MIN)) options.push({ key: 'home', label: '到家後半個鐘', t: home + 30 * MIN });
+  for (const h of SLEEP_DUR_H) {
+    const t = wake - h * HOUR;
+    options.push({ key: `d${h}`, label: `${h} 個鐘`, t, dur: h, disabled: !valid(t) });
+  }
+  let startSel = sel.startSel || null;
+  let start = null;
+  if (startSel === 'custom') start = sel.startTime ? lastClockBefore(sel.startTime, wake) : null;
+  else {
+    // 未揀過：預先揀最似的那一個（同上次 → 到家後），讓你睇一眼就可以存。
+    let opt = options.find((o) => o.key === startSel && !o.disabled);
+    if (!opt && !sel.startSel) opt = options.find((o) => o.key === 'last') || options.find((o) => o.key === 'home');
+    startSel = opt ? opt.key : null;
+    start = opt ? opt.t : null;
+  }
+  let error = null;
+  if (start == null) error = 'no-start';
+  else if (start >= wake) error = 'before-start';
+  else if (wake - start > 24 * HOUR) error = 'too-long';
+  else if (data.sleeps.some((s) => s.start != null && s.start < wake && (s.end ?? now) > start)) error = 'overlap';
+  return { open: null, wakeSel, wake, options, startSel, start, error };
+}
+
+// 首頁主掣建議：按場合估你而家最可能想記乜。
+//  wake = 我瞓醒喇（好耐冇睡眠紀錄，中間有一大段空白，多數係瞓咗未記）
+//  step = 通勤／上班下一步（正在返工途中，或者快到開工時間）
+//  sleep = 去瞓（啱啱收工返到屋企，或者已經醒咗好耐）
+//  meal = 食咗飯（好耐冇食）
+const SILENT_GAP = 4 * HOUR;
+export function homeSuggestion(data, now, cycle = currentCycle(data, now)) {
+  if (latestOpenSleep(data)) return 'wakeNow';
+  if (activeSession(data)) return 'step';
+  if (cycle.journey && nextStep(cycle)) return 'step';
+  const lastWake = data.sleeps.filter((s) => s.end != null && s.end <= now).reduce((m, s) => Math.max(m, s.end), -Infinity);
+  // 最後一次「肯定醒住」的紀錄：下班、通勤任何一步、食飯、休息。
+  let lastSeen = lastWake;
+  const see = (t) => { if (t != null && t <= now && t > lastSeen) lastSeen = t; };
+  for (const s of data.sessions) { see(s.start); see(s.end); }
+  for (const j of data.journeys) for (const k of JOURNEY_KEYS) see(j[k]);
+  for (const m of data.meals) if (m.confirmed !== false) see(m.start);
+  for (const r of data.rests || []) { see(r.start); see(r.end); }
+  const hasAny = lastSeen > -Infinity;
+  if (hasAny && now - lastSeen >= SILENT_GAP && now - lastWake >= 18 * HOUR) return 'wake';
+  const outMs = ((data.settings?.commuteOutMin ?? 45) + 120) * MIN;
+  if (data.shifts.some((sh) => sh.end > now && sh.start - now <= outMs)) return 'step';
+  const lastEnd = data.sessions.filter((s) => s.end != null && s.end <= now).reduce((m, s) => Math.max(m, s.end), -Infinity);
+  if ((lastEnd > lastWake && now - lastEnd <= 6 * HOUR) || (lastWake > -Infinity && now - lastWake >= 14 * HOUR)) return 'sleep';
+  const lm = lastMeal(data, now);
+  if (hasAny && (!lm || lm.ms >= 5 * HOUR)) return 'meal';
+  return 'step';
+}
