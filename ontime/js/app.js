@@ -1,7 +1,8 @@
 import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
-import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, fmtMD, normTime, endOnOrAfter, fmtDur } from './time.js';
+import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, wdOf, fmtMD, normTime, endOnOrAfter, fmtDur } from './time.js';
+import { quickWakeState, QUICK_WAKE_ERROR, lastClockBefore, latestOpenSleep } from './logic.js';
 import { activeSession, shiftDateMismatch, mealWorkday, mealAutoWorkday, restWorkday, restAutoWorkday, journeyAutoWorkday, needsWorkdayConfirm, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { timelineView } from './views/timeline.js';
@@ -10,7 +11,7 @@ import { sleepView } from './views/sleep.js';
 import { mealsView } from './views/meals.js';
 import { statsView } from './views/stats.js';
 import { settingsView } from './views/settings.js';
-import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText } from './views/sheet.js';
+import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText, quickWakePreview, quickWakeChips, mealMovePreview } from './views/sheet.js';
 import { sleepPairPreview, SLEEP_PAIR_ERROR } from './views/sleep.js';
 import { mealPreview } from './views/meals.js';
 import { initSync, onSync, syncState, signIn, signOut, retrySync } from './sync.js';
@@ -33,7 +34,8 @@ const ui = {
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
   selRef: null, sheet: null, incomeEdit: null, jobEdit: null, canInstall: false,
   pendingRecord: null, pendingDelete: null, flash: null, sleepSaved: null,
-  drafts: loadDrafts(), heroCollapsed: loadPref('ontime-hero') === 'collapsed'
+  drafts: loadDrafts(), heroCollapsed: loadPref('ontime-hero') === 'collapsed',
+  todayMore: loadPref('ontime-today-more') === 'open'
 };
 
 // 只屬於這部裝置的小偏好（例如街景收起）；讀不到就用預設。
@@ -426,6 +428,40 @@ const handlers = {
     }
     toastUndo(`早安，起床時間 ${fmtTime(nowFn())}`);
   },
+  // ---------- 一撳就記 ----------
+  // 食咗飯：一撳記低現在；提示裡可以復原或者改時間。
+  'quick-meal': () => {
+    const now = nowFn();
+    const r = act.quickMeal(now);
+    if (!r.ok) {
+      const m = store.get().meals.find((x) => x.id === r.id);
+      ui.sheet = { type: 'meal-quick', id: r.id, base: m?.start };
+      toast('啱啱已經記過這一餐');
+      render();
+      return;
+    }
+    flash(`meal:${r.id}`);
+    toast(`已記低食飯 ${wdOf(now)} ${fmtTime(now)}`, `${UNDO}<button type="button" class="btn btn-toast btn-sm" data-action="meal-quick-open" data-id="${esc(r.id)}">改時間</button>`, 7000);
+  },
+  'meal-quick-open': (el) => {
+    const m = store.get().meals.find((x) => x.id === el.dataset.id);
+    if (!m) { toast('找不到這一餐，可能已經復原或刪除'); return; }
+    $('#toast')?.classList.remove('is-on');
+    ui.sheet = { type: 'meal-quick', id: m.id, base: m.start };
+    render();
+  },
+  'meal-shift': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'meal-quick') return;
+    const t = sh.base - Number(el.dataset.min) * MIN;
+    const r = act.moveMeal(sh.id, t, nowFn());
+    if (!r.ok) { toast('這個時間存不到'); return; }
+    render();
+  },
+  // 瞓醒喇：有進行中的睡眠就只問起身時間；沒有就問大概幾點瞓。
+  'quick-wake': () => { ui.sheet = { type: 'quick-wake' }; render(); },
+  'qw-wake': (el) => { if (ui.sheet?.type !== 'quick-wake') return; ui.sheet = { ...ui.sheet, wakeSel: el.dataset.key, wakeTime: '' }; render(); },
+  'qw-start': (el) => { if (ui.sheet?.type !== 'quick-wake') return; ui.sheet = { ...ui.sheet, startSel: el.dataset.key, startTime: '' }; render(); },
   'open-record': (el) => openRecord(el.dataset.wd, el.dataset.step),
   'expected-end-open': (el) => { ui.sheet = { type: 'expected-end', sid: el.dataset.id }; render(); },
   'expected-end-clear': () => {
@@ -563,7 +599,7 @@ const handlers = {
     toast(`已建立計畫 ${fmtTime(start)} 開始`);
   },
   'meal-confirm': (el) => { act.confirmMeal(el.dataset.id); toastUndo('已確認這一餐'); },
-  'meal-delete': (el) => { act.deleteMeal(el.dataset.id); if (ui.sheet?.type === 'ref' || ui.sheet?.type === 'meal') ui.sheet = null; clearDraft(`meal:${el.dataset.id}`); toastUndo('已刪除'); render(); },
+  'meal-delete': (el) => { act.deleteMeal(el.dataset.id); if (['ref', 'meal', 'meal-quick'].includes(ui.sheet?.type)) ui.sheet = null; clearDraft(`meal:${el.dataset.id}`); toastUndo('已刪除'); render(); },
   'delete-ref': () => {
     const sh = ui.sheet;
     if (!sh || sh.type !== 'ref' || !sh.ref) return;
@@ -705,6 +741,32 @@ function updateFormPreview(form) {
   } else if (form.id === 'record-form' && !form.dataset.anchored) {
     updatePreview(form);
   }
+}
+
+// 「我瞓醒喇」自己打時間：即時更新確認行和快捷掣，不重畫面板（打字時焦點不會跳）。
+function quickWakeTyped(f, name) {
+  const sh = ui.sheet;
+  if (sh?.type !== 'quick-wake' || !f[name]) return;
+  const v = normTime(f[name].value);
+  if (v === null) return;
+  const [selKey, timeKey] = name === 'wakeTime' ? ['wakeSel', 'wakeTime'] : ['startSel', 'startTime'];
+  if (v) { sh[selKey] = 'custom'; sh[timeKey] = v; }
+  else if (sh[selKey] === 'custom') { sh[selKey] = null; sh[timeKey] = ''; }
+  const data = store.get();
+  const now = nowFn();
+  const st = quickWakeState(data, now, sh);
+  const box = f.querySelector('[data-qw-preview]');
+  if (box) box.innerHTML = quickWakePreview(data, st);
+  const chips = quickWakeChips(st, now);
+  const paint = (action, list) => f.querySelectorAll(`[data-action="${action}"]`).forEach((b) => {
+    const c = list.find((x) => x.key === b.dataset.key);
+    b.setAttribute('aria-pressed', String(!!c?.on));
+    b.disabled = !c || !!c.disabled;
+    const small = b.querySelector('small');
+    if (c && small) small.textContent = c.sub;
+  });
+  paint('qw-wake', chips.wake);
+  paint('qw-start', chips.start);
 }
 
 // ---------- 補登防撳錯 ----------
@@ -934,6 +996,35 @@ const forms = {
     toastUndo(`${id ? '已更新' : '已補記'} ${fmtDur(r.ms)} · 歸屬 ${wdOfKey(r.wd)} ${fmtMD(r.wd)} 工作日`);
     render();
   },
+  'quick-wake': (f) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'quick-wake') return;
+    const wt = normTime(f.wakeTime.value);
+    if (wt) { sh.wakeSel = 'custom'; sh.wakeTime = wt; }
+    const stt = f.startTime ? normTime(f.startTime.value) : '';
+    if (stt) { sh.startSel = 'custom'; sh.startTime = stt; }
+    const now = nowFn();
+    const st = quickWakeState(store.get(), now, sh);
+    if (st.error) { toast(QUICK_WAKE_ERROR[st.error] || '這個時間存不到'); lastSheet = null; render(); return; }
+    const r = act.quickWake({ start: st.start, wake: st.wake }, now);
+    if (!r.ok) { toast(SLEEP_PAIR_ERROR[r.reason] || '這段睡眠存不到'); return; }
+    ui.sheet = null;
+    flash(`sleep:${r.id}`);
+    lastView = ''; lastSheet = null;
+    toastUndo(`已記低 · 瞓咗 ${fmtDur(r.ms)} · 計入${wdOfKey(r.wd)} ${fmtMD(r.wd)}`);
+    render();
+  },
+  'meal-move': (f) => {
+    const now = nowFn();
+    const t = lastClockBefore(normTime(f.time.value), now, { inclusive: true });
+    const r = act.moveMeal(f.id.value, t, now);
+    if (!r.ok) { toast('這個時間存不到'); return; }
+    ui.sheet = null;
+    flash(`meal:${r.id}`);
+    lastView = ''; lastSheet = null;
+    toastUndo(`已改成 ${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}`);
+    render();
+  },
   'sleep-plan-edit': (f) => {
     const r = act.saveSleepPlan(f.id.value, fromInputs(f.sd.value, f.st.value), fromInputs(f.ed.value, f.et.value));
     if (!r.ok) { toast(SLEEP_PAIR_ERROR[r.reason] || '這個計畫存不到'); return; }
@@ -1079,6 +1170,23 @@ function bind() {
     captureDraft(form.closest('form[data-draft]'));
     updateFormPreview(form);
   });
+  document.addEventListener('input', (e) => {
+    const qw = e.target.closest?.('form[data-form="quick-wake"]');
+    if (qw && (e.target.name === 'wakeTime' || e.target.name === 'startTime')) quickWakeTyped(qw, e.target.name);
+    const mm = e.target.closest?.('form[data-form="meal-move"]');
+    if (mm && e.target.name === 'time') {
+      const box = mm.querySelector('[data-mm-preview]');
+      if (box) box.innerHTML = mealMovePreview(normTime(e.target.value), nowFn());
+    }
+  });
+  // 「詳細」展開或收起：記住你的選擇（toggle 事件不會冒泡，用捕獲階段）。
+  document.addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (!d.matches?.('details[data-pref="todayMore"]') || ui.todayMore === d.open) return;
+    ui.todayMore = d.open;
+    savePref('ontime-today-more', d.open ? 'open' : 'closed');
+    if (d.open) fixLabels();
+  }, true);
   document.addEventListener('change', (e) => {
     const any = e.target.closest('form');
     if (any && e.target.name === 'wd' && any.wdMode && any.wdMode.value !== 'sheet') { setWdMode(any, 'manual'); updateFormPreview(any); }
@@ -1169,7 +1277,7 @@ function bind() {
     }
     if (e.key === ' ' && ui.route === 'today') {
       if (e.repeat) return; // 長按 Space 只算一次
-      const main = document.querySelector('#view .status-card [data-action=step], #view .status-card [data-action=wake]');
+      const main = document.querySelector('#view .status-card .main-act');
       if (main) { e.preventDefault(); main.click(); }
     }
   });
@@ -1195,7 +1303,12 @@ async function start() {
   const doAct = params.get('do');
   if (doAct) {
     history.replaceState(null, '', location.pathname + (fixedNow ? `?now=${params.get('now')}` : '') + location.hash);
-    if (doAct === 'meal') location.hash = '#/meals';
+    if (doAct === 'meal') handlers['quick-meal']();
+    else if (doAct === 'wake') {
+      // 有進行中的睡眠：直接記現在起床；沒有就開「我瞓醒喇」問大概幾點瞓。
+      if (latestOpenSleep(store.get())) handlers.wake();
+      else handlers['quick-wake']();
+    }
     else if (doAct === 'sleep') {
       const r = act.startSleep(nowFn());
       if (r.ok) toastUndo(`已開始睡眠計時 ${fmtTime(nowFn())}`);

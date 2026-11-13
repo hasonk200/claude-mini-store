@@ -521,6 +521,39 @@ export function saveMeal({ workday, ...meal }, now = Date.now()) {
   return id;
 }
 
+// 一撳「食咗飯」：只記開始時間，其他之後想加先加。2 分鐘內重複撳只記一次。
+export function quickMeal(t = Date.now()) {
+  const dup = get().meals.find((m) => m.confirmed !== false && Math.abs(m.start - t) < 2 * MIN);
+  if (dup) return { ok: false, reason: 'dup', id: dup.id };
+  const id = saveMeal({ start: t, end: null, confirmed: true }, t);
+  return { ok: true, id };
+}
+
+// 只改一餐的開始時間（「唔係啱啱食？」）；有結束時間就一齊移，長度不變。歸屬未手動指定就跟新時間自動計。
+export function moveMeal(id, t, now = Date.now()) {
+  if (t == null || Number.isNaN(t)) return { ok: false, reason: 'bad-time' };
+  if (t > now) return { ok: false, reason: 'future' };
+  if (!get().meals.some((m) => m.id === id)) return { ok: false, reason: 'missing' };
+  update((d) => {
+    const m = d.meals.find((x) => x.id === id);
+    if (!m) return;
+    if (m.end != null) m.end += t - m.start;
+    m.start = t;
+  });
+  return { ok: true, id };
+}
+
+// 「我瞓醒喇」：有進行中的睡眠就幫它收尾；沒有就入睡、起床一次過寫入。
+export function quickWake({ start, wake }, now = Date.now()) {
+  const open = latestOpenSleep(get());
+  if (open) {
+    if (wake == null || wake <= open.start) return { ok: false, reason: 'before-start' };
+    if (wake > now) return { ok: false, reason: 'future' };
+    return saveSleepPair({ id: open.id, start: open.start, end: wake }, now);
+  }
+  return saveSleepPair({ start, end: wake }, now);
+}
+
 export function confirmMeal(id, t) {
   update((d) => {
     const m = d.meals.find((x) => x.id === id);
