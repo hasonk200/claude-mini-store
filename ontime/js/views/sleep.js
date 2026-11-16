@@ -34,7 +34,7 @@ function hero(data, now) {
   </section>`;
 }
 
-function attribution(data, now) {
+function attribution(data, now, ui) {
   const target = latestOpenSleep(data)
     || data.sleeps.filter((s) => s.start != null).sort((a, b) => b.start - a.start)[0];
   if (!target) return '';
@@ -42,10 +42,11 @@ function attribution(data, now) {
   const how = target.workdayManual ? '手動指定'
     : target.workdayDate === null ? '按入睡日期'
     : '自動（依起床推算）';
-  return `<section class="card" aria-label="所屬工作日"><form class="form" data-form="sleep-workday"><input type="hidden" name="id" value="${target.id}">
+  return `<details class="card card-fold" aria-label="所屬工作日" data-pref="sleepAttr"${ui?.sleepAttr ? ' open' : ''}><summary><div><h2 class="card-title">進階：最近一覺算哪個工作日</h2><span class="muted small">${wdOfKey(wd)} ${fmtMD(wd)} · ${how}</span></div></summary>
+    <div class="card-fold-body"><form class="form" data-form="sleep-workday"><input type="hidden" name="id" value="${target.id}">
     <div class="row-card"><div class="row-card-text"><span class="eyebrow">所屬工作日（由起床到下一次起床）· ${how}</span><strong>${wdOfKey(wd)} ${fmtMD(wd)}</strong><span>修改歸屬不會改動入睡或起床時間</span></div></div>
     <div class="form-inline"><label class="field"><span>改成</span><input type="date" name="wd" value="${wd}"></label><button class="btn btn-ink" type="submit">更改</button><button class="btn btn-line" type="button" data-action="sleep-wd-clear" data-id="${target.id}">按入睡日期</button></div>
-  </form></section>`;
+  </form></div></details>`;
 }
 
 function trend(data, now) {
@@ -113,6 +114,15 @@ export function sleepPairPreview(data, start, end, { id = null, now } = {}) {
   return `共 <strong>${fmtDur((end ?? now) - start)}</strong>${end == null ? '（進行中）' : ''} · 入睡 ${wdOf(start)} ${fmtMD(dateKey(start))} ${fmtTime(start)} → ${end == null ? '還沒起床' : `起床 ${wdOf(end)} ${fmtMD(dateKey(end))} ${fmtTime(end)}`}${cross}<br>歸屬 <strong>${wdOfKey(wk)} ${fmtMD(wk)}</strong> 工作日`;
 }
 
+// 同臨時版一樣：只填「入睡那天」一個日期。起床鐘數早過（或者等於）入睡鐘數，就係隔天。
+// 一覺唔會超過 24 個鐘，所以起床日期只得一個答案，唔使自己揀。
+export function sleepEndKey(sd, st, et) {
+  const a = normTime(st);
+  const b = normTime(et);
+  if (!sd || !a || !b) return '';
+  return b > a ? sd : addDays(sd, 1);
+}
+
 // 入睡、起床一個表單填齊。新增（睡眠頁、補登面板）和修改（面板）共用；欄位先看草稿。
 export function sleepPairForm({ data, now, ui, sleep = null, key, wd, inSheet = false }) {
   const dr = ui.drafts?.[key] || {};
@@ -120,8 +130,8 @@ export function sleepPairForm({ data, now, ui, sleep = null, key, wd, inSheet = 
   const def = sleep ? { start: sleep.start, end: sleep.end } : defaultSleepPair(wd, now, data);
   const sd = v('sd', toDateInput(def.start));
   const st = v('st', toTimeInput(def.start));
-  const ed = v('ed', def.end != null ? toDateInput(def.end) : '');
   const et = v('et', def.end != null ? toTimeInput(def.end) : '');
+  const ed = sleepEndKey(sd, st, et);
   const main = v('mainSleep', !!sleep?.mainSleep);
   const start = fromInputs(sd, normTime(st) || '');
   const end = ed && et ? fromInputs(ed, normTime(et) || '') : null;
@@ -133,8 +143,9 @@ export function sleepPairForm({ data, now, ui, sleep = null, key, wd, inSheet = 
       ? `<div class="sheet-foot btn-pair"><button class="btn btn-line btn-lg" type="submit" name="after" value="stay">儲存並繼續</button><button class="btn btn-ink btn-lg" type="submit" name="after" value="close">儲存並關閉</button></div>`
       : `<button class="btn btn-night btn-block" type="submit">補記這段睡眠</button>`;
   return `<form class="form" data-form="sleep-pair" data-draft="${esc(key)}"><input type="hidden" name="id" value="${esc(sleep?.id || '')}">
-      <div class="field-pair"><label class="field"><span>入睡日期</span><input type="date" name="sd" value="${esc(sd)}" required></label><label class="field field-strong"><span>入睡時間</span><input type="time" name="st" value="${esc(st)}" required></label></div>
-      <div class="field-pair"><label class="field"><span>起床日期</span><input type="date" name="ed" value="${esc(ed)}"${open ? '' : ' required'}></label><label class="field field-strong"><span>起床時間${open ? '（進行中可空白）' : ''}</span><input type="time" name="et" value="${esc(et)}"${open ? '' : ' required'}></label></div>
+      <label class="field"><span>入睡那天（實際日期）</span><input type="date" name="sd" value="${esc(sd)}" required></label>
+      <div class="field-pair"><label class="field field-strong"><span>入睡時間</span><input type="time" name="st" value="${esc(st)}" required></label><label class="field field-strong"><span>起床時間${open ? '（未起床可空白）' : ''}</span><input type="time" name="et" value="${esc(et)}"${open ? '' : ' required'}></label></div>
+      <p class="fine">起床時間早過入睡時間，就自動算成隔天。</p>
       <div class="cross-note sleep-preview" data-sleep-preview aria-live="polite">${sleepPairPreview(data, start, end, { id: sleep?.id ?? null, now })}</div>
       <details class="more"${main ? ' open' : ''}><summary>進階：短睡眠當作工作日分界</summary>
         <label class="fine"><input type="checkbox" name="mainSleep"${main ? ' checked' : ''}> 當作工作日分界（不到 4 小時也算）</label>
@@ -148,8 +159,10 @@ export function sleepPairForm({ data, now, ui, sleep = null, key, wd, inSheet = 
 function backfill(data, now, ui, wd) {
   const saved = ui.sleepSaved ? data.sleeps.find((x) => x.id === ui.sleepSaved && x.start != null) : null;
   const note = saved ? `<div class="saved-note" role="status"><span>已補記</span><strong>${fmtDur((saved.end ?? now) - saved.start)} · 歸屬 ${wdOfKey(sleepWorkday(saved, data))} ${fmtMD(sleepWorkday(saved, data))} 工作日</strong><span>${wdOf(saved.start)} ${fmtMD(dateKey(saved.start))} ${fmtTime(saved.start)} → ${saved.end ? `${wdOf(saved.end)} ${fmtMD(dateKey(saved.end))} ${fmtTime(saved.end)}` : '進行中'}${saved.end && dateKey(saved.end) !== dateKey(saved.start) ? ' · 跨午夜' : ''}</span></div>` : '';
-  return `<section class="card" aria-label="補記睡眠" id="sleep-backfill"><div class="card-head"><div><h2 class="card-title">補記睡眠</h2><span class="muted small">入睡和起床一次填好，不會變成「睡眠中」</span></div></div>
-    ${note}${sleepPairForm({ data, now, ui, key: 'sleep:new', wd })}</section>`;
+  // 預設收起：啱啱瞓醒用上面「我瞓醒喇」；呢度係補之前嗰啲。啱啱存完，或者有未存完嘅內容，就保持打開。
+  const open = ui.sleepFill || !!saved || Object.keys(ui.drafts?.['sleep:new'] || {}).length > 0;
+  return `<details class="card card-fold" aria-label="補記睡眠" id="sleep-backfill" data-pref="sleepFill"${open ? ' open' : ''}><summary><div><h2 class="card-title">補記之前的睡眠</h2><span class="muted small">一個日期、兩個時間；不會變成「睡眠中」</span></div></summary>
+    <div class="card-fold-body">${note}${sleepPairForm({ data, now, ui, key: 'sleep:new', wd })}</div></details>`;
 }
 
 function plans(data, now, ui) {
@@ -214,7 +227,8 @@ export function sleepView(ctx) {
   const head = pageHead('睡眠', '自己記下的時間最重要，計畫另外放');
   const fill = backfill(data, now, ui, ctx.wd);
   if (isDesktop) {
-    return `${head}<div class="grid-1-2"><div class="stack">${hero(data, now)}${fill}${attribution(data, now)}</div><div class="stack">${trend(data, now)}${plans(data, now, ui)}</div></div>${history(data, now, ui, true)}`;
+    return `${head}<div class="grid-1-2"><div class="stack">${hero(data, now)}${fill}${attribution(data, now, ui)}</div><div class="stack">${trend(data, now)}${plans(data, now, ui)}</div></div>${history(data, now, ui, true)}`;
   }
-  return `${head}${hero(data, now)}${fill}${attribution(data, now)}${trend(data, now)}${plans(data, now, ui)}${history(data, now, ui)}`;
+  // 手機：先睇到最近嘅睡眠（點一行就改），補記同進階收起。
+  return `${head}${hero(data, now)}${history(data, now, ui)}${fill}${trend(data, now)}${plans(data, now, ui)}${attribution(data, now, ui)}`;
 }

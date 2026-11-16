@@ -2,7 +2,7 @@ import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
 import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, wdOf, fmtMD, normTime, endOnOrAfter, fmtDur } from './time.js';
-import { quickWakeState, QUICK_WAKE_ERROR, lastClockBefore, latestOpenSleep } from './logic.js';
+import { quickWakeState, QUICK_WAKE_ERROR, lastClockBefore, latestOpenSleep, STEPS, tripState, tripErrorText, tripAllVerified } from './logic.js';
 import { activeSession, shiftDateMismatch, mealWorkday, mealAutoWorkday, restWorkday, restAutoWorkday, journeyAutoWorkday, needsWorkdayConfirm, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { timelineView } from './views/timeline.js';
@@ -11,8 +11,8 @@ import { sleepView } from './views/sleep.js';
 import { mealsView } from './views/meals.js';
 import { statsView } from './views/stats.js';
 import { settingsView } from './views/settings.js';
-import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText, quickWakePreview, quickWakeChips, mealMovePreview } from './views/sheet.js';
-import { sleepPairPreview, SLEEP_PAIR_ERROR } from './views/sleep.js';
+import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText, quickWakePreview, quickWakeChips, mealMovePreview, openTripSheet, tripHint, tripSummaryHTML } from './views/sheet.js';
+import { sleepPairPreview, SLEEP_PAIR_ERROR, sleepEndKey } from './views/sleep.js';
 import { mealPreview } from './views/meals.js';
 import { initSync, onSync, syncState, signIn, signOut, retrySync } from './sync.js';
 import { syncSummary, workdayPreview } from './views/shared.js';
@@ -35,8 +35,11 @@ const ui = {
   selRef: null, sheet: null, incomeEdit: null, jobEdit: null, canInstall: false,
   pendingRecord: null, pendingDelete: null, flash: null, sleepSaved: null,
   drafts: loadDrafts(), heroCollapsed: loadPref('ontime-hero') === 'collapsed',
-  todayMore: loadPref('ontime-today-more') === 'open'
+  todayMore: loadPref('ontime-today-more') === 'open',
+  sleepFill: loadPref('ontime-sleep-fill') === 'open', sleepAttr: loadPref('ontime-sleep-attr') === 'open'
 };
+// 可以展開／收起、而且會記住的區塊。
+const PREF_KEYS = { todayMore: 'ontime-today-more', sleepFill: 'ontime-sleep-fill', sleepAttr: 'ontime-sleep-attr' };
 
 // 只屬於這部裝置的小偏好（例如街景收起）；讀不到就用預設。
 function loadPref(key) { try { return localStorage.getItem(key); } catch { return null; } }
@@ -305,12 +308,14 @@ function parseRef(s) {
   return { type, id, field: field || undefined };
 }
 
-const RECORD_STEPS = new Set(['out', 'ride', 'arrive', 'clockIn', 'clockOut', 'break', 'leave', 'ride2', 'home', 'meal', 'sleepStart', 'sleepEnd', 'sleepPair']);
+const RECORD_STEPS = new Set(['out', 'ride', 'arrive', 'clockIn', 'clockOut', 'break', 'leave', 'ride2', 'home', 'meal', 'sleepStart', 'sleepEnd', 'sleepPair', 'rest']);
 
 function openRecord(wd, step) {
   const c = ctx();
   const key = wd || c.wd;
-  ui.sheet = openRecordSheet(c.data, key, RECORD_STEPS.has(step) ? step : null);
+  // 冇指定要補邊樣：先出選單（整趟返工、睡眠、用餐、休息），唔使一開始就對住一長串步驟。
+  if (!RECORD_STEPS.has(step)) { ui.sheet = { type: 'add-menu', wd: key }; render(); return; }
+  ui.sheet = openRecordSheet(c.data, key, step);
   // 由卡片直接指定步驟打開時，滑入後捲到輸入時間的位置。
   if (RECORD_STEPS.has(step)) sheetScrollToForm = true;
   render();
@@ -428,9 +433,72 @@ const handlers = {
     }
     toastUndo(`早安，起床時間 ${fmtTime(nowFn())}`);
   },
+  // ---------- 整趟：七個時間一次過填 ----------
+  'open-trip': (el) => {
+    const c = ctx();
+    const d = el?.dataset || {};
+    ui.sheet = openTripSheet(c.data, d.wd || c.wd, c.now, { sessionId: d.sid || null, journeyId: d.jid || null, focus: d.step || null, isNew: !!d.new });
+    render();
+    if (d.step) requestAnimationFrame(() => document.querySelector('#sheet-host [data-autofocus]')?.focus());
+  },
+  'trip-pick': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    ui.sheet = el.dataset.new ? { type: 'trip', wd: sh.wd, isNew: true } : { type: 'trip', wd: sh.wd, sessionId: el.dataset.sid || null, journeyId: el.dataset.jid || null };
+    render();
+  },
+  'trip-day': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    ui.sheet = openTripSheet(store.get(), addDays(sh.wd, Number(el.dataset.dir)), nowFn());
+    render();
+  },
+  'trip-now': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    const now = nowFn();
+    const st = tripState(store.get(), sh, now);
+    const k = el.dataset.step;
+    const above = STEPS.slice(0, STEPS.indexOf(k)).some((x) => st.vals[x]);
+    const below = STEPS.slice(STEPS.indexOf(k) + 1).some((x) => st.vals[x]);
+    // 第一格撳「現在」：實際日期一齊跟返今日，唔使自己改。
+    const anchor = !above && !below ? dateKey(now) : sh.anchor;
+    ui.sheet = { ...sh, focus: null, anchor, vals: { ...st.vals, [k]: fmtTime(now) } };
+    render();
+  },
+  'trip-wdfix': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    const st = tripState(store.get(), sh, nowFn());
+    ui.sheet = { ...sh, focus: null, vals: st.vals, wdTo: el.dataset.wd };
+    render();
+  },
+  'trip-clear': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    const st = tripState(store.get(), sh, nowFn());
+    ui.sheet = { ...sh, focus: null, vals: { ...st.vals, [el.dataset.step]: '' } };
+    render();
+  },
+  'trip-delete': (el) => {
+    const sh = ui.sheet;
+    if (!el.dataset.confirmed) {
+      if (sh?.type !== 'trip') return;
+      const st = tripState(store.get(), sh, nowFn());
+      tripToDelete = { sessionId: st.trip.session?.id ?? null, journeyId: st.trip.session ? null : st.trip.journey?.id ?? null };
+    }
+    if (confirmFirst(el, '刪除這一趟？', '這一趟的出門、上班、下班、到家等時間，連同這班的休息和收入都會刪除。', '刪除整趟')) {
+      const r = tripToDelete ? act.deleteTrip(tripToDelete) : { ok: false };
+      tripToDelete = null;
+      lastView = ''; lastSheet = null;
+      if (r.ok) toastUndo('已刪除這一趟'); else toast('找不到這一趟');
+      render();
+    }
+  },
   // ---------- 一撳就記 ----------
   // 食咗飯：一撳記低現在；提示裡可以復原或者改時間。
   'quick-meal': () => {
+    if (ui.sheet?.type === 'add-menu') ui.sheet = null;
     const now = nowFn();
     const r = act.quickMeal(now);
     if (!r.ok) {
@@ -736,7 +804,8 @@ function updateFormPreview(form) {
   } else if (form.dataset.form === 'sleep-pair') {
     const box = form.querySelector('[data-sleep-preview]');
     const start = fromInputs(form.sd.value, normTime(form.st.value) || '');
-    const end = form.ed.value && normTime(form.et.value) ? fromInputs(form.ed.value, normTime(form.et.value)) : null;
+    const ed = sleepEndKey(form.sd.value, form.st.value, form.et.value);
+    const end = ed ? fromInputs(ed, normTime(form.et.value)) : null;
     if (box) box.innerHTML = sleepPairPreview(data, start, end, { id: form.id.value || null, now });
   } else if (form.id === 'record-form' && !form.dataset.anchored) {
     updatePreview(form);
@@ -767,6 +836,38 @@ function quickWakeTyped(f, name) {
   });
   paint('qw-wake', chips.wake);
   paint('qw-start', chips.start);
+}
+
+// 整趟面板打字：即時更新每格下面的日期、去程／上班／回程和錯誤提示，不重畫面板。
+let tripToDelete = null;
+function tripSync(f) {
+  const sh = ui.sheet;
+  if (sh?.type !== 'trip') return null;
+  const cur = tripState(store.get(), sh, nowFn());
+  const vals = { ...cur.vals };
+  for (const k of STEPS) {
+    const raw = (f[`t_${k}`]?.value ?? '').trim();
+    vals[k] = raw === '' ? '' : normTime(raw);
+  }
+  sh.vals = vals;
+  return tripState(store.get(), sh, nowFn());
+}
+function tripTyped(f) {
+  const st = tripSync(f);
+  if (!st) return;
+  for (const r of st.rows) {
+    const row = f.querySelector(`.trip-row[data-step="${r.step}"]`);
+    if (!row) continue;
+    const hint = row.querySelector('[data-trip-hint]');
+    if (hint) { hint.textContent = tripHint(r); hint.classList.toggle('is-next', r.off > 0); }
+    const filled = !!st.vals[r.step] || st.vals[r.step] === null;
+    row.classList.toggle('is-filled', filled);
+    row.classList.toggle('is-bad', st.error?.step === r.step);
+    const clr = row.querySelector('.trip-clear');
+    if (clr) clr.hidden = !filled;
+  }
+  const sum = f.querySelector('[data-trip-sum]');
+  if (sum) sum.innerHTML = tripSummaryHTML(st);
 }
 
 // ---------- 補登防撳錯 ----------
@@ -984,7 +1085,8 @@ const forms = {
     const key = f.dataset.draft;
     const id = f.id.value || null;
     const start = fromInputs(f.sd.value, f.st.value);
-    const end = f.ed.value && f.et.value ? fromInputs(f.ed.value, f.et.value) : null;
+    const ed = sleepEndKey(f.sd.value, f.st.value, f.et.value);
+    const end = ed ? fromInputs(ed, normTime(f.et.value)) : null;
     const r = act.saveSleepPair({ id, start, end, mainSleep: f.mainSleep.checked || (id ? false : undefined) }, nowFn());
     if (!r.ok) { toast(SLEEP_PAIR_ERROR[r.reason] || '這段睡眠存不到'); return; }
     clearDraft(key);
@@ -994,6 +1096,27 @@ const forms = {
     flash(`sleep:${r.id}`);
     lastView = ''; lastSheet = null;
     toastUndo(`${id ? '已更新' : '已補記'} ${fmtDur(r.ms)} · 歸屬 ${wdOfKey(r.wd)} ${fmtMD(r.wd)} 工作日`);
+    render();
+  },
+  trip: (f) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    const st = tripSync(f);
+    if (st.error) { toast(tripErrorText(st.error)); lastSheet = null; render(); return; }
+    const now = nowFn();
+    const was = tripAllVerified(st.trip);
+    const on = f.verified.checked;
+    // 打勾 = 全部已填的時間一齊標已驗證；原本沒有全勾、現在也沒勾 = 不動個別的勾。
+    const verified = on ? true : was ? false : undefined;
+    const r = act.saveTrip({
+      sessionId: st.trip.session?.id ?? null,
+      journeyId: st.trip.session ? null : st.trip.journey?.id ?? null,
+      wd: sh.wd, wdTo: sh.wdTo && sh.wdTo !== st.wd0 ? sh.wdTo : null, times: st.times, verified
+    }, now);
+    if (!r.ok) { toast(tripErrorText(r)); return; }
+    ui.sheet = null;
+    lastView = ''; lastSheet = null;
+    toastUndo(`已儲存整趟${st.summary.work != null ? ` · 上班 ${fmtDur(st.summary.work)}` : ''}`);
     render();
   },
   'quick-wake': (f) => {
@@ -1171,6 +1294,8 @@ function bind() {
     updateFormPreview(form);
   });
   document.addEventListener('input', (e) => {
+    const tf = e.target.closest?.('form[data-form="trip"]');
+    if (tf && e.target.name?.startsWith('t_')) tripTyped(tf);
     const qw = e.target.closest?.('form[data-form="quick-wake"]');
     if (qw && (e.target.name === 'wakeTime' || e.target.name === 'startTime')) quickWakeTyped(qw, e.target.name);
     const mm = e.target.closest?.('form[data-form="meal-move"]');
@@ -1182,10 +1307,11 @@ function bind() {
   // 「詳細」展開或收起：記住你的選擇（toggle 事件不會冒泡，用捕獲階段）。
   document.addEventListener('toggle', (e) => {
     const d = e.target;
-    if (!d.matches?.('details[data-pref="todayMore"]') || ui.todayMore === d.open) return;
-    ui.todayMore = d.open;
-    savePref('ontime-today-more', d.open ? 'open' : 'closed');
-    if (d.open) fixLabels();
+    const key = d.matches?.('details[data-pref]') ? d.dataset.pref : null;
+    if (!key || !(key in PREF_KEYS) || ui[key] === d.open) return;
+    ui[key] = d.open;
+    savePref(PREF_KEYS[key], d.open ? 'open' : 'closed');
+    if (d.open) { fixLabels(); enhanceTimeInputs(d); }
   }, true);
   document.addEventListener('change', (e) => {
     const any = e.target.closest('form');
@@ -1206,6 +1332,20 @@ function bind() {
   });
   document.addEventListener('change', async (e) => {
     const el = e.target;
+    if (el.dataset.action === 'trip-anchor' && el.value && ui.sheet?.type === 'trip') {
+      const st = tripState(store.get(), ui.sheet, nowFn());
+      // 新的一趟：工作日預設跟實際日期走（同臨時版一樣）；已有的一趟只改日期，不動歸屬。
+      const follow = !st.exists && !ui.sheet.wdTo;
+      ui.sheet = { ...ui.sheet, focus: null, vals: st.vals, anchor: el.value, ...(follow ? { wd: el.value } : {}) };
+      asUser(render);
+      return;
+    }
+    if (el.dataset.action === 'trip-wdto' && el.value && ui.sheet?.type === 'trip') {
+      const st = tripState(store.get(), ui.sheet, nowFn());
+      ui.sheet = { ...ui.sheet, focus: null, vals: st.vals, wdTo: el.value };
+      asUser(render);
+      return;
+    }
     if (el.dataset.action === 'rec-wd' && el.value) {
       // 換工作日：保留揀好的類別，步驟按新的一天重新建議。
       // wdTouched：你特登改過工作日，儲存時就唔使再問「要用邊個工作日」。

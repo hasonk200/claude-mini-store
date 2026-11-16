@@ -1,7 +1,8 @@
 import { esc, icon, bubble, STEP_ICON, STEP_KIND, verifyToggle } from '../ui.js';
-import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN, fromInputs, normTime, fmtDurLong } from '../time.js';
+import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN, fromInputs, normTime, fmtDurLong, fmtDur } from '../time.js';
 import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isFlag, eventVerified, journeyOfSession, sessionsOfWorkday, defaultStepTime, SHIFT_BOUND_STEPS, recentShiftRanges, jobOf, timeOnWorkday, restAutoWorkday, journeyAutoWorkday,
-  quickWakeState, WAKE_AGO, QUICK_WAKE_ERROR, MAIN_SLEEP_MS, dayKeyOfWake, mealWorkday, lastClockBefore } from '../logic.js';
+  quickWakeState, WAKE_AGO, QUICK_WAKE_ERROR, MAIN_SLEEP_MS, dayKeyOfWake, mealWorkday, lastClockBefore,
+  TRIP_GROUPS, tripState, tripsOfWorkday, tripErrorText, shiftsOfWorkday, tripAllVerified, currentCycle } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
 import { sleepPairForm } from './sleep.js';
 import { mealForm } from './meals.js';
@@ -350,6 +351,100 @@ function sheetWrap(title, body, small = true) {
   </section>`;
 }
 
+// ---------- 整趟：七個時間一次過填 ----------
+// 打開整趟面板：預設揀「現在這一趟」（或者這個工作日的第一趟）；一趟都沒有就開一張新的。
+export function openTripSheet(data, wd, now, pick = {}) {
+  if (pick.isNew) return { type: 'trip', wd, isNew: true };
+  if (pick.sessionId || pick.journeyId) return { type: 'trip', wd, sessionId: pick.sessionId || null, journeyId: pick.journeyId || null, focus: pick.focus };
+  const trips = tripsOfWorkday(data, wd);
+  const cyc = currentCycle(data, now);
+  const cur = trips.find((t) => (cyc.session && t.session?.id === cyc.session.id) || (cyc.journey && t.journey?.id === cyc.journey.id));
+  const t = cur || trips[trips.length - 1];
+  if (!t) return { type: 'trip', wd, isNew: true, focus: pick.focus };
+  return { type: 'trip', wd, sessionId: t.session?.id ?? null, journeyId: t.session ? null : t.journey?.id ?? null, focus: pick.focus };
+}
+
+const TRIP_LABEL = { out: '出門', ride: '上車', arrive: '抵達', clockIn: '上班', clockOut: '下班', ride2: '上車', home: '到家' };
+export function tripHint(row) {
+  if (row.t == null) return '未填';
+  return `${wdOf(row.t)} ${fmtMD(dateKey(row.t))}${row.off === 1 ? ' 隔天' : row.off > 1 ? ` +${row.off}天` : ''}`;
+}
+export function tripSummaryHTML(st) {
+  const { go, work, back } = st.summary;
+  const parts = [];
+  if (go != null) parts.push(`去程 <strong>${fmtDur(go)}</strong>`);
+  if (work != null) parts.push(`上班 <strong>${fmtDur(work)}</strong>`);
+  if (back != null) parts.push(`回程 <strong>${fmtDur(back)}</strong>`);
+  if (st.error && st.error.reason !== 'empty') return `<span class="c-danger">${esc(tripErrorText(st.error))}</span>`;
+  if (!parts.length) return '<span class="muted">填了頭尾就會計出去程、上班、回程用了多久</span>';
+  return parts.join(' · ');
+}
+const tripName = (data, t) => {
+  if (t.session) {
+    const s = t.session;
+    return `${fmtTime(s.start)}–${s.end != null ? fmtTime(s.end) : s.endPending ? '待補' : '進行中'} ${esc(jobOf(data, s.jobId)?.name ?? '')}`;
+  }
+  const first = ['out', 'ride', 'arrive', 'leave', 'ride2', 'home'].map((k) => t.journey?.[k]).find((v) => v != null);
+  return `通勤 ${first != null ? fmtTime(first) : ''}`;
+};
+
+function tripSheet(ctx) {
+  const { data, now, ui } = ctx;
+  const sh = ui.sheet;
+  const st = tripState(data, sh, now);
+  const trips = tripsOfWorkday(data, sh.wd);
+  const isSel = (t) => !sh.isNew && ((t.session && t.session.id === st.trip.session?.id) || (!t.session && t.journey && t.journey.id === st.trip.journey?.id));
+  const tabs = trips.length
+    ? `<div class="trip-tabs" role="group" aria-label="這個工作日的每一趟">${trips.map((t) => `<button type="button" class="chip-btn" data-action="trip-pick" data-sid="${esc(t.session?.id ?? '')}" data-jid="${esc(t.session ? '' : t.journey?.id ?? '')}" aria-pressed="${isSel(t)}">${tripName(data, t)}</button>`).join('')}<button type="button" class="chip-btn" data-action="trip-pick" data-new="1" aria-pressed="${!!sh.isNew}">＋ 新一趟</button></div>`
+    : '';
+  const shift = shiftsOfWorkday(data, sh.wd)[0] || null;
+  const ph = { clockIn: shift ? `班表 ${fmtTime(shift.start)}` : '', clockOut: shift ? `班表 ${fmtTime(shift.end)}` : '' };
+  const rowHTML = (r) => {
+    const k = r.step;
+    const v = st.vals[k] || '';
+    const work = k === 'clockIn' || k === 'clockOut';
+    return `<div class="trip-row${work ? ' is-work' : ''}${v ? ' is-filled' : ''}${st.error?.step === k ? ' is-bad' : ''}" data-step="${k}">
+      <div class="trip-lab"><strong>${TRIP_LABEL[k]}</strong><small data-trip-hint="${k}"${r.off > 0 ? ' class="is-next"' : ''}>${tripHint(r)}</small></div>
+      <label class="field trip-time"><input type="time" name="t_${k}" value="${esc(v)}" aria-label="${TRIP_LABEL[k]}時間"${ph[k] ? ` placeholder="${esc(ph[k])}"` : ''}${sh.focus === k ? ' data-autofocus' : ''}></label>
+      <button type="button" class="btn btn-soft btn-sm trip-now" data-action="trip-now" data-step="${k}" aria-label="${TRIP_LABEL[k]}填入現在時間">現在</button>
+      <button type="button" class="icon-btn trip-clear" data-action="trip-clear" data-step="${k}" aria-label="清除${TRIP_LABEL[k]}時間"${v ? '' : ' hidden'}>${icon('close', 14, 2.4)}</button>
+    </div>`;
+  };
+  const groups = TRIP_GROUPS.map(([name, keys]) => `<div class="trip-group"><span class="trip-group-name">${name}</span>${keys.map((k) => rowHTML(st.rows.find((r) => r.step === k))).join('')}</div>`).join('');
+  const allVerified = tripAllVerified(st.trip);
+  const verified = sh.verified !== undefined ? sh.verified : allVerified;
+  const wdNote = st.workday !== sh.wd ? ` · 計入 ${wdOfKey(st.workday)} ${fmtMD(st.workday)}` : '';
+  return sheetWrap(st.exists ? '整趟修改' : '補一整趟', `<form class="form trip-form" data-form="trip">
+      <div class="day-nav trip-nav"><button type="button" class="icon-btn" data-action="trip-day" data-dir="-1" aria-label="前一個工作日">${icon('left', 18, 2)}</button><div class="day-nav-text"><strong>${wdOfKey(sh.wd)}工作日 · ${fmtMD(sh.wd)}</strong><span>${st.exists ? '修改這一趟' : '新的一趟'}${wdNote}</span></div><button type="button" class="icon-btn" data-action="trip-day" data-dir="1" aria-label="下一個工作日">${icon('right', 18, 2)}</button></div>
+      ${tabs}
+      ${st.suggest ? `<div class="sheet-note trip-fix" role="status"><span>這一趟實際由 <strong>${wdOfKey(st.suggest)} ${fmtMD(st.suggest)}</strong> 開始，但現在計入 <strong>${wdOfKey(st.workday)} ${fmtMD(st.workday)}</strong> 工作日——多數是中間睡了覺沒有記。</span><button type="button" class="btn btn-ink btn-sm" data-action="trip-wdfix" data-wd="${st.suggest}">改為計入 ${wdOfKey(st.suggest)} ${fmtMD(st.suggest)}</button></div>` : ''}
+      <label class="field trip-date"><span>實際日期（第一格那天）</span><input type="date" name="anchor" value="${st.anchor}" data-action="trip-anchor"></label>
+      <p class="fine trip-tip">由上而下填；過了午夜的時間會自動算成隔天，每格下面會寫明是哪一天。</p>
+      ${groups}
+      <label class="verify-toggle"><input type="checkbox" name="verified"${verified ? ' checked' : ''}><span class="verify-box" aria-hidden="true">${icon('check', 14, 3.2)}</span><span class="verify-text"><strong>已對照追蹤 App</strong><small>上面的日期和時間都一樣</small></span></label>
+      <details class="more"${sh.wdTo ? ' open' : ''}><summary>進階：計入另一個工作日</summary>
+        <label class="field"><span>這一趟算哪一個工作日</span><input type="date" name="wdTo" value="${st.workday}" data-action="trip-wdto"></label>
+        <p class="fine">平時不用改。只有這班明明屬於另一天（例如過了午夜才出門）才需要。</p></details>
+      ${st.exists ? `<button type="button" class="btn btn-text-danger btn-block" data-action="trip-delete">刪除這一趟</button>` : ''}
+      <div class="sheet-foot qw-foot"><div class="cross-note trip-sum" data-trip-sum aria-live="polite">${tripSummaryHTML(st)}</div><button class="btn btn-ink btn-block btn-lg" type="submit">儲存整趟</button></div>
+    </form>`, false);
+}
+
+// 「＋」打開的選單：先揀要補哪一類，不用一開始就面對一長串步驟。
+function addMenuSheet(ctx) {
+  const { ui } = ctx;
+  const wd = ui.sheet.wd;
+  const item = (action, attrs, ic, kind, title, sub) => `<button type="button" class="add-item" data-action="${action}"${attrs}>${bubble(ic, kind, { size: 'lg', iconSize: 20 })}<span><strong>${title}</strong><small>${sub}</small></span>${icon('right', 18, 2)}</button>`;
+  return sheetWrap('新增／補記', `<div class="add-menu">
+      ${item('open-trip', ` data-wd="${wd}"`, 'bag', 'work', '返工＋通勤（整趟）', '出門、上車、抵達、上班、下班、到家一次過填')}
+      ${item('quick-wake', '', 'sun', 'sleep', '睡眠', '啱啱瞓醒，或者補之前嗰覺')}
+      ${item('quick-meal', '', 'meal', 'meal', '用餐', '一撳記低現在，之後可以改時間')}
+      ${item('open-record', ` data-wd="${wd}" data-step="rest"`, 'cup', 'commute', '休息', '補一段休息')}
+    </div>
+    <button type="button" class="btn btn-text btn-block" data-action="open-record" data-wd="${wd}" data-step="meal">補舊的一餐／安排之後的一餐</button>
+    <button type="button" class="btn btn-text btn-block" data-action="open-record" data-wd="${wd}" data-step="clockIn">逐項補登（班內休息、單獨改一個時間）</button>`);
+}
+
 // ---------- 一撳就記的小面板 ----------
 const whenText = (t) => `${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}`;
 
@@ -471,6 +566,8 @@ export function sheetView(ctx) {
   const sh = ctx.ui.sheet;
   if (!sh) return '';
   if (sh.type === 'sync') return syncSheet(ctx);
+  if (sh.type === 'trip') return tripSheet(ctx);
+  if (sh.type === 'add-menu') return addMenuSheet(ctx);
   if (sh.type === 'quick-wake') return quickWakeSheet(ctx);
   if (sh.type === 'meal-quick') return mealQuickSheet(ctx);
   if (sh.type === 'sleep') return sleepSheet(ctx);

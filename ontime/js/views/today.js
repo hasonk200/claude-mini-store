@@ -66,7 +66,7 @@ function stepper(data, wd, cycle, now) {
     const p = plan[k];
     const time = v != null ? fmtTime(v) : p != null ? fmtTime(p) : '—';
     const note = v != null ? wdOf(v) : p != null ? '計畫' : '未記錄';
-    return `<li class="step${v != null ? ' is-done' : ''}${isCur ? ' is-current' : ''}">
+    return `<li class="step${v != null ? ' is-done' : ''}${isCur ? ' is-current' : ''}" data-action="open-trip" data-wd="${wd}" data-step="${k}">
       ${bubble(STEP_ICON[k], STEP_KIND[k], { done: v != null, current: isCur, empty: v == null && !isCur, size: 'lg', iconSize: 20 })}
       <span class="step-label">${STEP_LABEL[k]}</span>
       <span class="step-time">${time}</span>
@@ -311,7 +311,7 @@ export function todayView(ctx) {
     ${ribbon(data, a, b, now, { lanes: isDesktop })}
     ${legend(isDesktop, data)}
   </section>`;
-  const stepCard = `<section class="card" aria-label="這趟通勤與出勤"><h2 class="card-title">這趟通勤與出勤</h2>${stepper(data, wd, cycle, now)}</section>`;
+  const stepCard = `<section class="card" aria-label="這趟通勤與出勤"><div class="card-head"><h2 class="card-title">這趟通勤與出勤</h2><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}">整趟修改</button></div>${stepper(data, wd, cycle, now)}</section>`;
   const status = statusCard(data, wd, cycle, now, other);
   const tiles = lifeTiles(data, now);
   const todo = pendingCard(data, now);
