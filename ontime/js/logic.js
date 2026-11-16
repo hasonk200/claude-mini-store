@@ -1,6 +1,6 @@
 // 作息規則：純函式，不碰畫面和儲存，方便測試。
 // data = { jobs, shifts, sessions, journeys, meals, sleeps, dayMarks, settings }
-import { MIN, HOUR, dateKey, dayStart, dayEnd, addDays, wdOfKey, at } from './time.js';
+import { MIN, HOUR, dateKey, dayStart, dayEnd, addDays, wdOfKey, at, fmtTime } from './time.js';
 
 export const STEPS = ['out', 'ride', 'arrive', 'clockIn', 'clockOut', 'ride2', 'home'];
 export const OPTIONAL_STEPS = new Set(['ride', 'ride2']);
@@ -1019,4 +1019,166 @@ export function homeSuggestion(data, now, cycle = currentCycle(data, now)) {
   const lm = lastMeal(data, now);
   if (hasAny && (!lm || lm.ms >= 5 * HOUR)) return 'meal';
   return 'step';
+}
+
+
+// ---------- 整趟：七個時間一次過填 ----------
+// 同臨時版（commute-log-temp）一樣嘅做法：一個實際日期，下面七格鐘數，由上而下，
+// 鐘數細過上一格就當係隔天。原有、冇改過嘅格保持原本嘅時間，唔會因為改第二格而走位。
+export const TRIP_GROUPS = [['去程', ['out', 'ride', 'arrive']], ['上班', ['clockIn', 'clockOut']], ['回程', ['ride2', 'home']]];
+export const TRIP_JOURNEY_STEPS = ['out', 'ride', 'arrive', 'ride2', 'home'];
+const TRIP_GAP_MAX = 16 * HOUR;
+export const TRIP_ERROR = {
+  empty: '最少填一個時間',
+  'no-clock-in': '有「下班」就要有「上班」時間',
+  'need-clock-in': '這一班的「上班」時間不可以留空；想刪除整趟請用下面的「刪除這一趟」',
+  order: '時間次序不對',
+  gap: '相隔太耐，時間或者日期係咪打錯？',
+  future: '這個時間還未到，不可以預先記',
+  overlap: '同另一班的上班時間重疊',
+  'has-open': '另一班還未下班，請先補那一班的下班時間',
+  'clear-end': '這班不是最近一班，不可以清空下班時間（會變成一直上班到現在）',
+  missing: '找不到這一趟，可能已經刪除',
+  bad: '有時間看不懂，請用 24 小時制，例如 1830'
+};
+
+// 一個工作日入面嘅每一趟：有出勤嘅（連同佢嘅通勤），加上未掛到出勤嘅獨立通勤。
+export function tripsOfWorkday(data, wd) {
+  const out = sessionsOfWorkday(data, wd).map((s) => ({ session: s, journey: journeyOfSession(data, s) }));
+  for (const j of standaloneJourneys(data, wd)) out.push({ session: null, journey: j });
+  return out;
+}
+
+export function findTrip(data, { sessionId = null, journeyId = null } = {}) {
+  const session = sessionId ? data.sessions.find((x) => x.id === sessionId) || null : null;
+  const journey = session ? journeyOfSession(data, session) : journeyId ? data.journeys.find((x) => x.id === journeyId) || null : null;
+  return { session, journey };
+}
+
+export function tripTimes(trip) {
+  const o = {};
+  for (const k of STEPS) o[k] = stepValue(trip, k);
+  return o;
+}
+
+const tripClock = (t) => (t == null ? '' : fmtTime(t));
+
+// 七格鐘數 → 真實時間。orig = 原有時間；typed = 每格 'HH:MM' 或 ''；anchorKey = 第一格嗰日。
+// rechain：你改咗實際日期，全部重新由嗰日排落去。
+export function resolveTrip(orig, typed, anchorKey, { rechain = false } = {}) {
+  const times = {};
+  const kept = (k) => !rechain && orig[k] != null && typed[k] === tripClock(orig[k]);
+  let prev = null;
+  STEPS.forEach((k, i) => {
+    const hh = typed[k];
+    if (!hh) { times[k] = null; return; }
+    let t;
+    if (kept(k)) t = orig[k];
+    else if (prev != null) {
+      t = at(dateKey(prev), hh);
+      if (t < prev) t = at(addDays(dateKey(prev), 1), hh);
+    } else {
+      // 上面冇嘢可以跟：下面有原有時間就貼住佢之前；乜都冇就用實際日期。
+      const nextK = STEPS.slice(i + 1).find((x) => typed[x] && kept(x));
+      t = nextK ? lastClockBefore(hh, orig[nextK], { inclusive: true }) : at(anchorKey, hh);
+    }
+    times[k] = t;
+    if (t != null) prev = t;
+  });
+  return times;
+}
+
+// 可以存就回傳 null；否則 { reason, step, prev }。
+export function checkTrip(data, { sessionId = null, times }, now) {
+  const filled = STEPS.filter((k) => times[k] != null);
+  if (!filled.length) return { reason: 'empty' };
+  const session = sessionId ? data.sessions.find((x) => x.id === sessionId) : null;
+  if (sessionId && !session) return { reason: 'missing' };
+  if (session && times.clockIn == null) return { reason: 'need-clock-in', step: 'clockIn' };
+  if (times.clockOut != null && times.clockIn == null) return { reason: 'no-clock-in', step: 'clockOut' };
+  for (let i = 1; i < filled.length; i++) {
+    const a = filled[i - 1];
+    const b = filled[i];
+    if (times[b] < times[a]) return { reason: 'order', step: b, prev: a };
+    if (times[b] - times[a] > TRIP_GAP_MAX && !(a === 'clockIn' && b === 'clockOut')) return { reason: 'gap', step: b, prev: a };
+  }
+  const late = filled.find((k) => times[k] > now);
+  if (late) return { reason: 'future', step: late };
+  if (times.clockIn != null) {
+    const a = times.clockIn;
+    const b = times.clockOut ?? (now - a > OPEN_LIMIT ? a : now);
+    const others = data.sessions.filter((x) => x.id !== sessionId);
+    if (others.some((x) => x.start < b && sessionEndAt(x, now) > a)) return { reason: 'overlap', step: 'clockIn' };
+    if (times.clockOut == null && now - a <= OPEN_LIMIT && others.some(isOpenSession)) return { reason: 'has-open', step: 'clockOut' };
+    if (session && session.end != null && times.clockOut == null) {
+      const later = others.some((x) => x.start > session.start);
+      if (later || now - a > OPEN_LIMIT) return { reason: 'clear-end', step: 'clockOut' };
+    }
+  }
+  return null;
+}
+
+export function tripErrorText(err) {
+  if (!err) return '';
+  const base = TRIP_ERROR[err.reason] || '這一趟存不到';
+  if (err.reason === 'order' && err.step && err.prev) return `「${STEP_LABEL[err.step]}」早過「${STEP_LABEL[err.prev]}」，${base}`;
+  if (err.reason === 'gap' && err.step && err.prev) return `「${STEP_LABEL[err.step]}」早過「${STEP_LABEL[err.prev]}」，或者兩個時間${base}`;
+  if (err.reason === 'future' && err.step) return `「${STEP_LABEL[err.step]}」${base.replace('這個時間', '的時間')}`;
+  return base;
+}
+
+// 原有已填嘅時間係咪全部打咗「已驗證」。
+export function tripAllVerified(trip) {
+  const orig = tripTimes(trip);
+  const filled = STEPS.filter((k) => orig[k] != null);
+  return filled.length > 0 && filled.every((k) => (k === 'clockIn' ? isVerified(trip.session, 'start') : k === 'clockOut' ? isVerified(trip.session, 'end') : isVerified(trip.journey, k)));
+}
+
+// 去程、上班、回程各用咗幾耐（有齊頭尾先計）。
+export function tripSummary(times) {
+  const go = times.out != null && (times.clockIn ?? times.arrive) != null ? (times.clockIn ?? times.arrive) - times.out : null;
+  const work = times.clockIn != null && times.clockOut != null ? times.clockOut - times.clockIn : null;
+  const back = times.clockOut != null && times.home != null ? times.home - times.clockOut : null;
+  return { go, work, back };
+}
+
+// 漏記睡眠嘅提示：呢一趟係即場撳掣記嘅（冇手動指定工作日），但開始嘅時候距離上一次起床已經超過 20 個鐘，
+// 多數係中間瞓咗冇記，所以先會計咗入前一個工作日。回傳建議嘅工作日（開始嗰日），唔使提示就回傳 null。
+const MISSED_SLEEP_GAP = 20 * HOUR;
+export function tripWorkdaySuggestion(data, trip) {
+  const s = trip.session;
+  const j = trip.journey;
+  if (s ? s.workdayManual : !j || j.workdayDate) return null;
+  const first = s ? s.start : TRIP_JOURNEY_STEPS.map((k) => j[k]).find((v) => v != null);
+  if (first == null) return null;
+  const cur = s ? workdayOfSession(s, data) : journeyWorkday(j, data);
+  const own = dateKey(first);
+  if (cur === own) return null;
+  const last = dayBoundaries(data).filter((b) => b <= first).pop();
+  if (last == null || first - last <= MISSED_SLEEP_GAP) return null;
+  return own;
+}
+
+// 整趟面板嘅全部計算。sh = { wd, sessionId, journeyId, isNew, vals, anchor, wdTo }。
+export function tripState(data, sh, now) {
+  const trip = sh.isNew ? { session: null, journey: null } : findTrip(data, sh);
+  const orig = tripTimes(trip);
+  const first = STEPS.map((k) => orig[k]).find((v) => v != null);
+  const origAnchor = first != null ? dateKey(first) : null;
+  const anchor = sh.anchor || origAnchor || sh.wd;
+  const rechain = origAnchor != null && anchor !== origAnchor;
+  const vals = {};
+  for (const k of STEPS) vals[k] = sh.vals && sh.vals[k] !== undefined ? sh.vals[k] : tripClock(orig[k]);
+  const times = resolveTrip(orig, vals, anchor, { rechain });
+  const error = STEPS.some((k) => vals[k] === null) ? { reason: 'bad' } : checkTrip(data, { sessionId: trip.session?.id ?? null, times }, now);
+  const firstT = STEPS.map((k) => times[k]).find((v) => v != null);
+  const rows = STEPS.map((k) => {
+    const t = times[k];
+    const off = t != null && firstT != null ? Math.round((dayStart(dateKey(t)) - dayStart(dateKey(firstT))) / (24 * HOUR)) : 0;
+    return { step: k, t, off, kept: t != null && t === orig[k] };
+  });
+  const wd0 = trip.session ? workdayOfSession(trip.session, data) : trip.journey ? journeyWorkday(trip.journey, data) : sh.wd;
+  const dirty = STEPS.some((k) => times[k] !== orig[k]) || (sh.wdTo && sh.wdTo !== wd0);
+  const suggest = sh.wdTo ? null : tripWorkdaySuggestion(data, trip);
+  return { trip, orig, vals, anchor, rechain, times, rows, error, summary: tripSummary(times), workday: sh.wdTo || wd0, wd0, dirty, suggest, exists: !!(trip.session || trip.journey) };
 }

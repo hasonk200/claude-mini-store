@@ -1,6 +1,6 @@
 import { esc, icon, seg, money } from '../ui.js';
-import { dateKey, fmtTime, wdOf, fmtMD, wdShort, fmtDur, addDays, weekStartKey, monthStartKey, monthEndKey, fromKey, HOUR, daysBetween } from '../time.js';
-import { periodStats, sessionWorkMs, splitWorkByDay, jobOf, sessionPay, sleepAverage } from '../logic.js';
+import { dateKey, fmtTime, wdOf, fmtMD, wdShort, fmtDur, addDays, weekStartKey, monthStartKey, monthEndKey, fromKey, HOUR, daysBetween, wdOfKey } from '../time.js';
+import { periodStats, sessionWorkMs, splitWorkByDay, jobOf, sessionPay, sleepAverage, STEPS, tripTimes, tripSummary, journeyOfSession, workdayOfSession } from '../logic.js';
 import { pageHead } from './shared.js';
 
 export function periodRange(ui, now) {
@@ -22,8 +22,23 @@ function incomeCell(s, now) {
   return '<span class="muted">不計薪</span>';
 }
 
+// 手機：每一趟一張卡——七個時間、去程／上班／回程，點「修改」就開整趟面板（同臨時版的清單一樣）。
+const CELL_LABEL = { out: '出門', ride: '上車', arrive: '抵達', clockIn: '上班', clockOut: '下班', ride2: '上車', home: '到家' };
+export function tripCard(data, s, now) {
+  const job = jobOf(data, s.jobId);
+  const wd = workdayOfSession(s, data);
+  const times = tripTimes({ session: s, journey: journeyOfSession(data, s) });
+  const sum = tripSummary(times);
+  const facts = [sum.go != null ? `去程 <b>${fmtDur(sum.go)}</b>` : '', `上班 <b>${fmtDur(sessionWorkMs(s, now))}</b>${s.end == null ? '（進行中）' : ''}`, sum.back != null ? `回程 <b>${fmtDur(sum.back)}</b>` : ''].filter(Boolean).join(' · ');
+  const cells = STEPS.map((k) => `<div class="trip-cell${k === 'clockIn' || k === 'clockOut' ? ' is-work' : ''}${times[k] == null ? ' is-empty' : ''}"><span>${CELL_LABEL[k]}</span><b>${times[k] != null ? fmtTime(times[k]) : '—'}</b><small>${times[k] != null ? wdOf(times[k]) : ''}</small></div>`).join('');
+  const pay = { hourly: '時薪', perOrder: '按單', none: '不計薪' }[s.payMode] || '';
+  return `<li class="trip-card"><div class="trip-card-head"><div><strong>${wdOfKey(wd)} ${fmtMD(wd)} 工作日</strong><span class="dot-label"><i class="sw k-${job?.color === 'deliv' ? 'deliv' : 'work'}"></i>${esc(job?.name ?? '工作')} · ${pay}</span></div><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}" data-sid="${esc(s.id)}">修改</button></div>
+    <div class="trip-cells">${cells}</div>
+    <div class="trip-card-foot"><span>${facts}</span><span class="trip-card-pay">${incomeCell(s, now)}</span></div></li>`;
+}
+
 export function statsView(ctx) {
-  const { data, now, ui } = ctx;
+  const { data, now, ui, isDesktop } = ctx;
   const [from, to] = periodRange(ui, now);
   const st = periodStats(data, from, to, now);
   const days = daysBetween(from, to);
@@ -59,6 +74,8 @@ export function statsView(ctx) {
       <td class="t-right">${incomeCell(s, now)}</td></tr>`;
   }).join('');
 
+  const cards = st.sessions.filter((s) => jobFilter === 'all' || s.jobId === jobFilter).sort((a, b) => b.start - a.start).map((s) => tripCard(data, s, now)).join('');
+
   const editing = ui.incomeEdit ? data.sessions.find((s) => s.id === ui.incomeEdit) : null;
   const incomeForm = editing ? `<section class="card"><form class="form" data-form="income"><input type="hidden" name="id" value="${editing.id}">
     <div class="card-head"><h2 class="card-title">${wdOf(editing.start)} ${fmtMD(dateKey(editing.start))} · ${esc(jobOf(data, editing.jobId)?.name ?? '')} 的收入</h2><button type="button" class="btn btn-line btn-sm" data-action="income-cancel">取消</button></div>
@@ -81,6 +98,6 @@ export function statsView(ctx) {
       <p class="fine">這裡按實際發生的日曆日計，包括上一段期間開始、跨午夜進來的夜班，所以加起來可能跟上面「按開班日」的實際工時不一樣。</p></section>
     ${incomeForm}
     <section class="card card-flush"><div class="card-head"><h2 class="card-title">出勤明細</h2>${filters}</div>
-      ${rows ? `<div class="table-wrap"><table class="table"><thead><tr><th scope="col">上班日</th><th scope="col">工作</th><th scope="col">實際時段</th><th scope="col">工時（分日）</th><th scope="col">計算方式</th><th scope="col" class="t-right">收入</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted pad">這段期間沒有出勤紀錄。</p>'}
+      ${!isDesktop && rows ? `<ul class="trip-cards">${cards}</ul>` : rows ? `<div class="table-wrap"><table class="table"><thead><tr><th scope="col">上班日</th><th scope="col">工作</th><th scope="col">實際時段</th><th scope="col">工時（分日）</th><th scope="col">計算方式</th><th scope="col" class="t-right">收入</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted pad">這段期間沒有出勤紀錄。</p>'}
     </section>`;
 }

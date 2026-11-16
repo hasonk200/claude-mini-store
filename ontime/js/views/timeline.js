@@ -21,7 +21,7 @@ function weekStrip(data, key, now) {
 
 function workdayList(data, wd, now) {
   const ev = workdayEvents(data, wd, now);
-  if (!ev.length) return `<div class="card"><p class="muted">這個工作日還沒有紀錄或排班。</p><button type="button" class="btn btn-ink" data-action="open-record" data-wd="${wd}">補登一個時間</button></div>`;
+  if (!ev.length) return `<div class="card"><p class="muted">這個工作日還沒有紀錄或排班。</p><div class="btn-wrap"><button type="button" class="btn btn-ink" data-action="open-trip" data-wd="${wd}">補一整趟返工</button><button type="button" class="btn btn-line" data-action="open-record" data-wd="${wd}">補其他</button></div></div>`;
   // 日期一變就加分隔線；早於工作日的（例如補登時揀了較早的開工日期）不要寫成「進入下一天」。
   let prevKey = wd;
   const items = ev.map((e, i) => {
@@ -43,7 +43,7 @@ function workdayList(data, wd, now) {
       </button>
     </li>`;
   }).join('');
-  return `<div class="card"><div class="card-head"><h2 class="card-title">${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</h2><span class="muted small">${verifiedNote(ev)}點一項可以修改時間</span></div><ol class="tl">${items}</ol></div>`;
+  return `<div class="card"><div class="card-head"><h2 class="card-title">${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</h2><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}">整趟修改</button></div><p class="muted small tl-note">${verifiedNote(ev)}點一項可以單獨修改</p><ol class="tl">${items}</ol></div>`;
 }
 
 // 這個工作日有幾個時間已經驗證（計畫不算）。

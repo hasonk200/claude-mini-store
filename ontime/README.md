@@ -50,6 +50,7 @@ ontime/
   sw.js                 Service Worker（快取 App 外殼與字體）
   tests/logic.test.mjs  作息規則測試
   tests/quick-log.test.mjs  一撳就記的跨夜測試（午夜前後瞓、凌晨食飯、連續兩晚夜班、夏令時間）
+  tests/trip.test.mjs  整趟一次過填的測試（七格時間跨午夜、只改一格、連續兩晚夜班、擋住不合理時間）
   tests/hero-gallery.html  所有場景狀態的預覽頁（加 ?compact 看手機版）
 ```
 

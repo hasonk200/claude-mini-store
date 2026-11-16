@@ -6,7 +6,7 @@ import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js'
 import {
   currentCycle, activeSession, OPEN_LIMIT, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
   journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys, markFlag,
-  sleepWorkdayChanges, activeRest, mealAutoWorkday, restAutoWorkday, journeyAutoWorkday
+  sleepWorkdayChanges, activeRest, mealAutoWorkday, restAutoWorkday, journeyAutoWorkday, checkTrip, TRIP_JOURNEY_STEPS
 } from './logic.js';
 
 // 歸屬工作日（用餐、休息、獨立通勤共用）：workday = undefined 唔改；null 改返自動；
@@ -701,6 +701,65 @@ export function deleteRef(ref, t, now = Date.now()) {
     return { ok: true };
   }
   return { ok: false, reason: 'unknown' };
+}
+
+// ---------- 整趟：七個時間一次過存 ----------
+// times = { out, ride, arrive, clockIn, clockOut, ride2, home }（null = 留空／清除）。
+// 一次過寫入，要麼全部存到，要麼完全唔郁。verified：true／false = 全部已填嘅時間一齊打勾／取消；undefined = 唔改。
+export function saveTrip({ sessionId = null, journeyId = null, wd, wdTo = null, times, verified }, now = Date.now()) {
+  const bad = checkTrip(get(), { sessionId, times }, now);
+  if (bad) return { ok: false, ...bad };
+  const out = { ok: true, sessionId, journeyId };
+  update((d) => {
+    let s = sessionId ? d.sessions.find((x) => x.id === sessionId) || null : null;
+    let j = s ? d.journeys.find((x) => x.sessionId === s.id) || null : journeyId ? d.journeys.find((x) => x.id === journeyId) || null : null;
+    const day = wdTo || wd;
+    if (!s && times.clockIn != null) {
+      s = newSession(d, times.clockIn, day);
+      s.workdayDate = day;
+      s.workdayManual = true;
+    }
+    if (s) {
+      s.start = times.clockIn;
+      if (times.clockOut != null) {
+        s.end = times.clockOut;
+        delete s.endPending;
+        for (const b of s.breaks || []) if (b.end == null) b.end = times.clockOut;
+      } else {
+        s.end = null;
+        if (now - s.start > OPEN_LIMIT) s.endPending = true; else delete s.endPending;
+      }
+      if (wdTo) { s.workdayDate = wdTo; s.workdayManual = true; }
+      out.sessionId = s.id;
+    }
+    const anyJourney = TRIP_JOURNEY_STEPS.some((k) => times[k] != null);
+    if (!j && anyJourney) {
+      j = { id: uid('jr'), sessionId: s?.id ?? null, out: null, ride: null, arrive: null, leave: null, ride2: null, home: null };
+      d.journeys.push(j);
+      if (!s) { j.workdayDate = day; j.workdayManual = true; }
+    }
+    if (j) {
+      for (const k of TRIP_JOURNEY_STEPS) j[k] = times[k] ?? null;
+      if (s && !j.sessionId) { j.sessionId = s.id; delete j.workdayDate; delete j.workdayManual; }
+      if (!j.sessionId && wdTo) { j.workdayDate = wdTo; j.workdayManual = true; }
+      const left = ['out', 'ride', 'arrive', 'leave', 'ride2', 'home'].some((k) => j[k] != null);
+      if (!left && !j.sessionId) d.journeys = d.journeys.filter((x) => x.id !== j.id);
+      else out.journeyId = j.id;
+    }
+    if (verified !== undefined) {
+      if (s) { markFlag(s, 'verified', 'start', verified); markFlag(s, 'verified', 'end', verified && s.end != null); }
+      if (j) for (const k of TRIP_JOURNEY_STEPS) markFlag(j, 'verified', k, verified && j[k] != null);
+    }
+  });
+  return out;
+}
+
+// 刪除整趟：出勤連同佢嘅通勤一齊刪；獨立通勤就刪嗰段通勤。
+export function deleteTrip({ sessionId = null, journeyId = null }) {
+  if (sessionId) { deleteSession(sessionId); return { ok: true }; }
+  if (!journeyId) return { ok: false, reason: 'missing' };
+  update((d) => { d.journeys = d.journeys.filter((x) => x.id !== journeyId); });
+  return { ok: true };
 }
 
 // ---------- 設定 ----------
