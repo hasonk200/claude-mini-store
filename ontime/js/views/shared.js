@@ -144,3 +144,59 @@ export function workdayPreview(t, wk, auto, extra = '') {
   if (t == null || Number.isNaN(t) || !wk) return '';
   return `會存成 <strong>${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}</strong>${extra} · 歸屬 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日${wk !== auto ? '（手動指定）' : ''}`;
 }
+
+
+// ---------- 全日時間帶（2.35）----------
+// 一日嘅時段：決定首頁時間帶同頁頂背景嘅色調。只按鐘數，唔會閃，亦唔會自己郁。
+export function phaseOf(t) {
+  const h = new Date(t).getHours();
+  return h >= 21 || h < 5 ? 'night' : h < 8 ? 'dawn' : h < 17 ? 'day' : 'dusk';
+}
+const PHASE_NAME = { night: '夜晚', dawn: '清晨', day: '日間', dusk: '黃昏' };
+export const phaseName = (t) => PHASE_NAME[phaseOf(t)];
+
+// 手機：一條橫向時間帶。上面係鐘數，中間係色條（睡眠、通勤、上班、食飯、計畫），下面係標籤，而家有一條指針。
+const TAG = { sleep: '瞓', work: '上班', deliv: '上班', commute: '通勤', meal: '食' };
+export function dayBand(data, a, b, now) {
+  const items = intervalsAround(data, a, b, now);
+  const ticks = ticksFor(a, b, false);
+  const grid = ticks.map((t) => `<i class="band-tick${t.mid ? ' is-mid' : ''}" style="left:${pct(t.t, a, b)}"></i>`).join('');
+  const hours = ticks.map((t) => {
+    const f = (t.t - a) / (b - a);
+    const anchor = f < 0.04 ? '0' : f > 0.96 ? '-100%' : '-50%';
+    return `<span class="band-hour${t.mid ? ' is-mid' : ''}" style="left:${(f * 100).toFixed(2)}%;transform:translateX(${anchor})">${t.mid ? '00' : esc(fmtTime(t.t).slice(0, 2))}</span>`;
+  }).join('');
+  const order = { sleep: 0, work: 1, deliv: 1, commute: 2, meal: 3 };
+  const segs = items.sort((x, y) => (order[x.kind] ?? 9) - (order[y.kind] ?? 9)).map((x) => {
+    const s0 = Math.max(x.a, a);
+    const e0 = Math.min(x.b, b);
+    const w = ((e0 - s0) / (b - a)) * 100;
+    return `<span class="band-seg k-${x.kind}${x.plan ? ' is-plan' : ''}" style="left:${pct(s0, a, b)};width:${Math.max(w, 0.6).toFixed(2)}%" title="${esc(KIND[x.kind]?.label || '')} ${fmtTime(x.a)}–${fmtTime(x.b)}${x.plan ? '（計畫）' : ''}"></span>`;
+  }).join('');
+  // 標籤：只畫夠闊、唔會撞埋一齊嘅（實際紀錄優先，計畫其次）。
+  const cand = items.filter((x) => TAG[x.kind]).map((x) => {
+    const s0 = Math.max(x.a, a);
+    const e0 = Math.min(x.b, b);
+    const mid = (((s0 + e0) / 2 - a) / (b - a)) * 100;
+    return { x, mid, w: ((e0 - s0) / (b - a)) * 100 };
+  }).filter((c) => c.w >= 5 || c.x.kind === 'meal').sort((p, q) => (p.x.plan ? 1 : 0) - (q.x.plan ? 1 : 0) || q.w - p.w);
+  const kept = [];
+  for (const c of cand) {
+    const half = (TAG[c.x.kind].length * 3.4 + 2.4);
+    if (kept.some((k) => Math.abs(k.mid - c.mid) < half + k.half)) continue;
+    kept.push({ ...c, half });
+  }
+  const tags = kept.map((c) => {
+    const anchor = c.mid < 5 ? '0' : c.mid > 95 ? '-100%' : '-50%';
+    return `<span class="band-tag k-${c.x.kind}${c.x.plan ? ' is-plan' : ''}" style="left:${c.mid.toFixed(2)}%;transform:translateX(${anchor})">${TAG[c.x.kind]}</span>`;
+  }).join('');
+  const nowIn = now > a && now < b;
+  const f = nowIn ? (now - a) / (b - a) : 0;
+  const needle = nowIn ? `<span class="band-now" style="left:${pct(now, a, b)}"><b style="transform:translateX(${f < 0.12 ? '0' : f > 0.88 ? '-100%' : '-50%'})">而家 ${fmtTime(now)}</b></span>` : '';
+  const label = `由 ${wdOf(a)} ${fmtTime(a)} 到 ${wdOf(b)} ${fmtTime(b)}；${items.filter((x) => !x.plan).length} 段紀錄`;
+  return `<div class="band" role="img" aria-label="${esc(label)}">
+    <div class="band-hours" aria-hidden="true">${hours}</div>
+    <div class="band-track">${grid}${segs}${needle}</div>
+    <div class="band-tags" aria-hidden="true">${tags}</div>
+  </div>`;
+}

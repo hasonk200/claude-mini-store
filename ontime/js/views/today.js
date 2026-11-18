@@ -7,7 +7,7 @@ import {
   homeSuggestion, latestOpenSleep
 } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
-import { ribbon, legend, syncSummary } from './shared.js';
+import { ribbon, legend, dayBand, phaseOf, phaseName, syncSummary } from './shared.js';
 import { heroHTML } from './hero.js';
 
 export function heroFor(data, wd, cycle, now, compact = false, collapsed = false) {
@@ -78,7 +78,7 @@ function stepper(data, wd, cycle, now) {
   return `<ol class="stepper" style="--prog:${prog.toFixed(1)}%">${items}</ol>`;
 }
 
-function statusCard(data, wd, cycle, now, manual = false) {
+function statusCard(data, wd, cycle, now, manual = false, bare = false) {
   const st = statusOf(cycle, data, now);
   const s = cycle.session;
   const sh = s ? shiftOf(data, s) : null;
@@ -129,6 +129,16 @@ function statusCard(data, wd, cycle, now, manual = false) {
   }
   // 切到別的工作日時，這張卡的按鈕仍然是「記錄現在」；講清楚，補舊日請用補登。
   const nowNote = manual ? `<div class="status-now-note">這裡的按鈕記錄的是<strong>現在 ${wdOf(now)} ${fmtMD(dateKey(now))} ${fmtTime(now)}</strong>，不是 ${wdOfKey(wd)} ${fmtMD(wd)}。</div>` : '';
+  if (bare) {
+    const job = s ? jobOf(data, s.jobId)?.name ?? '' : '';
+    return `<div class="status-body">
+    <div class="status-main"><div class="status-title">${esc(st.title)}${job ? `<span class="status-job">${esc(job)}</span>` : ''}</div><div class="status-sub">${sub}</div></div>
+    ${progress}
+    ${nowNote}
+    ${buttons.join('')}
+    <div class="status-links">${wakeFix}<button type="button" class="link-ink" data-action="open-record">${manual ? `補登 ${wdOfKey(wd)} ${fmtMD(wd)} 的時間` : '補登其他時間'}</button></div>
+  </div>`;
+  }
   return `<section class="card card-ink status-card" aria-label="現在狀態">
     <div class="status-top"><span class="live-dot"></span>現在狀態<span class="spacer"></span><span class="muted-ink">${esc(s ? jobOf(data, s.jobId)?.name ?? '' : '')}</span></div>
     <div class="status-main"><div class="status-title">${esc(st.title)}</div><div class="status-sub">${sub}</div></div>
@@ -303,6 +313,37 @@ function eventTable(data, wd, now, ui) {
   </div>`;
 }
 
+// 首頁主角：一日 24 小時嘅時間帶，連埋現在狀態同主掣。底色跟時段（夜晚、清晨、日間、黃昏）。
+function dayHero(ctx, wd, cycle, a, b, isAuto, other) {
+  const { data, now, isDesktop } = ctx;
+  const nav = `<div class="day-switch" role="group" aria-label="切換工作日">
+      <button type="button" class="icon-btn" data-action="wd-shift" data-dir="-1" aria-label="前一個工作日">${icon('left', 18, 2)}</button>
+      <div class="wd-label" aria-live="polite"><strong>${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</strong><small>${wdOf(a)} ${fmtTime(a)} 至 ${wdOf(b)} ${fmtTime(b)}</small></div>
+      <button type="button" class="icon-btn" data-action="wd-shift" data-dir="1" aria-label="下一個工作日">${icon('right', 18, 2)}</button>
+    </div>`;
+  const clock = `<div class="dh-clock"><b>${fmtTime(now)}</b><small>${phaseName(now)} · ${wdOf(now)} ${fmtMD(dateKey(now))}</small></div>`;
+  const back = isAuto ? '' : '<button type="button" class="btn btn-sm dh-back" data-action="wd-auto">回到現在</button>';
+  const band = isDesktop
+    ? `${ribbon(data, a, b, now, { lanes: true })}${legend(true, data)}`
+    : dayBand(data, a, b, now);
+  return `<section class="dayhero${isDesktop ? ' is-wide' : ''}" data-phase="${phaseOf(now)}" aria-label="今日時間帶同現在狀態">
+    <div class="dh-head">${nav}${back}${clock}</div>
+    <div class="dh-band">${band}</div>
+    <div class="dh-status">${statusCard(data, wd, cycle, now, other, true)}</div>
+  </section>`;
+}
+
+function topBar(ctx) {
+  const sum = syncSummary(ctx.sync?.state, ctx.sync?.status);
+  const dot = sum.tone === 'warn' ? 'is-warn' : sum.tone === 'ok' ? 'k-ok' : 'is-off';
+  return `<header class="today-top">
+    <h1>今天</h1>
+    <span class="spacer"></span>
+    <button type="button" class="sync-chip" data-action="sync-open" aria-label="同步狀態：${esc(sum.line)}，點開看詳情" title="${esc(sum.line)}">${icon('cloud', 20, 1.9)}<i class="dot ${dot}" aria-hidden="true"></i></button>
+    <a class="avatar" href="#/settings" aria-label="我的：設定與資料">${icon('user', 22, 1.8)}</a>
+  </header>`;
+}
+
 export function todayView(ctx) {
   const { data, now, ui, isDesktop } = ctx;
   const wd = ctx.wd;
@@ -311,11 +352,6 @@ export function todayView(ctx) {
   const isAuto = !ui.wd;
   const other = wd !== currentWorkday(data, now);
 
-  const ribbonCard = `<section class="card" aria-label="工作日作息">
-    <div class="card-head"><h2 class="card-title">${isDesktop ? `${wdOfKey(wd)}工作日 · 由 ${wdOf(a)} ${fmtTime(a)} 到 ${wdOf(b)} ${fmtTime(b)}` : '工作日作息'}</h2><a class="link" href="#/timeline">完整時間線 ${icon('arrow', 16, 2)}</a></div>
-    ${ribbon(data, a, b, now, { lanes: isDesktop })}
-    ${legend(isDesktop, data)}
-  </section>`;
   const stepCard = `<section class="card" aria-label="這趟通勤與出勤"><div class="card-head"><h2 class="card-title">這趟通勤與出勤</h2><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}">整趟修改</button></div>${stepper(data, wd, cycle, now)}</section>`;
   const status = statusCard(data, wd, cycle, now, other);
   const tiles = lifeTiles(data, now);
@@ -327,30 +363,25 @@ export function todayView(ctx) {
   const next = `${nextCard(data, now)}${budgetUp ? budget : ''}`;
   // 正在返工途中／上班中：通勤進度有用，放上面；其餘時間收入「詳細」。
   const stepUp = !!(cycle.session || cycle.journey);
-  const more = (inner) => `<details class="today-more" data-pref="todayMore"${ui.todayMore ? ' open' : ''}><summary class="section-label">詳細<span class="today-more-hint">時間軸、通勤進度、睡眠數字</span></summary><div class="today-more-body">${inner}</div></details>`;
+  const more = (inner) => `<details class="today-more" data-pref="todayMore"${ui.todayMore ? ' open' : ''}><summary class="section-label">詳細<span class="today-more-hint">通勤進度、睡眠數字</span></summary><div class="today-more-body">${inner}</div></details>`;
 
-  // 次序：現在狀態（主掣）→ 一撳就記 → 需要補的紀錄 → 下一件事；詳細分析收起。
+  // 次序：時間帶＋現在狀態（主掣）→ 一撳就記 → 需要補的紀錄 → 下一件事；詳細收起。
+  const hero = dayHero(ctx, wd, cycle, a, b, isAuto, other);
   if (isDesktop) {
     const head = `<header class="today-head">
-    <div class="today-head-text">
-      <span class="pill-lime">${wdOfKey(wd)}工作日 · ${fmtMD(wd)}${isAuto ? '' : ' · 已手動切換'}</span>
-      <h1>今天</h1>
-      <div class="now-row">現在 <strong>${wdOf(now)} ${fmtMD(dateKey(now))} ${fmtTime(now)}</strong></div>
-    </div>
+    <div class="today-head-text"><h1>今天</h1></div>
     <div class="today-tools">
-      <div class="day-switch" role="group" aria-label="切換工作日"><button type="button" class="icon-btn" data-action="wd-shift" data-dir="-1" aria-label="前一個工作日">${icon('left', 18, 2)}</button>${isAuto ? '' : '<button type="button" class="btn btn-line btn-sm" data-action="wd-auto">回到現在</button>'}<button type="button" class="icon-btn" data-action="wd-shift" data-dir="1" aria-label="下一個工作日">${icon('right', 18, 2)}</button></div>
       <button type="button" class="btn btn-ink" data-action="open-record">${icon('plus', 18, 2.4)}新增記錄 <kbd>N</kbd></button>
     </div>
   </header>`;
-    // 桌面：成個工作日嘅時間軸放最頂（一眼睇到今日點過），之後先係現在狀態同要做嘅事。
     return `${head}
-      ${ribbonCard}
+      ${hero}
       <div class="grid-today">
-        <div class="stack today-main">${status}${tiles}</div>
-        <div class="today-side">${todo}${nextCard(data, now)}${budget}</div>
+        <div class="stack today-main">${tiles}${todo}</div>
+        <div class="today-side">${nextCard(data, now)}${budget}</div>
       </div>
       ${stepCard}
       ${eventTable(data, wd, now, ui)}`;
   }
-  return `${compactHead(ctx, wd, isAuto)}${status}${tiles}${todo}${stepUp ? stepCard : ''}${next}${budgetState==='unset' ? '<button class="btn btn-soft" data-action="plan-clock">設定睡眠計畫</button>' : ''}${more(`${budgetUp ? '' : budget}${ribbonCard}${stepUp ? '' : stepCard}`)}`;
+  return `${topBar(ctx)}${hero}${tiles}${todo}${stepUp ? stepCard : ''}${next}${budgetState==='unset' ? '<button class="btn btn-soft btn-block" data-action="plan-clock">設定睡眠計畫</button>' : ''}${more(`${budgetUp ? '' : budget}${stepUp ? '' : stepCard}`)}`;
 }
