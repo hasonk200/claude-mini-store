@@ -2,35 +2,31 @@ import { esc, icon, bubble } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, HOUR, MIN, DAY, dayStart, toDateInput, toTimeInput, at, fromInputs, normTime } from '../time.js';
 import { sleepWorkday, sleepByWorkday, sleepAverage, nextSleepPlan, latestOpenSleep, sessionsOfWorkday, journeyOfSession } from '../logic.js';
 import { checkSleepPair } from '../actions.js';
-import { pageHead } from './shared.js';
+import { pageHead, dayBand, phaseOf } from './shared.js';
 
-function ring(frac) {
-  const r = 90;
-  const c = 2 * Math.PI * r;
-  return `<svg class="ring" width="220" height="220" viewBox="0 0 220 220" aria-hidden="true">
-    <circle cx="110" cy="110" r="${r}" class="ring-plan"/>
-    <circle cx="110" cy="110" r="${r}" class="ring-real" stroke-dasharray="${(c * Math.min(1, frac)).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 110 110)"/>
-  </svg>`;
-}
 
+// 睡眠頁頂：同首頁一樣嘅時間帶外觀（跟時段轉色）。大數字係實際睡咗幾耐，下面係過去 30 個鐘嘅時間帶。
 function hero(data, now) {
   const active = latestOpenSleep(data);
   const last = data.sleeps.filter((s) => s.start != null && s.end != null).sort((a, b) => b.end - a.end)[0];
+  const end = active?.planEnd && active.planEnd > now ? Math.min(active.planEnd, now + 10 * HOUR) : now + 4 * HOUR;
+  const band = dayBand(data, now - 30 * HOUR, end, now);
+  const big = (ms) => `${Math.floor(ms / HOUR)}<small>小時</small>${String(Math.floor((ms % HOUR) / MIN)).padStart(2, '0')}<small>分</small>`;
   if (active) {
-    const planLen = active.planEnd ? active.planEnd - active.start : 8 * HOUR;
     const el = now - active.start;
-    return `<section class="card sleep-hero" aria-label="睡眠計時">
-      <div class="ring-wrap">${ring(el / planLen)}<div class="ring-text"><span class="eyebrow c-sleep">睡眠中</span><strong>${Math.floor(el / HOUR)}:${String(Math.floor((el % HOUR) / 60000)).padStart(2, '0')}</strong><span>實際已睡 · 計至現在 ${fmtTime(now)}</span></div></div>
-      <div class="pair">
-        <div class="pair-box"><span>入睡 · 實際</span><strong>${fmtTime(active.start)}</strong><small>${wdOf(active.start)} ${fmtMD(dateKey(active.start))}</small></div>
-        <div class="pair-box is-plan-box"><span>預計起床 · 計畫</span><strong>${active.planEnd ? fmtTime(active.planEnd) : '未設定'}</strong><small>${active.planEnd ? '不計入實際時數' : '可以在下面設定'}</small></div>
-      </div>
-      <button type="button" class="btn btn-night btn-block" data-action="wake">現在起床</button>
+    return `<section class="dayhero sleep-hero2" data-phase="${phaseOf(now)}" aria-label="睡眠計時">
+      <div class="sh-top"><span class="sh-label">睡眠中</span><span class="sh-big">${big(el)}</span>
+        <span class="sh-sub">入睡 ${wdOf(active.start)} ${fmtMD(dateKey(active.start))} ${fmtTime(active.start)}${active.planEnd ? ` · 預計 ${wdOf(active.planEnd)} ${fmtTime(active.planEnd)} 起身` : ''}</span></div>
+      <div class="dh-band">${band}</div>
+      <div class="sh-actions"><button type="button" class="btn btn-lime btn-block" data-action="wake">現在起床</button>
+        <button type="button" class="link-ink" data-action="quick-wake">唔係啱啱起身？改起身時間</button></div>
     </section>`;
   }
-  return `<section class="card sleep-hero" aria-label="睡眠計時">
-    <div class="ring-wrap">${ring(last ? 1 : 0)}<div class="ring-text"><span class="eyebrow c-sleep">${last ? '上一次睡眠' : '還沒有紀錄'}</span><strong>${last ? fmtDur(last.end - last.start).replace(' ', '') : '—'}</strong><span>${last ? `${wdOf(last.start)} ${fmtTime(last.start)} → ${wdOf(last.end)} ${fmtTime(last.end)}` : '按下面的按鈕開始計時'}</span></div></div>
-    <div class="btn-pair"><button type="button" class="btn btn-night" data-action="quick-wake">我瞓醒喇</button><button type="button" class="btn btn-soft-night" data-action="sleep-start">現在入睡</button></div>
+  return `<section class="dayhero sleep-hero2" data-phase="${phaseOf(now)}" aria-label="睡眠計時">
+    <div class="sh-top"><span class="sh-label">${last ? '上一次睡眠' : '還沒有睡眠紀錄'}</span><span class="sh-big">${last ? big(last.end - last.start) : '—'}</span>
+      <span class="sh-sub">${last ? `${wdOf(last.start)} ${fmtMD(dateKey(last.start))} ${fmtTime(last.start)} → ${wdOf(last.end)} ${fmtTime(last.end)}${now - last.end < 24 * HOUR ? ` · 起身咗 ${fmtDur(now - last.end)}` : ''}` : '瞓醒撳「我瞓醒喇」，或者瞓之前撳「現在入睡」'}</span></div>
+    <div class="dh-band">${band}</div>
+    <div class="sh-actions btn-row"><button type="button" class="btn btn-lime" data-action="quick-wake">我瞓醒喇</button><button type="button" class="btn btn-ghost-dark" data-action="sleep-start">現在入睡</button></div>
   </section>`;
 }
 

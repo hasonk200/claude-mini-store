@@ -1422,3 +1422,41 @@ body { background: linear-gradient(180deg, var(--wash) 0, var(--bg) 460px) no-re
   .dh-clock b { font-size: 26px; }
   .dayhero .wd-label strong { font-size: 13px; }
 }
+/* 面板標題：開面板時會移焦點到標題（讀屏用），唔使畫框 */
+.sheet-head h2:focus, [tabindex="-1"]:focus { outline: none; }
+/* 預覽清單（複製上一週、臨時版匯入）：每行兩層，粗體係邊日，下面係時間同結果 */
+.sheet .plain-list { gap: 8px; margin-top: 4px; }
+.sheet .plain-list li { align-items: stretch; min-height: 0; padding: 10px 12px; border-radius: var(--r-ctl); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-soft); }
+.sheet .plain-list li > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.sheet .plain-list li > div strong { font-size: 14px; font-weight: 600; }
+.sheet .plain-list li > div span { font-size: 12.5px; color: var(--muted); font-family: var(--font-num); }
+/* 睡眠頁頂、用餐頁頂：大數字 + 一句說明 + 主掣 */
+.sleep-hero2, .meal-hero { gap: 0; }
+.sh-top { display: flex; flex-direction: column; gap: 2px; }
+.sh-label { font-size: 13px; font-weight: 600; color: var(--hb-muted, var(--muted)); }
+.sh-big { font-family: var(--font-num); font-size: 48px; font-weight: 600; line-height: 1.05; letter-spacing: -.01em; }
+.sh-big small { font-family: var(--font); font-size: 15px; font-weight: 500; margin: 0 6px 0 3px; color: var(--hb-muted, var(--muted)); }
+.sh-sub { font-size: 13.5px; color: var(--hb-muted, var(--muted)); }
+.sleep-hero2 .dh-band { margin: 26px 0 6px; }
+.sh-actions { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.sh-actions.btn-row { flex-direction: row; }
+.sh-actions.btn-row .btn { flex: 1; }
+.meal-hero { display: flex; flex-direction: column; gap: 16px; padding: 20px; }
+.meal-hero .sh-big { color: var(--ink); }
+.meal-hero.is-long .sh-big { color: var(--meal-deep); }
+.meal-hero .link-inline { margin-left: 4px; }
+/* 深色重點卡（統計總工時、本週工時）：用夜晚時間帶嘅深藍，同首頁同一套語言 */
+.card-ink:not(.status-card) { background: radial-gradient(120% 90% at 90% 0%, #34386E 0%, rgba(52, 56, 110, 0) 60%), linear-gradient(170deg, #121A34 0%, #1C2650 60%, #232B5A 100%); color: #EEF1FB; box-shadow: 0 0 0 1px rgba(255, 255, 255, .06), 0 18px 40px -24px rgba(18, 26, 52, .6); }
+
+/* 2.36：日間唔再係白色——晴天天藍，右上角有太陽光；指針用太陽橙 */
+.dayhero[data-phase="day"] {
+  --hb-bg: radial-gradient(90% 75% at 92% 0%, #FFF0C2 0%, rgba(255, 240, 194, 0) 58%), linear-gradient(165deg, #E3F0FF 0%, #C6DEFF 55%, #A9CBFF 100%);
+  --hb-fg: #0F2347; --hb-muted: #3D5A86; --hb-line: rgba(15, 35, 71, .12); --hb-mid: rgba(15, 35, 71, .32);
+  --hb-track: rgba(255, 255, 255, .6); --hb-btn: #0F2347; --hb-btn-fg: #FFFFFF;
+  --hb-ghost: rgba(255, 255, 255, .7); --hb-ghost-line: rgba(15, 35, 71, .14); --hb-needle: #E8890C; --hb-needle-fg: #FFFFFF;
+}
+html[data-phase="day"] { --wash: #D6E7FF; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .dayhero[data-phase="day"] { --hb-bg: radial-gradient(90% 75% at 92% 0%, rgba(255, 196, 92, .22) 0%, rgba(255, 196, 92, 0) 58%), linear-gradient(165deg, #16294D 0%, #1D3A6E 100%); --hb-needle: #FFB547; --hb-needle-fg: #1A1405; }
+}
+:root[data-theme="dark"] .dayhero[data-phase="day"] { --hb-bg: radial-gradient(90% 75% at 92% 0%, rgba(255, 196, 92, .22) 0%, rgba(255, 196, 92, 0) 58%), linear-gradient(165deg, #16294D 0%, #1D3A6E 100%); --hb-needle: #FFB547; --hb-needle-fg: #1A1405; }

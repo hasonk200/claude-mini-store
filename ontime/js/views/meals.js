@@ -1,7 +1,6 @@
 import { esc, icon, verifyToggle, stateTag } from '../ui.js';
-import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, toDateInput, toTimeInput, MIN, fromInputs, normTime } from '../time.js';
-import { mealWorkday, mealAutoWorkday, sessionsOfWorkday, frequentMealValues, timeOnWorkday } from '../logic.js';
-import { lastMealLine } from './today.js';
+import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, toDateInput, toTimeInput, MIN, HOUR, fromInputs, normTime } from '../time.js';
+import { mealWorkday, mealAutoWorkday, sessionsOfWorkday, frequentMealValues, timeOnWorkday, lastMeal } from '../logic.js';
 import { pageHead, dayNav, workdayField, workdayPreview } from './shared.js';
 
 function chips(values, field) {
@@ -103,6 +102,12 @@ export function mealsView(ctx) {
   const body = ctx.isDesktop
     ? `<div class="grid-2-1"><div class="stack">${pendingHTML}${listHTML}</div><div class="stack">${form}</div></div>`
     : `${pendingHTML}${form}${listHTML}`;
-  const quick = `<section class="card" aria-label="一撳記一餐">${lastMealLine(data, now)}<button type="button" class="btn btn-meal btn-block" data-action="quick-meal">食咗飯 · 記低現在</button></section>`;
+  // 頁頂：上一餐幾耐之前（大數字），一撳記低現在。超過 6 個鐘轉紅提你。
+  const lm = lastMeal(data, now);
+  const ago = lm ? `${Math.floor(lm.ms / HOUR)}<small>小時</small>${String(Math.floor((lm.ms % HOUR) / MIN)).padStart(2, '0')}<small>分</small>` : '—';
+  const quick = `<section class="card meal-hero${lm && lm.ms >= 6 * HOUR ? ' is-long' : ''}" aria-label="一撳記一餐">
+    <div class="sh-top"><span class="sh-label">${lm ? '距離上一餐' : '還沒有用餐紀錄'}</span><span class="sh-big">${ago}</span>
+      ${lm ? `<span class="sh-sub">${esc(lm.meal.name || '用餐')} · ${wdOf(lm.at)} ${fmtMD(dateKey(lm.at))} ${fmtTime(lm.at)} <button type="button" class="link-inline" data-action="meal-quick-open" data-id="${esc(lm.meal.id)}" aria-label="修改上一餐的時間">改時間</button></span>` : '<span class="sh-sub">食完撳下面個掣，就會記低時間</span>'}</div>
+    <button type="button" class="btn btn-meal btn-block btn-lg" data-action="quick-meal">食咗飯 · 記低現在</button></section>`;
   return `${pageHead('用餐', '啱啱食完一撳就記，其他之後先加')}${quick}${body}`;
 }
