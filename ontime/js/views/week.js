@@ -62,7 +62,16 @@ function weekGrid(data, ws, mode, now) {
       const w = ((e - s) / axis.len) * 100;
       const cont = mode === 'calendar' && x.a < base ? '接續' : '';
       const label = w > 12 ? (cont || `${x.label || ''} ${fmtTime(x.a)}–${fmtTime(x.b)}`.trim()) : '';
-      return `<div class="seg-bar k-${x.kind}${x.plan ? ' is-plan' : ''}${x.kind === 'meal' ? ' is-thin' : ''}" style="left:${pct(s, base, end)};width:${w.toFixed(2)}%" title="${esc(x.label || '')} ${fmtTime(x.a)}–${fmtTime(x.b)}"><span>${esc(label)}</span></div>`;
+      let plan;
+      if (x.kind==='work' || x.kind==='deliv') {
+        plan = data.shifts.find(sh=>sh.start===x.a && sh.end===x.b);
+        if (!plan) {
+          const session = src.sessions.find(s=>s.shiftId && s.start<=x.a && (s.end ?? now)>=x.b);
+          plan = session && data.shifts.find(sh=>sh.id===session.shiftId);
+        }
+      }
+      const tag = plan ? 'button' : 'div';
+      return `<${tag} ${plan?`type="button" data-action="shift-editor" data-id="${esc(plan.id)}" aria-label="修改 ${fmtMD(dateKey(plan.start))} ${fmtTime(plan.start)} 班表"`:''} class="seg-bar k-${x.kind}${x.plan ? ' is-plan' : ''}${x.kind === 'meal' ? ' is-thin' : ''}" style="left:${pct(s, base, end)};width:${w.toFixed(2)}%" title="${esc(x.label || '')} ${fmtTime(x.a)}–${fmtTime(x.b)}"><span>${esc(label)}</span></${tag}>`;
     }).join('');
     const nowLine = now >= base && now < end ? `<div class="now-line" style="left:${pct(now, base, end)}"></div>` : '';
     const note = off ? '休假' : shiftsOfWorkday(data, k).map((sh) => jobOf(data, sh.jobId)?.name).filter(Boolean)[0] || '';
@@ -144,7 +153,7 @@ function monthCalendar(data, ui, now) {
       return `<span class="cal-chip k-${job?.color === 'deliv' ? 'deliv' : 'work'}${done ? '' : ' is-plan'}">${esc(job?.name ?? '')} ${fmtTime(sh.start)}</span>`;
     }).join('') + sessions.filter((s) => !s.shiftId).map((s) => `<span class="cal-chip k-work">${esc(jobOf(data, s.jobId)?.name ?? '工作')} ${fmtTime(s.start)}</span>`).join('');
     const sl = sleepBy[k];
-    cells.push(`<button type="button" class="cal-cell${inMonth ? '' : ' is-out'}${k === dateKey(now) ? ' is-today' : ''}${sel.has(k) ? ' is-selected' : ''}" data-action="cal-pick" data-key="${k}" aria-pressed="${sel.has(k)}" aria-label="${fmtMD(k)} ${wdOfKey(k)}">
+    cells.push(`<button type="button" class="cal-cell${inMonth ? '' : ' is-out'}${k === dateKey(now) ? ' is-today' : ''}${sel.has(k) ? ' is-selected' : ''}" data-action="cal-pick" data-key="${k}" ${shifts.length===1 ? `data-shift="${esc(shifts[0].id)}"` : ''} aria-pressed="${sel.has(k)}" aria-label="${fmtMD(k)} ${wdOfKey(k)}">
       <span class="cal-top"><span class="cal-num">${Number(k.slice(8))}</span>${sl ? `<span class="cal-sleep">睡 ${fmtDur(sl).replace(' ', '')}</span>` : ''}</span>
       ${chips}${off ? '<span class="cal-off">休假</span>' : ''}
     </button>`);
@@ -167,25 +176,20 @@ function dayPanel(data, ui, now) {
   if (!keys.length) return `<div class="day-panel muted">${ui.batch ? '點選要排班的日期，再套用範本。' : '點一天查看或修改那天的班次。'}</div>`;
   const tplBtns = data.templates.map((t) => `<button type="button" class="btn btn-soft btn-sm" data-action="tpl-apply" data-id="${t.id}">套用「${esc(t.name)}」</button>`).join('');
   if (ui.batch) {
-    return `<div class="day-panel"><strong>已選 ${keys.length} 天</strong><div class="btn-wrap">${tplBtns || '<span class="muted">先建立範本</span>'}<button type="button" class="btn btn-line btn-sm" data-action="batch-off">標記休假</button><button type="button" class="btn btn-line btn-sm" data-action="batch-clear">清除選取</button></div></div>`;
+    return `<div class="day-panel"><strong>已選 ${keys.length} 天</strong><div class="btn-wrap">${tplBtns || '<span class="muted">先建立範本</span>'}<button type="button" class="btn btn-line btn-sm" data-action="batch-off">標記休假</button><button type="button" class="btn btn-line btn-sm" data-action="batch-clear">清除選取</button><button type="button" class="btn btn-line" data-action="batch-remove">清除所選日的排班</button></div></div>`;
   }
   const k = keys[0];
   const shifts = shiftsOfWorkday(data, k);
   const off = data.dayMarks.some((m) => m.date === k);
   const list = shifts.map((sh) => {
     const done = data.sessions.some((s) => s.shiftId === sh.id);
-    return `<li><i class="sw k-${jobOf(data, sh.jobId)?.color === 'deliv' ? 'deliv' : 'work'}"></i><span>${esc(jobOf(data, sh.jobId)?.name ?? '')} ${fmtTime(sh.start)} → ${dateKey(sh.end) !== k ? `${wdOfKey(dateKey(sh.end))} ${fmtMD(dateKey(sh.end))} ` : ''}${fmtTime(sh.end)}${done ? '（已有實際出勤）' : ''}</span>${done ? '' : `<button type="button" class="icon-btn icon-btn-sm" data-action="shift-delete" data-id="${sh.id}" aria-label="刪除班次">${icon('trash', 16)}</button>`}</li>`;
+    return `<li><button type="button" class="btn btn-line" data-action="shift-editor" data-id="${esc(sh.id)}">${esc(jobOf(data,sh.jobId)?.name || '工作')} · ${fmtTime(sh.start)} 至 ${wdOfKey(dateKey(sh.end))} ${fmtTime(sh.end)}${done?' · 已有出勤':''}</button></li>`;
   }).join('');
-  const jobOpts = data.jobs.map((j) => `<option value="${j.id}">${esc(j.name)}</option>`).join('');
   return `<div class="day-panel">
     <div class="day-panel-head"><strong>${wdOfKey(k)} ${fmtMD(k)}${k === dateKey(now) ? ' · 今天' : ''}</strong><button type="button" class="btn btn-line btn-sm" data-action="day-off" data-key="${k}">${off ? '取消休假' : '標記休假'}</button></div>
     ${list ? `<ul class="shift-list">${list}</ul>` : `<p class="muted">${off ? '休假，沒有排班。' : '沒有排班。'}</p>`}
     <div class="btn-wrap">${tplBtns}</div>
-    ${data.jobs.length ? `<details class="more"><summary>自訂班次</summary><form class="form form-inline" data-form="shift-add"><input type="hidden" name="key" value="${k}">
-      <label class="field"><span>工作</span><select name="jobId">${jobOpts}</select></label>
-      <label class="field"><span>開始</span><input type="time" name="start" value="21:00" required></label>
-      <label class="field"><span>結束</span><input type="time" name="end" value="09:00" required></label>
-      <button class="btn btn-ink" type="submit">加入</button></form></details>` : ''}
+    ${data.jobs.length ? `<button type="button" class="btn btn-line" data-action="shift-editor" data-key="${k}">加入自訂班次</button>` : ''}
   </div>`;
 }
 
@@ -194,7 +198,7 @@ export function weekView(ctx) {
   const ws = addDays(weekStartKey(ctx.wd), ui.weekOffset * 7);
   const we = addDays(ws, 6);
   const tools = `${seg('weekMode', '排列方式', [['workday', '按工作日'], ['calendar', '按日曆日']], ui.weekMode)}
-    <div class="day-switch"><button type="button" class="icon-btn" data-action="week-shift" data-dir="-1" aria-label="上一週">${icon('left', 18, 2)}</button><button type="button" class="icon-btn" data-action="week-shift" data-dir="1" aria-label="下一週">${icon('right', 18, 2)}</button></div>`;
+    <button type="button" class="btn btn-line" data-action="copy-week" data-week="${ws}">複製上一週的班表</button><div class="day-switch"><button type="button" class="icon-btn" data-action="week-shift" data-dir="-1" aria-label="上一週">${icon('left', 18, 2)}</button><button type="button" class="icon-btn" data-action="week-shift" data-dir="1" aria-label="下一週">${icon('right', 18, 2)}</button></div>`;
   return `${pageHead('一週作息與班表', `${fmtMD(ws)} – ${fmtMD(we)} · 實際、計畫、休假一起看`, tools)}
     <section class="card"><p class="muted small">${ui.weekMode === 'workday' ? '每行是一個工作日；夜班和下班後的事不會被午夜切開。' : '每行是一個日曆日 00:00–24:00；夜班在午夜切開，標示「接續」。'}</p>${weekGrid(data, ws, ui.weekMode, now)}
     <div class="legend">${(data.jobs.length ? data.jobs : [{ name: '工作', color: 'work' }]).map((j) => `<span><i class="sw k-${j.color === 'deliv' ? 'deliv' : 'work'}"></i>${esc(j.name)}</span>`).join('')}<span><i class="sw k-commute"></i>通勤</span><span><i class="sw k-sleep"></i>睡眠</span><span><i class="sw k-meal"></i>用餐</span><span><i class="sw is-plan-sw"></i>計畫</span></div></section>

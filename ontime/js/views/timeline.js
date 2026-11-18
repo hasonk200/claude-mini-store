@@ -43,7 +43,11 @@ function workdayList(data, wd, now) {
       </button>
     </li>`;
   }).join('');
-  return `<div class="card"><div class="card-head"><h2 class="card-title">${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</h2><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}">整趟修改</button></div><p class="muted small tl-note">${verifiedNote(ev)}點一項可以單獨修改</p><ol class="tl">${items}</ol></div>`;
+  return `<div class="card"><div class="card-head"><h2 class="card-title">${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</h2><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}">整趟修改</button></div><p class="muted small tl-note">${verifiedNote(ev)}勾選表示已對照追蹤 App；點時間項目可修改</p>${sessionsOfWorkday(data,wd).map(s=>{
+    const j=data.journeys.find(x=>x.sessionId===s.id);
+    const step=s.end==null?'clockOut':j?.home==null?'home':null;
+    return step?`<button type="button" class="btn btn-line" data-action="open-trip" data-wd="${wd}" data-sid="${esc(s.id)}" data-step="${step}">${fmtTime(s.start)} 班 · 補記${step==='home'?'到家':'下班'}</button>`:'';
+  }).join('')}<ol class="tl">${items}</ol></div>`;
 }
 
 // 這個工作日有幾個時間已經驗證（計畫不算）。

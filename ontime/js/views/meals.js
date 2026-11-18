@@ -49,12 +49,12 @@ export function mealForm({ data, now, ui, meal = null, key, defaultStart, inShee
       <label class="field"><span>開始</span><input type="time" name="start" value="${esc(startT)}" required></label></div>
       ${wdField}
       <div class="cross-note" data-meal-preview data-wd-preview aria-live="polite">${mealPreview(data, t, now, wdMode ? { wd: wdValue, mode: wdMode } : {})}</div>
-      <details class="more"${openMore ? ' open' : ''}><summary>更多：結束、計畫、餐點、相片</summary>
+        <div class="field-pair"><div class="stack-tight"><label class="field"><span>餐點</span><input name="name" value="${esc(name)}" placeholder="例如：便當"></label>${chips(favNames, 'name')}</div>
+        <div class="stack-tight"><label class="field"><span>地點</span><input name="place" value="${esc(place)}" placeholder="例如：公司休息室"></label>${chips(favPlaces, 'place')}</div></div>
+      <details class="more"${openMore ? ' open' : ''}><summary>更多：結束、狀態、相片</summary>
         <div class="field-pair"><label class="field"><span>結束（可空白）</span><input type="time" name="end" value="${esc(endT)}"></label>
         <label class="field"><span>狀態</span><select name="confirmed"><option value="1"${confirmed !== '0' ? ' selected' : ''}>已經吃了</option><option value="0"${confirmed === '0' ? ' selected' : ''}>只是計畫</option></select></label></div>
         ${verifyToggle(verified)}
-        <div class="field-pair"><div class="stack-tight"><label class="field"><span>餐點</span><input name="name" value="${esc(name)}" placeholder="例如：便當"></label>${chips(favNames, 'name')}</div>
-        <div class="stack-tight"><label class="field"><span>地點</span><input name="place" value="${esc(place)}" placeholder="例如：公司休息室"></label>${chips(favPlaces, 'place')}</div></div>
         <label class="field"><span>備註</span><textarea name="note" rows="2">${esc(note)}</textarea></label>
         <div class="photo-field">
           ${photo ? `<img class="photo-preview" src="${esc(photo)}" alt="這一餐的相片">` : `<span class="photo-empty">${icon('camera', 22)}</span>`}

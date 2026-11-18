@@ -1195,3 +1195,21 @@ details.more { border-radius: 10px; }
   .status-title { font-size: 40px; }
   #toast { bottom: 28px; }
 }
+
+/* 2.34 手機班表、收入和提醒 */
+.demo-banner { padding: 6px 16px; background: var(--accent-soft); color: var(--ink); text-align: center; }
+.inline-income { min-width: 0; width: 100%; margin-top: .5rem; text-align: left; }
+.inline-income input { min-width: 0; width: 100%; }
+.trip-card-pay:has(.inline-income) { flex: 1 1 100%; }
+.trip-plan-hint { display: block; color: var(--muted); white-space: normal; }
+.shift-list .btn, .month .btn, .month .icon-btn, .day-switch .icon-btn, .job-list .btn { min-height: 44px; min-width: 44px; }
+.wk-track button.seg-bar { top: 2px; bottom: 2px; cursor: pointer; }
+.todo-row { flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .month { padding-inline: 3px; margin-inline: -6px; }
+  .cal-week, .cal-grid { gap: 1px; }
+  .cal-cell { min-height: 48px; padding: 2px; }
+  .cal-chip { max-width: 100%; }
+  .wk-grid { min-width: 620px; }
+  .trip-plan-hint { font-size: .75rem; }
+}

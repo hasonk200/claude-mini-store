@@ -685,7 +685,7 @@ export function pendingItems(data, now) {
   for (const s of data.sessions) {
     if (s.end != null || !s.endPending) continue;
     const job = jobOf(data, s.jobId);
-    out.push({ kind: 'pending-end', t: s.start, wd: workdayOfSession(s, data), step: 'clockOut', job: job?.name ?? '工作' });
+    out.push({ kind: 'pending-end', sid:s.id, t: s.start, wd: workdayOfSession(s, data), step: 'clockOut', job: job?.name ?? '工作' });
   }
   // 剛收工、超過回程時間還沒記到家。
   const backMs = (data.settings?.commuteBackMin ?? 45) * MIN;

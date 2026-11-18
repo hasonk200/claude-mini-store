@@ -1,3 +1,4 @@
+import { decodeCSV } from './backup.js';
 // 使用者動作：每個函式只改它負責的那一筆資料。
 import { update, get, getRaw, uid, replaceAll, emptyData, normalize } from './store.js';
 import { mergeData } from './sync.js';
@@ -22,9 +23,18 @@ function ensureJob(d) {
   return d.jobs[0];
 }
 
-function newSession(d, t, wdHint) {
+function matchingShift(d,t,wdHint) {
   let sh = shiftForClockIn(d, t);
   if (!sh && wdHint) sh = shiftsOfWorkday(d, wdHint).find((x) => !d.sessions.some((s) => s.shiftId === x.id)) || null;
+  return sh;
+}
+export function tripPayMode(d, trip, wd, t) {
+  if (trip.session) return trip.session.payMode;
+  const shift = matchingShift(d,t,wd);
+  return (shift && d.jobs.find(j=>j.id===shift.jobId)?.payMode) ?? d.jobs[0]?.payMode ?? 'hourly';
+}
+function newSession(d, t, wdHint) {
+  const sh = matchingShift(d,t,wdHint);
   const job = (sh && d.jobs.find((j) => j.id === sh.jobId)) || ensureJob(d);
   const s = {
     id: uid('ses'), jobId: job.id, shiftId: sh?.id ?? null, start: t, end: null, breaks: [],
@@ -706,51 +716,57 @@ export function deleteRef(ref, t, now = Date.now()) {
 // ---------- 整趟：七個時間一次過存 ----------
 // times = { out, ride, arrive, clockIn, clockOut, ride2, home }（null = 留空／清除）。
 // 一次過寫入，要麼全部存到，要麼完全唔郁。verified：true／false = 全部已填嘅時間一齊打勾／取消；undefined = 唔改。
-export function saveTrip({ sessionId = null, journeyId = null, wd, wdTo = null, times, verified }, now = Date.now()) {
+export function saveTrip({ sessionId = null, journeyId = null, wd, wdTo = null, times, verified, pay }, now = Date.now()) {
   const bad = checkTrip(get(), { sessionId, times }, now);
   if (bad) return { ok: false, ...bad };
+  let result;
+  update(d => { result = writeTrip(d, { sessionId, journeyId, wd, wdTo, times, verified, pay }, now); });
+  return result;
+}
+
+// Caller validates the complete trip before entering a single store transaction.
+export function writeTrip(d, { sessionId = null, journeyId = null, wd, wdTo, times, verified, pay }, now) {
   const out = { ok: true, sessionId, journeyId };
-  update((d) => {
-    let s = sessionId ? d.sessions.find((x) => x.id === sessionId) || null : null;
-    let j = s ? d.journeys.find((x) => x.sessionId === s.id) || null : journeyId ? d.journeys.find((x) => x.id === journeyId) || null : null;
-    const day = wdTo || wd;
-    if (!s && times.clockIn != null) {
-      s = newSession(d, times.clockIn, day);
-      s.workdayDate = day;
-      s.workdayManual = true;
+  let s = sessionId ? d.sessions.find((x) => x.id === sessionId) || null : null;
+  let j = s ? d.journeys.find((x) => x.sessionId === s.id) || null : journeyId ? d.journeys.find((x) => x.id === journeyId) || null : null;
+  const day = wdTo || wd;
+  if (!s && times.clockIn != null) {
+    s = newSession(d, times.clockIn, day);
+    s.workdayDate = day;
+    s.workdayManual = true;
+  }
+  if (s) {
+    s.start = times.clockIn;
+    if (times.clockOut != null) {
+      s.end = times.clockOut;
+      delete s.endPending;
+      for (const b of s.breaks || []) if (b.end == null) b.end = times.clockOut;
+    } else {
+      s.end = null;
+      if (now - s.start > OPEN_LIMIT) s.endPending = true; else delete s.endPending;
     }
-    if (s) {
-      s.start = times.clockIn;
-      if (times.clockOut != null) {
-        s.end = times.clockOut;
-        delete s.endPending;
-        for (const b of s.breaks || []) if (b.end == null) b.end = times.clockOut;
-      } else {
-        s.end = null;
-        if (now - s.start > OPEN_LIMIT) s.endPending = true; else delete s.endPending;
-      }
-      if (wdTo) { s.workdayDate = wdTo; s.workdayManual = true; }
-      out.sessionId = s.id;
-    }
-    const anyJourney = TRIP_JOURNEY_STEPS.some((k) => times[k] != null);
-    if (!j && anyJourney) {
-      j = { id: uid('jr'), sessionId: s?.id ?? null, out: null, ride: null, arrive: null, leave: null, ride2: null, home: null };
-      d.journeys.push(j);
-      if (!s) { j.workdayDate = day; j.workdayManual = true; }
-    }
-    if (j) {
-      for (const k of TRIP_JOURNEY_STEPS) j[k] = times[k] ?? null;
-      if (s && !j.sessionId) { j.sessionId = s.id; delete j.workdayDate; delete j.workdayManual; }
-      if (!j.sessionId && wdTo) { j.workdayDate = wdTo; j.workdayManual = true; }
-      const left = ['out', 'ride', 'arrive', 'leave', 'ride2', 'home'].some((k) => j[k] != null);
-      if (!left && !j.sessionId) d.journeys = d.journeys.filter((x) => x.id !== j.id);
-      else out.journeyId = j.id;
-    }
-    if (verified !== undefined) {
-      if (s) { markFlag(s, 'verified', 'start', verified); markFlag(s, 'verified', 'end', verified && s.end != null); }
-      if (j) for (const k of TRIP_JOURNEY_STEPS) markFlag(j, 'verified', k, verified && j[k] != null);
-    }
-  });
+    if (wdTo) { s.workdayDate = wdTo; s.workdayManual = true; }
+    out.sessionId = s.id;
+  }
+  const anyJourney = TRIP_JOURNEY_STEPS.some((k) => times[k] != null);
+  if (!j && anyJourney) {
+    j = { id: uid('jr'), sessionId: s?.id ?? null, out: null, ride: null, arrive: null, leave: null, ride2: null, home: null };
+    d.journeys.push(j);
+    if (!s) { j.workdayDate = day; j.workdayManual = true; }
+  }
+  if (j) {
+    for (const k of TRIP_JOURNEY_STEPS) j[k] = times[k] ?? null;
+    if (s && !j.sessionId) { j.sessionId = s.id; delete j.workdayDate; delete j.workdayManual; }
+    if (!j.sessionId && wdTo) { j.workdayDate = wdTo; j.workdayManual = true; }
+    const left = ['out', 'ride', 'arrive', 'leave', 'ride2', 'home'].some((k) => j[k] != null);
+    if (!left && !j.sessionId) d.journeys = d.journeys.filter((x) => x.id !== j.id);
+    else out.journeyId = j.id;
+  }
+  if (verified !== undefined) {
+    if (s) { markFlag(s, 'verified', 'start', verified); markFlag(s, 'verified', 'end', verified && s.end != null); }
+    if (j) for (const k of TRIP_JOURNEY_STEPS) markFlag(j, 'verified', k, verified && j[k] != null);
+  }
+  if (s?.payMode === 'perOrder' && pay) Object.assign(s, pay);
   return out;
 }
 
@@ -773,7 +789,8 @@ export function exportJSON() {
 }
 
 export function parseBackup(text) {
-  const obj = JSON.parse(String(text).replace(/^\uFEFF/, ''));
+  const input = String(text).replace(/^\uFEFF/, '');
+  const obj = input.startsWith('OnTime CSV') ? decodeCSV(input) : JSON.parse(input);
   if (isLegacyBackup(obj)) return convertLegacy(obj);
   const raw = obj && obj.app === 'ONTIME' && obj.data ? obj.data : obj;
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sessions) || !Array.isArray(raw.sleeps)) {
@@ -784,7 +801,14 @@ export function parseBackup(text) {
 
 export function importJSON(text, mode = 'replace') {
   const incoming = parseBackup(text);
-  if (mode === 'replace') { replaceAll(incoming); return; }
+  if (mode === 'replace') {
+    // A fresh install has no local history to retire or re-stamp.
+    const raw = getRaw();
+    const empty = emptyData();
+    const fresh = Object.keys(empty).every(k => JSON.stringify(raw[k]) === JSON.stringify(empty[k]));
+    replaceAll(incoming, { tombstone: !fresh });
+    return;
+  }
   // 合併：逐筆比較，較新的版本勝出；只在一邊有的紀錄都保留。
   replaceAll(mergeData(getRaw(), incoming));
 }

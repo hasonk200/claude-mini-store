@@ -1,3 +1,8 @@
+import { clockRange, restTarget, copyWeek, reminderCalendar } from './planning.js';
+import { rangeText } from './views/planning.js';
+import { backupCSV } from './backup.js';
+import { readTemp, tempPreview, importTemp } from './temp-import.js';
+import { workdayOfSession } from './logic.js';
 import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
@@ -32,7 +37,7 @@ const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'],
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
-  selRef: null, sheet: null, incomeEdit: null, jobEdit: null, canInstall: false,
+  selRef: null, sheet: null, jobEdit: null, canInstall: false,
   pendingRecord: null, pendingDelete: null, flash: null, sleepSaved: null,
   drafts: loadDrafts(), heroCollapsed: loadPref('ontime-scene') !== 'on',
   todayMore: loadPref('ontime-today-more') === 'open',
@@ -49,10 +54,10 @@ function savePref(key, v) { try { localStorage.setItem(key, v); } catch { /* 忽
 // 有 data-draft 的表單，每次輸入都存一份（連相片）。重畫、同步、加相片、切換分頁都用草稿的值，
 // 不會清空未儲存的輸入；同一個分頁重新載入也還在（sessionStorage）。儲存或清除後才刪。
 function loadDrafts() {
-  try { return JSON.parse(sessionStorage.getItem('ontime-drafts')) || {}; } catch { return {}; }
+  try { return JSON.parse(sessionStorage.getItem((store.demoMode ? 'ontime-demo-drafts' : 'ontime-drafts'))) || {}; } catch { return {}; }
 }
 function persistDrafts() {
-  try { sessionStorage.setItem('ontime-drafts', JSON.stringify(ui.drafts)); } catch { /* 空間不足或不能用：只留在記憶體 */ }
+  try { sessionStorage.setItem((store.demoMode ? 'ontime-demo-drafts' : 'ontime-drafts'), JSON.stringify(ui.drafts)); } catch { /* 空間不足或不能用：只留在記憶體 */ }
 }
 function captureDraft(form) {
   const key = form?.dataset.draft;
@@ -101,6 +106,7 @@ function shell() {
     : `<a href="#/${r}" class="tab" data-route="${r}">${icon(ic, 23, 1.9)}<span>${label}</span></a>`).join('');
   document.body.innerHTML = `
   <a class="skip" href="#view">跳到主要內容</a>
+  ${store.demoMode ? '<div class="demo-banner">示範模式 <button class="btn btn-line" data-action="exit-demo">返回我的紀錄</button></div>' : ''}
   <div class="app">
     <aside class="sidebar" aria-label="側邊導覽">
       <a class="brand" href="#/today"><span class="brand-mark">${icon('clock', 20, 2.2)}</span><span>ONTIME</span></a>
@@ -378,10 +384,88 @@ async function compressPhoto(file) {
   }
 }
 
+function showSheet(type, values = {}) {
+  ui.sheet = { type, ...values };
+  render();
+}
+function demoURL(on) {
+  const url = new URL(location.href);
+  if (on) url.searchParams.set('demo','1'); else url.searchParams.delete('demo');
+  url.hash = '/today';
+  location.assign(url);
+}
+async function afterRecovery(change) {
+  try { await store.saveRecovery(); }
+  catch { toast('安全備份未完成，請檢查裝置空間再試'); return; }
+  asUser(change);
+}
+let replacingText = null;
+let removeIds = [];
+function removePlanned(ids) {
+  store.update(d => {
+    d.shifts = d.shifts.filter(s=>!ids.includes(s.id));
+  });
+}
+function payFrom(f) {
+  return { income:f.income.value === '' ? null : Number(f.income.value),
+    orders:f.orders.value === '' ? null : Number(f.orders.value) };
+}
 const handlers = {
-  'sync-in': () => { if (ui.sheet?.type === 'sync') ui.sheet = null; signIn(); render(); },
+  'exit-demo': () => demoURL(false),
+  'rest-open': el => showSheet('rest-only',{wd:el.dataset.wd || ctx().wd}),
+  'shift-editor': el => showSheet('shift-editor',{id:el.dataset.id,key:el.dataset.key||ctx().wd}),
+  'copy-week': el => showSheet('copy-week',{week:el.dataset.week,rows:copyWeek(store.get(),el.dataset.week)}),
+  'copy-confirm': () => {
+    const current=copyWeek(store.get(),ui.sheet.week);
+    if(JSON.stringify(current)!==JSON.stringify(ui.sheet.rows)){
+      ui.sheet.rows=current;render();toast('班表已更新，請再核對預覽');return;
+    }
+    const rows=current.filter(r=>!r.skip);
+    ui.sheet=null;
+    if(rows.length) store.update(d=>{for(const {jobId,start,end} of rows) d.shifts.push({id:store.uid('sh'),jobId,start,end});});
+    render(); toastUndo(`已複製 ${rows.length} 個班次`);
+  },
+  'batch-remove': el => {
+    if(!el.dataset.confirmed) removeIds=store.get().shifts.filter(s=>ui.batchDays.includes(dateKey(s.start))).map(s=>s.id);
+    if(!removeIds.length) {toast('所選日子沒有排班');return}
+    if(confirmFirst(el,'清除所選排班？',`將移除 ${removeIds.length} 個排班，保留實際出勤。`,'清除排班')) {
+      removePlanned(removeIds); removeIds=[]; ui.batchDays=[]; render(); toastUndo('已清除排班');
+    }
+  },
+  'remove-plan': el => {
+    if(!el.dataset.confirmed) removeIds=[ui.sheet.id];
+    if(confirmFirst(el,'刪除排班？','實際出勤時間和當時的薪酬會保留。','刪除排班')) {
+      removePlanned(removeIds); removeIds=[]; render(); toastUndo('已刪除排班');
+    }
+  },
+  'temp-open': () => showSheet('temp-import'),
+  'temp-confirm': () => {
+    const sh=ui.sheet, result=importTemp(sh.entries,sh.rows,nowFn());
+    if(result.changed) {sh.rows=result.rows;render();toast('紀錄剛更新，請再核對預覽');return}
+    ui.sheet=null;render();toastUndo(`已匯入 ${result.count} 筆紀錄`);
+  },
+  'plan-clock': () => showSheet('plan-clock'),
+  'income-open': el => showSheet('income-entry',{id:el.dataset.id}),
+  'export-ics': () => {
+    const cal=reminderCalendar(store.get(),nowFn());
+    if(!cal.count){toast('請先加入未來班表或睡眠計畫，並開啟相應提醒');return}
+    download('ontime-reminders.ics',cal.text,'text/calendar;charset=utf-8');toast(`已匯出 ${cal.count} 個提醒`);
+  },
+  'export-full-csv': () => download(`ontime-backup-${dateKey(nowFn())}.csv`,backupCSV(store.getRaw()),'text/csv;charset=utf-8'),
+  'recovery-download': async () => {
+    try {
+      const data=await store.readRecovery();
+      if(!data){toast('這部裝置暫時沒有取代前的備份');return}
+      download('ontime-before-replace.json',JSON.stringify({app:'ONTIME',data}),'application/json');
+    } catch { toast('讀取安全備份失敗'); }
+  },
+  'replace-confirm': () => {
+    const text=replacingText;
+    if(text) afterRecovery(()=>{act.importJSON(text,'replace');replacingText=null;ui.sheet=null;render();toast('已還原完整備份');});
+  },
+  'sync-in': () => { if(store.demoMode){toast('請先返回自己的紀錄再登入同步');return;} if (ui.sheet?.type === 'sync') ui.sheet = null; signIn(); render(); },
   'sync-open': () => { ui.sheet = { type: 'sync' }; render(); },
-  'sync-retry': () => { retrySync(); toast('正在再試一次同步'); render(); },
+  'sync-retry': () => { if(store.demoMode){toast('示範資料只存在這個裝置');return;} retrySync(); toast('正在再試一次同步'); render(); },
   'hero-toggle': () => {
     ui.heroCollapsed = !ui.heroCollapsed;
     savePref('ontime-scene', ui.heroCollapsed ? 'off' : 'on');
@@ -430,7 +514,7 @@ const handlers = {
     const d = el?.dataset || {};
     ui.sheet = openTripSheet(c.data, d.wd || c.wd, c.now, { sessionId: d.sid || null, journeyId: d.jid || null, focus: d.step || null, isNew: !!d.new });
     render();
-    if (d.step) requestAnimationFrame(() => document.querySelector('#sheet-host [data-autofocus]')?.focus());
+    if (d.step) document.querySelector('#sheet-host input[data-autofocus]')?.focus();
   },
   'trip-pick': (el) => {
     const sh = ui.sheet;
@@ -557,7 +641,7 @@ const handlers = {
     render();
   },
   'meal-open': (el) => { ui.sheet = { type: 'meal', id: el.dataset.id }; render(); },
-  'sleep-open': (el) => { ui.sheet = { type: 'sleep', id: el.dataset.id }; render(); },
+  'sleep-open': (el) => { const sl=store.get().sleeps.find(s=>s.id===el.dataset.id); if(sl && sl.start==null) {showSheet('plan-clock',{id:sl.id});return} ui.sheet = { type: 'sleep', id: el.dataset.id }; render(); },
   'draft-clear': (el) => { clearDraft(el.dataset.key); lastView = ''; lastSheet = null; render(); },
   // 補登先選班次：之後所有時間都扣在這一班上。
   'rec-shift': (el) => { ui.sheet.sid = el.dataset.sid; ui.sheet.newShift = false; delete ui.sheet.t; render(); },
@@ -614,12 +698,15 @@ const handlers = {
   'cal-pick': (el) => {
     const k = el.dataset.key;
     if (ui.batch) ui.batchDays = ui.batchDays.includes(k) ? ui.batchDays.filter((x) => x !== k) : [...ui.batchDays, k];
-    else ui.calDay = ui.calDay === k ? null : k;
+    else {
+      ui.calDay = k;
+      if (el.dataset.shift) {showSheet('shift-editor',{id:el.dataset.shift});return;}
+    }
     render();
   },
   'batch-toggle': () => { ui.batch = !ui.batch; ui.batchDays = []; render(); },
   'batch-clear': () => { ui.batchDays = []; render(); },
-  'batch-off': () => { for (const k of ui.batchDays) act.toggleDayOff(k); ui.batchDays = []; toast('已更新休假'); },
+  'batch-off': () => { store.update(d=>{for(const k of ui.batchDays) if(!d.dayMarks.some(m=>m.date===k)) d.dayMarks.push({date:k,kind:'off'});}); ui.batchDays = []; toast('已更新休假'); },
   'tpl-apply': (el) => {
     const keys = ui.batch ? ui.batchDays : ui.calDay ? [ui.calDay] : [];
     act.applyTemplate(el.dataset.id, keys);
@@ -640,7 +727,7 @@ const handlers = {
   },
   'sleep-delete': (el) => {
     const id = el.dataset.id;
-    if (ui.sheet?.type === 'sleep') ui.sheet = null;
+    if (['sleep','plan-clock'].includes(ui.sheet?.type)) ui.sheet = null;
     clearDraft(`sleep:${id}`); clearDraft(`plan:${id}`);
     if (ui.sleepSaved === id) ui.sleepSaved = null;
     act.deleteSleep(id);
@@ -716,15 +803,15 @@ const handlers = {
   },
   'stats-shift': (el) => { ui.statsOffset += Number(el.dataset.dir); render(); },
   'stats-job': (el) => { ui.statsJob = el.dataset.id; render(); },
-  'income-edit': (el) => { ui.incomeEdit = el.dataset.id; render(); },
-  'income-cancel': () => { ui.incomeEdit = null; render(); },
   'job-edit': (el) => { ui.jobEdit = el.dataset.id; render(); },
   'job-cancel': () => { ui.jobEdit = null; render(); },
   'job-delete': (el) => act.deleteJob(el.dataset.id),
   'export-json': () => { download(`ontime-backup-${dateKey(nowFn())}.json`, act.exportJSON(), 'application/json'); toast('已匯出 JSON 備份'); },
   'export-csv': () => { download(`ontime-${dateKey(nowFn())}.csv`, act.exportCSV(nowFn()), 'text/csv;charset=utf-8'); toast('已匯出 CSV'); },
-  'demo': (el) => { if (confirmFirst(el, '載入示範資料？', '會用一組示範紀錄取代目前所有資料。如果有自己的紀錄，請先匯出備份。', '載入示範')) { act.loadDemo(nowFn()); ui.wd = null; location.hash = '#/today'; toast('已載入示範資料'); } },
-  'clear-all': (el) => { if (confirmFirst(el, '清除所有資料？', '這部裝置上的所有紀錄都會刪除，不能復原。建議先匯出 JSON 備份。', '全部清除')) { act.clearAll(); toast('已清除所有資料'); } },
+  'demo': () => demoURL(true),
+  'clear-all': el => {
+    if(confirmFirst(el,'清除全部紀錄？','會先保留完整本機備份。清除也會在已登入的裝置同步。','備份並清除')) afterRecovery(()=>{act.clearAll();render();toast('已備份並清除紀錄');});
+  },
   'install': async () => { if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; ui.canInstall = false; render(); } }
 };
 
@@ -775,6 +862,17 @@ function formAutoWorkday(form, t) {
 function updateFormPreview(form) {
   const data = store.get();
   const now = nowFn();
+  const boxRange = form.querySelector('[data-range-preview]');
+  if (boxRange) {
+    const r=clockRange(form.date.value,form.start.value,form.end.value);
+    let line=rangeText(r);
+    if(form.restMode && r) {
+      const {session,error}=restTarget(data,r,form.restMode.value,now);
+      line=error || line+' · '+(session?'班內休息 · 工作日 '+workdayOfSession(session,data):'獨立休息 · 工作日 '+(form.wd?.value || restAutoWorkday(r,data)));
+    }
+    boxRange.textContent=line;
+    if(form.restMode && r) { const note=form.querySelector('[data-wd-preview]');if(note)note.textContent='';return; }
+  }
   if (form.dataset.wdKind) {
     const box = form.querySelector('[data-wd-preview]');
     const t = fromInputs(form.date.value, normTime((form.start || form.time).value) || '');
@@ -840,12 +938,15 @@ function tripSync(f) {
     const raw = (f[`t_${k}`]?.value ?? '').trim();
     vals[k] = raw === '' ? '' : normTime(raw);
   }
+  if(f.income) sh.pay=payFrom(f);
   sh.vals = vals;
   return tripState(store.get(), sh, nowFn());
 }
 function tripTyped(f) {
   const st = tripSync(f);
   if (!st) return;
+  const pay=f.querySelector('[data-trip-pay]');
+  if(pay) pay.hidden = act.tripPayMode(store.get(),st.trip,st.workday,st.times.clockIn)!=='perOrder';
   for (const r of st.rows) {
     const row = f.querySelector(`.trip-row[data-step="${r.step}"]`);
     if (!row) continue;
@@ -957,6 +1058,30 @@ function createShiftNow(p, wd) {
 }
 
 const forms = {
+  'shift-editor': f => {
+    const range=clockRange(f.date.value,f.start.value,f.end.value),id=f.id.value;
+    if(!range){toast('請確認日期及時間');return}
+    if(store.get().shifts.some(s=>s.id!==id && s.start<range.end && s.end>range.start)){toast('和已有班次重疊');return}
+    if(id && !store.get().shifts.some(s=>s.id===id)){toast('這個班次已移除');return}
+    const jobId=f.jobId.value;
+    store.update(d=>{
+      if(id) Object.assign(d.shifts.find(s=>s.id===id),range,{jobId});
+      else d.shifts.push({id:store.uid('sh'),jobId,...range});
+      d.dayMarks=d.dayMarks.filter(m=>m.date!==f.date.value);
+    });
+    ui.sheet=null;render();toastUndo('已儲存班表');
+  },
+  'temp-preview': f => {
+    try {const entries=readTemp(f.source.value);showSheet('temp-import',{entries,rows:tempPreview(store.get(),entries,nowFn())});}
+    catch {toast('請貼上臨時版匯出的完整 JSON');}
+  },
+  'plan-clock': f => {
+    const r=clockRange(f.date.value,f.start.value,f.end.value);
+    if(!r || r.end<=nowFn()){toast('請確認計畫起止時間，起身應在將來');return}
+    if(ui.sheet.id){const saved=act.saveSleepPlan(ui.sheet.id,r.start,r.end);if(!saved.ok){toast('計畫未能儲存');return}}
+    else act.addSleepPlan(r.start,r.end);
+    ui.sheet=null;render();toastUndo('已儲存睡眠計畫');
+  },
   'record': (f, e) => {
     const stay = e?.submitter?.value === 'stay';
     const t = fromInputs(f.date.value, f.time.value);
@@ -1057,15 +1182,23 @@ const forms = {
         ...(f.id.value ? { id: f.id.value } : {}),
         start, end, confirmed: f.confirmed.value === '1',
         name: f.name.value.trim(), place: f.place.value.trim(), note: f.note.value.trim(),
-        photo: 'photo' in dr ? dr.photo : existing?.photo ?? null
+        photo: 'photo' in dr ? dr.photo : existing?.photo ?? null,
+        ...('photo' in dr ? {hasPhoto:!!dr.photo} : {})
       }
     };
     if (mode === 'sheet' && askWorkday(p, workday, mealAutoWorkday({ start }, store.get(), nowFn()))) return;
     savePending(p);
   },
   'rest': (f, e) => {
-    const start = fromInputs(f.date.value, f.start.value);
-    const end = f.end.value ? endOnOrAfter(f.date.value, start, f.end.value) : null;
+    const range=clockRange(f.date.value,f.start.value,f.end.value);
+    const target=restTarget(store.get(),range,f.restMode.value,nowFn());
+    if(target.error){toast(target.error);return}
+    const {start,end}=range;
+    if(target.session){
+      const id=target.session.id;
+      store.update(d=>{const s=d.sessions.find(x=>x.id===id);(s.breaks ||= []).push({start,end,...(f.verified?.checked?{verified:{start:true}}:{})});});
+      clearDraft(f.dataset.draft);ui.sheet=null;render();toastUndo('已儲存班內休息');return;
+    }
     if (start == null || end == null) { toast('請填寫開始和結束時間'); return; }
     const p = {
       kind: 'rest', key: f.dataset.draft, stay: e?.submitter?.value === 'stay', inSheet: true,
@@ -1104,7 +1237,7 @@ const forms = {
     const r = act.saveTrip({
       sessionId: st.trip.session?.id ?? null,
       journeyId: st.trip.session ? null : st.trip.journey?.id ?? null,
-      wd: sh.wd, wdTo: sh.wdTo && sh.wdTo !== st.wd0 ? sh.wdTo : null, times: st.times, verified
+      wd: sh.wd, wdTo: sh.wdTo && sh.wdTo !== st.wd0 ? sh.wdTo : null, times: st.times, verified, pay:f.income && !f.querySelector('[data-trip-pay]').hidden ? payFrom(f) : undefined
     }, now);
     if (!r.ok) { toast(tripErrorText(r)); return; }
     ui.sheet = null;
@@ -1177,12 +1310,12 @@ const forms = {
     const inc = f.income.value === '' ? null : Number(f.income.value);
     const ord = f.orders.value === '' ? null : Number(f.orders.value);
     act.setSessionIncome(f.id.value, { income: inc, orders: ord });
-    ui.incomeEdit = null;
-    toast('已儲存收入');
+    if(ui.sheet?.type==='income-entry') ui.sheet=null;
+    render();toastUndo('已儲存收入');
   },
   'settings': (f) => { act.saveSettings({ name: f.name.value.trim(), commuteOutMin: Number(f.commuteOutMin.value) || 0, commuteBackMin: Number(f.commuteBackMin.value) || 0 }); toast('已儲存設定'); },
   'job': (f) => {
-    act.saveJob({ ...(f.id.value ? { id: f.id.value } : {}), name: f.name.value.trim(), color: f.color.value, payMode: f.payMode.value, rate: f.rate.value === '' ? null : Number(f.rate.value) });
+    act.saveJob({ ...(f.id.value ? { id: f.id.value } : {}), name: f.name.value.trim(), color: f.color.value, payMode: f.payMode.value, rate: f.payMode.value!=='hourly' || f.rate.value === '' ? null : Number(f.rate.value) });
     ui.jobEdit = null;
     toast('已儲存工作');
   }
@@ -1289,6 +1422,7 @@ function bind() {
   document.addEventListener('input', (e) => {
     const tf = e.target.closest?.('form[data-form="trip"]');
     if (tf && e.target.name?.startsWith('t_')) tripTyped(tf);
+    if (tf?.income && ['income','orders'].includes(e.target.name)) ui.sheet.pay=payFrom(tf);
     const qw = e.target.closest?.('form[data-form="quick-wake"]');
     if (qw && (e.target.name === 'wakeTime' || e.target.name === 'startTime')) quickWakeTyped(qw, e.target.name);
     const mm = e.target.closest?.('form[data-form="meal-move"]');
@@ -1325,7 +1459,13 @@ function bind() {
   });
   document.addEventListener('change', async (e) => {
     const el = e.target;
-    if (el.dataset.action === 'trip-anchor' && el.value && ui.sheet?.type === 'trip') {
+    if(el.name==='payMode' && el.form?.dataset.form==='job') {
+      el.form.querySelector('[data-job-rate]').hidden=el.value!=='hourly';
+    }
+    if(el.dataset.action==='reminder-set') {
+      act.saveSettings({reminders:{...store.get().settings.reminders,[el.dataset.key]:el.checked}});return;
+    }
+    if (el.dataset.action === 'trip-anchor'  && el.value && ui.sheet?.type === 'trip') {
       const st = tripState(store.get(), ui.sheet, nowFn());
       // 新的一趟：工作日預設跟實際日期走（同臨時版一樣）；已有的一趟只改日期，不動歸屬。
       const follow = !st.exists && !ui.sheet.wdTo;
@@ -1363,6 +1503,12 @@ function bind() {
       const mode = document.querySelector('input[name=importMode]:checked')?.value || 'merge';
       try {
         const text = await el.files[0].text();
+        act.parseBackup(text);
+        if(mode==='replace'){
+          replacingText=text;
+          showSheet('confirm',{action:'replace-confirm',title:'用備份取代所有紀錄？',body:'會先保存完整本機備份，再還原所選檔案。已登入時會同步至其他裝置。',confirm:'備份並還原'});
+          el.value='';return;
+        }
         act.importJSON(text, mode);
         toast(mode === 'replace' ? '已用備份取代目前資料' : '已合併備份中的新紀錄');
       } catch (err) {
@@ -1429,7 +1575,8 @@ async function start() {
   await store.load();
   store.subscribe(() => render());
   onSync(() => { lastView = ''; render(); });
-  initSync();
+  if (store.demoMode) { if (!store.get().jobs.length) act.loadDemo(nowFn()); }
+  else initSync();
   bind();
   route();
   // 主畫面捷徑：?do=out|clockIn|sleep|meal

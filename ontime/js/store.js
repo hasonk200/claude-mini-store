@@ -1,5 +1,6 @@
 // 資料層：先寫入本機 IndexedDB；所有修改都經過 update()，畫面再按最新資料重畫。
-const DB_NAME = 'ontime';
+export const demoMode = typeof location !== 'undefined' && new URLSearchParams(location.search).has('demo');
+const DB_NAME = demoMode ? 'ontime-demo' : 'ontime';
 const STORE = 'kv';
 const KEY = 'data-v1';
 
@@ -199,6 +200,14 @@ export function replaceAll(next, { tombstone = true } = {}) {
   scheduleSave();
   emit();
 }
+
+export async function saveRecovery() {
+  if (!db) throw Error('無法儲存安全備份');
+  const raw = data;
+  await idbPut('before-replace',raw);
+  if (data !== raw) throw Error('資料剛有更新，請再確認一次');
+}
+export const readRecovery = () => db ? idbGet('before-replace') : null;
 
 export async function flush() {
   clearTimeout(saveTimer);

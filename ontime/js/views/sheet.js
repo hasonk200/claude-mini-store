@@ -1,3 +1,5 @@
+import { tripPayMode } from '../actions.js';
+import { planningSheet, incomeFields } from './planning.js';
 import { esc, icon, bubble, STEP_ICON, STEP_KIND, verifyToggle } from '../ui.js';
 import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN, fromInputs, normTime, fmtDurLong, fmtDur } from '../time.js';
 import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isFlag, eventVerified, journeyOfSession, sessionsOfWorkday, defaultStepTime, SHIFT_BOUND_STEPS, recentShiftRanges, jobOf, timeOnWorkday, restAutoWorkday, journeyAutoWorkday,
@@ -205,6 +207,7 @@ function restForm(ctx, wd) {
       <div class="field-pair big-fields"><label class="field"><span>日期</span><input type="date" name="date" value="${esc(date)}" required></label>
       <label class="field field-strong"><span>開始</span><input type="time" name="start" value="${esc(st)}" required></label></div>
       <label class="field"><span>結束（跨午夜會自動算隔天）</span><input type="time" name="end" value="${esc(v('end', ''))}" required></label>
+      <label class="field"><span>計入哪裡</span><select name="restMode"><option value="auto">按時間配對班次</option><option value="alone">獨立休息</option>${sessionsOfWorkday(data, wd).map(s=>`<option value="${esc(s.id)}">${fmtTime(s.start)} · ${esc(jobOf(data,s.jobId)?.name||'工作')}班內</option>`).join('')}</select></label><div class="fine" data-range-preview aria-live="polite"></div>
       ${workdayField({ mode: 'sheet', value: wd })}
       <div class="cross-note" data-wd-preview aria-live="polite">${workdayPreview(t, wd, auto)}</div>
       ${verifyToggle(v('verified', false))}
@@ -404,8 +407,8 @@ function tripSheet(ctx) {
     const v = st.vals[k] || '';
     const work = k === 'clockIn' || k === 'clockOut';
     return `<div class="trip-row${work ? ' is-work' : ''}${v ? ' is-filled' : ''}${st.error?.step === k ? ' is-bad' : ''}" data-step="${k}">
-      <div class="trip-lab"><strong>${TRIP_LABEL[k]}</strong><small data-trip-hint="${k}"${r.off > 0 ? ' class="is-next"' : ''}>${tripHint(r)}</small></div>
-      <label class="field trip-time"><input type="time" name="t_${k}" value="${esc(v)}" aria-label="${TRIP_LABEL[k]}時間"${ph[k] ? ` placeholder="${esc(ph[k])}"` : ''}${sh.focus === k ? ' data-autofocus' : ''}></label>
+      <div class="trip-lab"><strong>${TRIP_LABEL[k]}</strong><small data-trip-hint="${k}"${r.off > 0 ? ' class="is-next"' : ''}>${tripHint(r)}</small>${ph[k] ? `<small class="trip-plan-hint">${esc(ph[k])}</small>` : ''}</div>
+      <label class="field trip-time"><input type="time" name="t_${k}" value="${esc(v)}" aria-label="${TRIP_LABEL[k]}時間"${sh.focus === k ? ' data-autofocus' : ''}></label>
       <button type="button" class="btn btn-soft btn-sm trip-now" data-action="trip-now" data-step="${k}" aria-label="${TRIP_LABEL[k]}填入現在時間">現在</button>
       <button type="button" class="icon-btn trip-clear" data-action="trip-clear" data-step="${k}" aria-label="清除${TRIP_LABEL[k]}時間"${v ? '' : ' hidden'}>${icon('close', 14, 2.4)}</button>
     </div>`;
@@ -422,6 +425,7 @@ function tripSheet(ctx) {
       <label class="field trip-date"><span>實際日期（第一格那天）</span><input type="date" name="anchor" value="${st.anchor}" data-action="trip-anchor"></label>
       <p class="fine trip-tip">由上而下填；過了午夜的時間會自動算成隔天，每格下面會寫明是哪一天。</p>
       ${groups}
+      <fieldset data-trip-pay ${tripPayMode(data,st.trip,st.workday,st.times.clockIn)!=='perOrder'?'hidden':''}><legend>收入／單數</legend>${incomeFields(sh.pay || st.trip.session || {})}</fieldset>
       <label class="verify-toggle"><input type="checkbox" name="verified"${verified ? ' checked' : ''}><span class="verify-box" aria-hidden="true">${icon('check', 14, 3.2)}</span><span class="verify-text"><strong>已對照追蹤 App</strong><small>上面的日期和時間都一樣</small></span></label>
       <details class="more"${sh.wdTo ? ' open' : ''}><summary>進階：計入另一個工作日</summary>
         <label class="field"><span>這一趟算哪一個工作日</span><input type="date" name="wdTo" value="${st.workday}" data-action="trip-wdto"></label>
@@ -440,10 +444,10 @@ function addMenuSheet(ctx) {
       ${item('open-trip', ` data-wd="${wd}"`, 'bag', 'work', '返工＋通勤（整趟）', '出門、上車、抵達、上班、下班、到家一次過填')}
       ${item('quick-wake', '', 'sun', 'sleep', '睡眠', '啱啱瞓醒，或者補之前嗰覺')}
       ${item('quick-meal', '', 'meal', 'meal', '用餐', '一撳記低現在，之後可以改時間')}
-      ${item('open-record', ` data-wd="${wd}" data-step="rest"`, 'cup', 'commute', '休息', '補一段休息')}
+      ${item('rest-open', ` data-wd="${wd}" data-step="rest"`, 'cup', 'commute', '休息', '補一段休息')}
     </div>
     <button type="button" class="btn btn-text btn-block" data-action="open-record" data-wd="${wd}" data-step="meal">補舊的一餐／安排之後的一餐</button>
-    <button type="button" class="btn btn-text btn-block" data-action="open-record" data-wd="${wd}" data-step="clockIn">逐項補登（班內休息、單獨改一個時間）</button>`);
+    <button type="button" class="btn btn-text btn-block" data-action="open-record" data-wd="${wd}" data-step="clockIn">逐項補登（交通方式、上車地點、個別時間）</button>`);
 }
 
 // ---------- 一撳就記的小面板 ----------
@@ -566,6 +570,9 @@ function syncSheet(ctx) {
 export function sheetView(ctx) {
   const sh = ctx.ui.sheet;
   if (!sh) return '';
+  const extra = planningSheet(ctx,sheetWrap);
+  if (extra) return extra;
+  if (sh.type === 'rest-only') return sheetWrap('補記休息',restForm(ctx,sh.wd));
   if (sh.type === 'sync') return syncSheet(ctx);
   if (sh.type === 'trip') return tripSheet(ctx);
   if (sh.type === 'add-menu') return addMenuSheet(ctx);
