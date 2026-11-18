@@ -159,7 +159,7 @@ export const phaseName = (t) => PHASE_NAME[phaseOf(t)];
 const TAG = { sleep: '瞓', work: '上班', deliv: '上班', commute: '通勤', meal: '食' };
 export function dayBand(data, a, b, now) {
   const items = intervalsAround(data, a, b, now);
-  const ticks = ticksFor(a, b, false);
+  const ticks = ticksFor(a, b, true);
   const grid = ticks.map((t) => `<i class="band-tick${t.mid ? ' is-mid' : ''}" style="left:${pct(t.t, a, b)}"></i>`).join('');
   const hours = ticks.map((t) => {
     const f = (t.t - a) / (b - a);
