@@ -36,23 +36,26 @@ test('需要補的紀錄：待補收工、計畫中但已過時間的餐；未�
   assert.deepEqual(none.map((x) => x.kind), ['sleep']);
 });
 
-test('手機首頁次序：現在狀態 → 需要補的紀錄 → 下一件事 → 詳細', () => {
+test('手機首頁次序（2.35）：時間帶＋現在狀態 → 需要補的紀錄 → 下一件事 → 詳細', () => {
   const html = today(rich());
   const pos = (s) => html.indexOf(s);
-  assert.ok(pos('aria-label="現在狀態"') < pos('aria-label="需要補的紀錄"'));
+  assert.ok(pos('aria-label="今日時間帶同現在狀態"') < pos('aria-label="需要補的紀錄"'));
+  assert.ok(pos('class="band"') > pos('aria-label="今日時間帶同現在狀態"'));
+  assert.ok(pos('class="band"') < pos('class="status-body"'));
   assert.ok(pos('aria-label="需要補的紀錄"') < pos('aria-label="下一件事"'));
   assert.ok(pos('aria-label="下一件事"') < pos('class="section-label">詳細'));
-  assert.ok(pos('class="section-label">詳細') < pos('aria-label="工作日作息"'));
   assert.match(html, /下一班 週一 10\/26 09:00/);
   assert.match(html, /晚餐 19:00/);
 });
 
-test('手機首頁頂部只一行：工作日切換、現在時間、同步入口、我的；「今天」標題留給讀屏', () => {
+test('手機首頁頂部（2.35）：「今天」標題、同步入口、我的；工作日切換同現在時間喺時間帶頂', () => {
   const html = today(rich());
-  assert.match(html, /<header class="today-head is-compact">/);
-  assert.match(html, /<h1 class="sr-only">今天<\/h1>/);
-  assert.match(html, /<strong>週六工作日 · 10\/24<\/strong><small>現在 15:00<\/small>/);
+  assert.match(html, /<header class="today-top">\s*<h1>今天<\/h1>/);
   assert.match(html, /data-action="sync-open" aria-label="同步狀態：已存在這部裝置，點開看詳情"/);
+  assert.match(html, /<section class="dayhero" data-phase="day"/);
+  assert.match(html, /<strong>週六工作日 · 10\/24<\/strong>/);
+  assert.match(html, /<div class="dh-clock"><b>15:00<\/b><small>日間 · 週六 10\/24<\/small><\/div>/);
+  assert.match(html, /class="band-now" style="left:[\d.]+%"><b[^>]*>而家 15:00<\/b>/);
 });
 
 test('街景可以收起成細條；收起和展開按鈕講清楚狀態', () => {

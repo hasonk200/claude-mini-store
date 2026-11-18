@@ -10,6 +10,7 @@ import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fm
 import { quickWakeState, QUICK_WAKE_ERROR, lastClockBefore, latestOpenSleep, STEPS, tripState, tripErrorText, tripAllVerified } from './logic.js';
 import { activeSession, shiftDateMismatch, mealWorkday, mealAutoWorkday, restWorkday, restAutoWorkday, journeyAutoWorkday, needsWorkdayConfirm, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
+import { phaseOf } from './views/shared.js';
 import { timelineView } from './views/timeline.js';
 import { weekView } from './views/week.js';
 import { sleepView } from './views/sleep.js';
@@ -219,11 +220,15 @@ function typingIn(sel) {
 function render() {
   const c = ctx();
   applyTheme(c.data.settings.theme);
+  // 頁頂底色跟時段（夜晚、清晨、日間、黃昏）；只按鐘數，唔會閃。
+  const phase = phaseOf(c.now);
+  if (document.documentElement.dataset.phase !== phase) document.documentElement.dataset.phase = phase;
   const r = ROUTES[ui.route] || ROUTES.today;
   document.title = `${r.title} · ONTIME`;
   // 首頁頂部場景只在內容改變時才重畫，動畫不會因定時更新而跳回起點。
   const heroHost = $('#hero-host');
-  const heroHTML = ui.route === 'today' ? heroFor(c.data, c.wd, currentCycle(c.data, c.now), c.now, !c.isDesktop, ui.heroCollapsed) : '';
+  // 街景（插畫）預設關閉，喺「我的 › 外觀」開；開咗先喺首頁頂顯示。
+  const heroHTML = ui.route === 'today' && !ui.heroCollapsed ? heroFor(c.data, c.wd, currentCycle(c.data, c.now), c.now, !c.isDesktop, false) : '';
   if (heroHTML !== lastHero) { heroHost.innerHTML = heroHTML; lastHero = heroHTML; }
   const html = r.view(c);
   const holdView = !userDepth && typingIn('#view');

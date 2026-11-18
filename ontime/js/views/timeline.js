@@ -3,7 +3,7 @@ import { dateKey, fmtTime, wdOf, fmtMD, wdOfKey, wdShort, fmtDur, addDays, weekS
 import {
   workdayEvents, workdaySpan, sessionsOfWorkday, splitWorkByDay, sessionWorkMs, calendarAllocation, intervalsAround, totalOf, clip, sleepWorkday, shiftsOfWorkday, wakeSpan
 } from '../logic.js';
-import { ribbon, legend, pageHead, dayNav } from './shared.js';
+import { ribbon, legend, pageHead, dayNav, dayBand, phaseOf } from './shared.js';
 import { refKey } from './today.js';
 import { findWorkdayTargets } from '../actions.js';
 
@@ -129,6 +129,6 @@ export function timelineView(ctx) {
     ${seg('tlMode', '查看方式', [['workday', '工作日'], ['calendar', '日曆日']], mode)}
     ${weekStrip(data, key, now)}
     ${mode === 'workday'
-      ? `${dayNav('tl-shift', `${wdOfKey(key)}工作日 · ${fmtMD(key)}`, spanText(data, key))}${ctx.isDesktop ? `<div class="card">${(() => { const [a, b] = workdaySpan(data, key, now); return ribbon(data, a, b, now, { lanes: true }); })()}${legend(true, data)}</div>` : ''}<div class="grid-2-1 tl-grid">${workdayList(data, key, now)}<div class="stack">${workdaySummary(data, key, now)}</div></div>`
+      ? `${dayNav('tl-shift', `${wdOfKey(key)}工作日 · ${fmtMD(key)}`, spanText(data, key))}${ctx.isDesktop ? `<div class="card">${(() => { const [a, b] = workdaySpan(data, key, now); return ribbon(data, a, b, now, { lanes: true }); })()}${legend(true, data)}</div>` : `<div class="dayhero tl-band" data-phase="${phaseOf(now)}">${(() => { const [a, b] = workdaySpan(data, key, now); return dayBand(data, a, b, now); })()}</div>`}<div class="grid-2-1 tl-grid">${workdayList(data, key, now)}<div class="stack">${workdaySummary(data, key, now)}</div></div>`
       : `${dayNav('tl-shift', `${wdOfKey(key)} ${fmtMD(key)}`, '日曆日')}${calendarView(data, key, now)}`}`;
 }
