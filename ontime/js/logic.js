@@ -1065,28 +1065,36 @@ const tripClock = (t) => (t == null ? '' : fmtTime(t));
 
 // 七格鐘數 → 真實時間。orig = 原有時間；typed = 每格 'HH:MM' 或 ''；anchorKey = 第一格嗰日。
 // rechain：你改咗實際日期，全部重新由嗰日排落去。
-export function resolveTrip(orig, typed, anchorKey, { rechain = false } = {}) {
+// 原有、冇改過嘅格照用原本嘅時間——除非佢同上一格次序唔啱（早過上一格，或者遲咗成日以上），
+// 即係舊紀錄嘅日期本身記錯咗：呢啲格會按次序重新排，並且喺 repaired 入面列出嚟，等畫面講清楚。
+export function resolveTripDetail(orig, typed, anchorKey, { rechain = false } = {}) {
   const times = {};
-  const kept = (k) => !rechain && orig[k] != null && typed[k] === tripClock(orig[k]);
+  const repaired = [];
+  const same = (k) => !rechain && orig[k] != null && typed[k] === tripClock(orig[k]);
+  const fits = (k, prev) => prev == null || (orig[k] >= prev && orig[k] - prev < 24 * HOUR);
   let prev = null;
+  // 上一格係咪原有紀錄：只有「原有對原有」次序唔啱先算舊資料記錯；你啱啱改嘅格令到次序唔啱，就照報錯畀你睇。
+  let prevOrig = true;
   STEPS.forEach((k, i) => {
     const hh = typed[k];
     if (!hh) { times[k] = null; return; }
     let t;
-    if (kept(k)) t = orig[k];
+    if (same(k) && (fits(k, prev) || !prevOrig)) t = orig[k];
     else if (prev != null) {
       t = at(dateKey(prev), hh);
       if (t < prev) t = at(addDays(dateKey(prev), 1), hh);
+      if (same(k)) repaired.push(k);
     } else {
       // 上面冇嘢可以跟：下面有原有時間就貼住佢之前；乜都冇就用實際日期。
-      const nextK = STEPS.slice(i + 1).find((x) => typed[x] && kept(x));
+      const nextK = STEPS.slice(i + 1).find((x) => typed[x] && same(x));
       t = nextK ? lastClockBefore(hh, orig[nextK], { inclusive: true }) : at(anchorKey, hh);
     }
     times[k] = t;
-    if (t != null) prev = t;
+    if (t != null) { prev = t; prevOrig = same(k); }
   });
-  return times;
+  return { times, repaired };
 }
+export const resolveTrip = (orig, typed, anchorKey, opts) => resolveTripDetail(orig, typed, anchorKey, opts).times;
 
 // 可以存就回傳 null；否則 { reason, step, prev }。
 export function checkTrip(data, { sessionId = null, times }, now) {
@@ -1165,20 +1173,24 @@ export function tripState(data, sh, now) {
   const orig = tripTimes(trip);
   const first = STEPS.map((k) => orig[k]).find((v) => v != null);
   const origAnchor = first != null ? dateKey(first) : null;
-  const anchor = sh.anchor || origAnchor || sh.wd;
-  const rechain = origAnchor != null && anchor !== origAnchor;
   const vals = {};
   for (const k of STEPS) vals[k] = sh.vals && sh.vals[k] !== undefined ? sh.vals[k] : tripClock(orig[k]);
-  const times = resolveTrip(orig, vals, anchor, { rechain });
+  // 新的一趟、未揀過實際日期：工作日由起床開始（凌晨 4 點前起床仍算前一日），
+  // 所以第一格如果係凌晨 4 點前嘅鐘數，就係工作日嘅隔天凌晨，唔係當日凌晨。
+  const firstTyped = STEPS.map((k) => vals[k]).find((v) => v);
+  const autoAnchor = firstTyped && firstTyped < '04:00' ? addDays(sh.wd, 1) : sh.wd;
+  const anchor = sh.anchor || origAnchor || autoAnchor;
+  const rechain = origAnchor != null && anchor !== origAnchor;
+  const { times, repaired } = resolveTripDetail(orig, vals, anchor, { rechain });
   const error = STEPS.some((k) => vals[k] === null) ? { reason: 'bad' } : checkTrip(data, { sessionId: trip.session?.id ?? null, times }, now);
   const firstT = STEPS.map((k) => times[k]).find((v) => v != null);
   const rows = STEPS.map((k) => {
     const t = times[k];
     const off = t != null && firstT != null ? Math.round((dayStart(dateKey(t)) - dayStart(dateKey(firstT))) / (24 * HOUR)) : 0;
-    return { step: k, t, off, kept: t != null && t === orig[k] };
+    return { step: k, t, off, kept: t != null && t === orig[k], repaired: repaired.includes(k), was: orig[k] };
   });
   const wd0 = trip.session ? workdayOfSession(trip.session, data) : trip.journey ? journeyWorkday(trip.journey, data) : sh.wd;
   const dirty = STEPS.some((k) => times[k] !== orig[k]) || (sh.wdTo && sh.wdTo !== wd0);
   const suggest = sh.wdTo ? null : tripWorkdaySuggestion(data, trip);
-  return { trip, orig, vals, anchor, rechain, times, rows, error, summary: tripSummary(times), workday: sh.wdTo || wd0, wd0, dirty, suggest, exists: !!(trip.session || trip.journey) };
+  return { trip, orig, vals, anchor, anchorAuto: !sh.anchor, rechain, times, rows, repaired, error, summary: tripSummary(times), workday: sh.wdTo || wd0, wd0, dirty, suggest, exists: !!(trip.session || trip.journey) };
 }

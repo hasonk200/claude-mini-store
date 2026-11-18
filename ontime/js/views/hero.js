@@ -1,4 +1,4 @@
-// 首頁頂部的動畫場景：天色跟著現在時間，小人跟著目前狀態移動。點一下場景，小人會跳一下。
+// 首頁頂部的動畫場景：天色跟著現在時間，小人跟著目前狀態移動。街景由首頁的按鈕展開。
 import { esc } from '../ui.js';
 
 function skyOf(hour) {
@@ -141,7 +141,7 @@ function heroStrip({ now, headline, line, eyebrow }) {
   const sky = skyOf(d.getHours() + d.getMinutes() / 60);
   return `<section class="hero hero-strip" data-sky="${sky}" aria-label="今天的狀態">
     <div class="hero-text"><span class="hero-eyebrow">${esc(eyebrow)}</span><strong class="hero-headline">${esc(headline)}</strong>${line ? `<span class="hero-line">${esc(line)}</span>` : ''}</div>
-    <button type="button" class="hero-toggle" data-action="hero-toggle" aria-expanded="false" aria-label="展開街景">展開</button>
+    <button type="button" class="hero-toggle" data-action="hero-toggle" aria-expanded="false" aria-label="展開街景">街景</button>
   </section>`;
 }
 
@@ -177,7 +177,6 @@ export function heroHTML({ state, now, headline, line, eyebrow, compact = false,
   const silhouette = night && state === 'free' ? `<circle cx="${160 + hx}" cy="148" r="5" class="win-person"/><rect x="${154 + hx}" y="153" width="12" height="12" rx="4" class="win-person"/>` : '';
   const cat = night || sky === 'dusk' ? `<g class="cat" transform="translate(${146 + hx} 98)"><path d="M0 0 q-2 -10 4 -12 l2 -5 2 5 h4 l2 -5 2 5 q6 2 4 12 z" class="cat-body"/><path d="M18 -2 q10 -2 8 -14" class="cat-tail"/></g>` : '';
   const birds = !night ? `<g class="birds">${[0, 1, 2].map((i) => `<g class="bird-path" style="--by:${30 + (i % 2) * 14}px;animation-delay:${(-i * 0.9).toFixed(1)}s"><path d="M0 0 q5 -5 10 0 q5 -5 10 0" class="bird" style="animation-delay:${(i * 0.13).toFixed(2)}s"/></g>`).join('')}</g>` : '';
-  const shooting = night ? '<line x1="0" y1="0" x2="70" y2="0" class="shooting"/>' : '';
 
   const skip = [930 + wx - 40, 1130 + wx];
   const travelling = riding ? `
@@ -223,7 +222,6 @@ export function heroHTML({ state, now, headline, line, eyebrow, compact = false,
         <mask id="hero-moon" maskUnits="userSpaceOnUse" x="-30" y="-30" width="60" height="60"><circle r="21" fill="#fff"/><circle r="18" cx="10" cy="-7" fill="#000"/></mask></defs>
       <rect width="${W}" height="${H}" fill="url(#hero-sky-${sky})"/>
       ${night ? `<g class="stars">${STARS.filter(([x]) => x < W).map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i % 3 === 0 ? 1.9 : 1.2}" style="animation-delay:${(i * 0.41).toFixed(2)}s"/>`).join('')}</g>` : ''}
-      ${shooting}
       ${celestial(hour, W, H, compact)}
       ${birds}
       <g class="cloud cloud-a"><rect x="0" y="44" width="130" height="28" rx="14"/><rect x="28" y="28" width="66" height="30" rx="15"/></g>
@@ -240,7 +238,6 @@ export function heroHTML({ state, now, headline, line, eyebrow, compact = false,
       ${actor}
       </g>
     </svg>
-    <button type="button" class="hero-poke" data-action="hero-poke" aria-label="跟小人打招呼"></button>
     <button type="button" class="hero-toggle" data-action="hero-toggle" aria-expanded="true" aria-label="收起街景">收起</button>
     <div class="hero-text">
       <span class="hero-eyebrow">${esc(eyebrow)}</span>
