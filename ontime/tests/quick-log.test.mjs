@@ -175,7 +175,7 @@ test('首頁：狀態卡下面有三粒「一撳就記」；詳細預設收起�
   assert.match(html, /class="btn btn-lime btn-block main-act" data-action="quick-wake">我瞓醒喇/);
   assert.ok(pos('aria-label="現在狀態"') < pos('aria-label="一撳就記"'));
   assert.ok(pos('aria-label="一撳就記"') < pos('aria-label="下一件事"'));
-  for (const a of ['quick-meal', 'quick-wake', 'sleep-start']) assert.match(html, new RegExp(`class="tile life-tile" data-action="${a}"`));
+  for (const a of ['quick-meal', 'quick-wake', 'sleep-start']) assert.match(html, new RegExp(`class="tile life-tile lt-[a-z]+" data-action="${a}"`));
   assert.match(html, /<details class="today-more" data-pref="todayMore"><summary/);
   assert.match(todayView({ data: d, now, ui: { todayMore: true }, wd: '2026-11-13', isDesktop: false }), /<details class="today-more" data-pref="todayMore" open>/);
   const sleeping = { ...d, sleeps: [...d.sleeps, slp('o', at('2026-11-13', '09:00'), null)] };

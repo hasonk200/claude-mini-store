@@ -165,7 +165,6 @@ kbd { font-family: inherit; font-size: 11px; font-weight: 700; color: var(--on-a
 tr.row-click:focus-visible, li.row-click:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 /* 剛儲存的那一筆：留在原位，用靜態的淺色底和左邊線輕微突出，加「已更新」文字；不閃、不做動畫。 */
 .is-flash, tr.is-flash td { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
-li.is-flash > .rec-row, tr.is-flash td:first-child { box-shadow: inset 4px 0 0 var(--ink); }
 .saved-tag { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; color: var(--on-accent); background: var(--accent); padding: 1px 8px; border-radius: 999px; }
 .saved-note { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 8px; background: var(--sleep-tint-2); color: var(--sleep-deep); font-size: 13px; }
 .saved-note strong { font-size: 15px; }
@@ -1104,7 +1103,6 @@ kbd { background: rgba(255, 255, 255, .14); color: inherit; border-radius: 5px; 
 .pill-lime { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); font-weight: 600; padding: 4px 9px; }
 .saved-tag { font-weight: 600; }
 .is-flash, tr.is-flash td { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
-li.is-flash > .rec-row, tr.is-flash td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .c-lime { color: var(--accent-soft); }
 
 /* 側欄與底部導覽 */
@@ -1451,7 +1449,7 @@ body { background: linear-gradient(180deg, var(--wash) 0, var(--bg) 460px) no-re
 /* 2.36：日間唔再係白色——晴天天藍，右上角有太陽光；指針用太陽橙 */
 .dayhero[data-phase="day"] {
   --hb-bg: radial-gradient(90% 75% at 92% 0%, #FFF0C2 0%, rgba(255, 240, 194, 0) 58%), linear-gradient(165deg, #E3F0FF 0%, #C6DEFF 55%, #A9CBFF 100%);
-  --hb-fg: #0F2347; --hb-muted: #3D5A86; --hb-line: rgba(15, 35, 71, .12); --hb-mid: rgba(15, 35, 71, .32);
+  --hb-fg: #0F2347; --hb-muted: #31507E; --hb-line: rgba(15, 35, 71, .12); --hb-mid: rgba(15, 35, 71, .32);
   --hb-track: rgba(255, 255, 255, .6); --hb-btn: #0F2347; --hb-btn-fg: #FFFFFF;
   --hb-ghost: rgba(255, 255, 255, .7); --hb-ghost-line: rgba(15, 35, 71, .14); --hb-needle: #E8890C; --hb-needle-fg: #FFFFFF;
 }
@@ -1460,3 +1458,133 @@ html[data-phase="day"] { --wash: #D6E7FF; }
   :root:not([data-theme="light"]) .dayhero[data-phase="day"] { --hb-bg: radial-gradient(90% 75% at 92% 0%, rgba(255, 196, 92, .22) 0%, rgba(255, 196, 92, 0) 58%), linear-gradient(165deg, #16294D 0%, #1D3A6E 100%); --hb-needle: #FFB547; --hb-needle-fg: #1A1405; }
 }
 :root[data-theme="dark"] .dayhero[data-phase="day"] { --hb-bg: radial-gradient(90% 75% at 92% 0%, rgba(255, 196, 92, .22) 0%, rgba(255, 196, 92, 0) 58%), linear-gradient(165deg, #16294D 0%, #1D3A6E 100%); --hb-needle: #FFB547; --hb-needle-fg: #1A1405; }
+
+/* =========================================================================
+   2.37 精修（參考 impeccable 同 UI UX Pro Max 嘅檢查表）
+   - 顏色要有意思：每種紀錄有自己顏色，一撳就記嘅掣、要補嘅提醒都用返同一套。
+   - 起身用晨光橙（--wake），同日間時間帶嘅「而家」指針同一隻色。
+   - 陰影要有方向同柔和模糊，唔再係淨係一條細邊。
+   - 瀏覽器自己畫嘅嘢（選字、游標、捲軸、焦點框、原生控件）都跟返設計顏色。
+   ========================================================================= */
+:root {
+  --wake: #E8890C; --wake-tint: #FFF0D6; --wake-deep: #8A4B05;
+  --shadow: 0 0 0 1px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04), 0 10px 24px -16px rgba(16, 24, 40, .22);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --wake-tint: #3A2810; --wake-deep: #FFC46B;
+    --shadow: 0 0 0 1px rgba(255, 255, 255, .06), 0 1px 2px rgba(0, 0, 0, .4), 0 12px 28px -18px rgba(0, 0, 0, .7);
+  }
+}
+:root[data-theme="dark"] {
+  --wake-tint: #3A2810; --wake-deep: #FFC46B;
+  --shadow: 0 0 0 1px rgba(255, 255, 255, .06), 0 1px 2px rgba(0, 0, 0, .4), 0 12px 28px -18px rgba(0, 0, 0, .7);
+}
+.k-wake { --c: var(--wake); --t: var(--wake-tint); --d: var(--wake-deep); }
+
+/* 底色：時段顏色由頂部慢慢褪落去，唔再一截就變灰 */
+body { background: linear-gradient(180deg, var(--wash) 0, color-mix(in srgb, var(--wash) 45%, var(--bg)) 360px, var(--bg) 720px) no-repeat, var(--bg); }
+
+/* 瀏覽器細節 */
+html { accent-color: var(--accent); caret-color: var(--accent); scrollbar-color: color-mix(in srgb, var(--ink) 24%, transparent) transparent; }
+::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.radio-row input { accent-color: var(--accent); }
+input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--muted) 82%, transparent); }
+
+/* ---------- 首頁：一撳就記，三粒掣三隻色 ---------- */
+.life-tiles { gap: 8px; }
+.life-tile { --lt: var(--surface); --lt-ic: var(--ink); --lt-deep: var(--ink); position: relative; align-items: flex-start; text-align: left; padding: 12px 12px 12px; min-height: 104px; background: var(--lt); box-shadow: none; border-radius: 16px; color: var(--lt-deep); transition: transform .12s ease-out, filter .12s ease-out; }
+.life-tile:hover { filter: brightness(.98); }
+.life-tile:active { transform: scale(.98); }
+.life-tile .tile-icon { width: 36px; height: 36px; border-radius: 11px; background: var(--lt-ic); color: #FFFFFF; }
+.life-tile strong { margin-top: 8px; font-size: 15.5px; font-weight: 700; color: var(--lt-deep); }
+.life-tile small { text-align: left; font-size: 11.5px; font-weight: 500; color: var(--lt-deep); }
+.life-tile.lt-meal { --lt: var(--meal-tint); --lt-ic: var(--meal); --lt-deep: var(--meal-deep); }
+.life-tile.lt-wake { --lt: var(--wake-tint); --lt-ic: var(--wake); --lt-deep: var(--wake-deep); }
+.life-tile.lt-sleep { --lt: var(--sleep-tint); --lt-ic: var(--sleep); --lt-deep: var(--sleep-deep); }
+@media (min-width: 1024px) { .life-tile { min-height: 112px; padding: 14px 16px; } }
+
+/* 需要補的紀錄：數量用晨光橙，每行前面有類別圖示，掣都係同色 */
+.count-pill { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--wake-tint); color: var(--wake-deep); }
+.todo-row.is-act { grid-template-columns: auto minmax(0, 1fr) auto; }
+.todo-ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--t, var(--surface-2)); color: var(--d, var(--ink)); }
+.act-wake { --t: var(--wake-tint); --d: var(--wake-deep); }
+.act-meal { --t: var(--meal-tint); --d: var(--meal-deep); }
+.act-home { --t: var(--home-tint); --d: var(--home-deep); }
+.act-deliv { --t: var(--deliv-tint); --d: var(--deliv-deep); }
+.act-sleep { --t: var(--sleep-tint); --d: var(--sleep-deep); }
+.act-work { --t: var(--work-tint); --d: var(--work-deep); }
+.btn.btn-soft[class*="act-"] { background: var(--t); color: var(--d); box-shadow: none; font-weight: 700; }
+.btn.btn-soft[class*="act-"]:hover { filter: brightness(.97); }
+@media (max-width: 400px) { .todo-row.is-act .btn { min-width: 0; padding-inline: 14px; } }
+
+/* ---------- 用餐頁頂：用餐色嘅世界 ---------- */
+.meal-hero { background: radial-gradient(90% 80% at 95% 0%, color-mix(in srgb, var(--meal) 16%, transparent) 0%, transparent 60%), linear-gradient(170deg, var(--surface) 0%, var(--meal-tint) 100%); box-shadow: 0 0 0 1px color-mix(in srgb, var(--meal) 18%, transparent), 0 14px 30px -20px color-mix(in srgb, var(--meal) 55%, transparent); }
+.meal-hero .sh-label { color: var(--meal-deep); }
+
+/* ---------- 時間線：核對圈放右邊，唔再塞喺時間下面 ---------- */
+.tl-item { grid-template-columns: 48px 36px minmax(0, 1fr) 32px; }
+.tl-vf { display: flex; justify-content: center; padding-top: 6px; }
+.tl-vf .vf-btn { margin-top: 0; width: 26px; height: 26px; }
+
+/* ---------- 新增面板：其他補記方式做成正式選項 ---------- */
+.add-sub-title { margin: 6px 0 -4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.add-sub { display: flex; flex-direction: column; border-radius: var(--r-ctl); background: var(--surface-2); overflow: hidden; }
+.add-sub-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 52px; padding: 10px 14px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
+.add-sub-row + .add-sub-row { border-top: 1px solid var(--line-soft); }
+.add-sub-row:hover { background: var(--hover); }
+.add-sub-row > svg:first-child { color: var(--muted); }
+.add-sub-row > svg:last-child { color: var(--faint); }
+
+/* ---------- 設定：備份同還原做成清單 ---------- */
+.set-group { margin: 6px 0 -4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.set-list { display: flex; flex-direction: column; border-radius: var(--r-ctl); background: var(--surface-2); overflow: hidden; }
+.set-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 60px; padding: 10px 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.set-list > * + * { border-top: 1px solid var(--line-soft); }
+.set-row:hover { background: var(--hover); }
+.set-row > svg { color: var(--faint); }
+.set-ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--surface); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-soft); }
+.set-ic.is-primary { background: var(--solid); color: var(--on-solid); box-shadow: none; }
+.set-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.set-txt strong { font-size: 14.5px; font-weight: 600; }
+.set-txt small { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.set-radio { padding: 8px 14px 10px 60px; }
+
+.life-tile .nw { white-space: nowrap; }
+
+/* ---------- 桌面側欄：夜晚深藍導覽欄，成個 app 有一個固定嘅外殼 ---------- */
+@media (min-width: 1024px) {
+  .sidebar { --rail-fg: #EEF1FB; --rail-muted: rgba(238, 241, 251, .66); background: radial-gradient(140% 50% at 0% 0%, rgba(91, 79, 224, .28) 0%, rgba(91, 79, 224, 0) 60%), linear-gradient(180deg, #121A34 0%, #18214A 100%); color: var(--rail-fg); border-right: 0; }
+  .sidebar .brand { color: var(--rail-fg); }
+  .sidebar .brand-mark { background: rgba(255, 255, 255, .1); color: #A9C1FF; }
+  .sidebar .side-link { color: var(--rail-muted); font-weight: 500; }
+  .sidebar .side-link:hover { background: rgba(255, 255, 255, .06); color: var(--rail-fg); }
+  .sidebar .side-link[aria-current="page"] { background: rgba(255, 255, 255, .12); color: #FFFFFF; font-weight: 600; box-shadow: none; }
+  .sidebar .side-link[aria-current="page"] svg { color: #A9C1FF; }
+  .sidebar .side-add { background: #FFFFFF; color: #101828; }
+  .sidebar .side-add:hover { background: #E8EDFF; }
+  .sidebar .side-add kbd { background: #EEF1FB; color: #344054; box-shadow: none; }
+  .sidebar .kbd-help { color: var(--rail-muted); }
+  .sidebar .kbd-help kbd { background: rgba(255, 255, 255, .1); color: var(--rail-fg); box-shadow: none; }
+  .sidebar .sync-card { background: rgba(255, 255, 255, .07); color: var(--rail-fg); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+  .sidebar .sync-card span, .sidebar .sync-card p, .sidebar .sync-card small { color: var(--rail-muted); }
+  .sidebar .sync-card a { color: var(--rail-fg); }
+  .sidebar :focus-visible { outline-color: #A9C1FF; }
+}
+@media (min-width: 1024px) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sidebar { background: radial-gradient(140% 50% at 0% 0%, rgba(91, 79, 224, .2) 0%, rgba(91, 79, 224, 0) 60%), linear-gradient(180deg, #111830 0%, #141B36 100%); box-shadow: inset -1px 0 0 rgba(255, 255, 255, .05); }
+}
+@media (min-width: 1024px) { :root[data-theme="dark"] .sidebar { background: radial-gradient(140% 50% at 0% 0%, rgba(91, 79, 224, .2) 0%, rgba(91, 79, 224, 0) 60%), linear-gradient(180deg, #111830 0%, #141B36 100%); box-shadow: inset -1px 0 0 rgba(255, 255, 255, .05); } }
+
+/* 休假：細線斜紋，靜啲，唔再搶咗班次嘅眼 */
+.wk-track.is-off { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--hatch) 70%, transparent) 0 1px, transparent 1px 8px), var(--surface-2); }
+.cal-off { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--hatch) 80%, transparent) 0 1px, transparent 1px 6px), var(--surface-2); }
+@media (min-width: 1024px) { .sidebar .sync-card .sync-line { color: var(--rail-fg); } }
+
+/* 統計：每格都用返自己類別嘅顏色（工作橙、通勤青、外送綠、睡眠紫） */
+.k-work-soft { background: var(--work-tint); }
+.k-commute-soft { background: var(--commute-tint); }
+.kpi.k-work-soft span, .kpi.k-work-soft small { color: var(--work-deep); }
+.kpi.k-commute-soft span, .kpi.k-commute-soft small { color: var(--commute-deep); }
+.kpi.k-sleep-soft span, .kpi.k-sleep-soft small { color: var(--sleep-deep); }

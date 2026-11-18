@@ -195,6 +195,10 @@ export function lastMealLine(data, now) {
   return `<div class="last-meal${long ? ' is-long' : ''}">${icon('clock', 15, 2)}<span>距離上一餐已過 <b>${fmtDurLong(lm.ms)}</b> · 上一餐 ${esc(lm.meal.name || '用餐')} ${wdOf(lm.at)} ${fmtTime(lm.at)}</span><button type="button" class="link-inline" data-action="meal-quick-open" data-id="${esc(lm.meal.id)}" aria-label="修改上一餐的時間">改</button></div>`;
 }
 
+// 提醒動作用返類別顏色同圖示：起身係晨光橙、食飯係用餐紅、到家係到家綠、收入係外送綠。
+const ACT_KIND = { 'quick-wake': 'wake', 'quick-meal': 'meal', 'meal-open': 'meal', 'open-trip': 'home', 'income-open': 'deliv', 'sleep-start': 'sleep' };
+const ACT_ICON = { 'quick-wake': 'sun', 'quick-meal': 'meal', 'meal-open': 'meal', 'open-trip': 'home', 'income-open': 'wallet', 'sleep-start': 'moon' };
+
 // 首頁「需要補的紀錄」：待補收工、未記到家、未記錄睡眠、計畫中但未確認的餐。
 export function pendingCard(data, now) {
   const extra = reminders(data, now);
@@ -204,7 +208,7 @@ export function pendingCard(data, now) {
   if (!items.length) return '';
   const when = (t) => `${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}`;
   const rows = items.map((x) => {
-    if (x.action) return `<li class="todo-row is-act"><div class="todo-text"><strong>${esc(x.title)}</strong><span>${x.action === 'income-open' ? '收工 ' : ''}${when(x.t)}</span></div><button type="button" class="btn btn-soft" data-action="${x.action}" data-id="${esc(x.id||'')}" data-sid="${esc(x.sid||'')}" data-wd="${esc(x.wd||'')}" data-step="${esc(x.step||'')}">${x.label}</button></li>`;
+    if (x.action) return `<li class="todo-row is-act"><span class="todo-ic act-${ACT_KIND[x.action] || 'work'}" aria-hidden="true">${icon(ACT_ICON[x.action] || 'clock', 18, 2)}</span><div class="todo-text"><strong>${esc(x.title)}</strong><span>${x.action === 'income-open' ? '收工 ' : ''}${when(x.t)}</span></div><button type="button" class="btn btn-soft act-${ACT_KIND[x.action] || 'work'}" data-action="${x.action}" data-id="${esc(x.id||'')}" data-sid="${esc(x.sid||'')}" data-wd="${esc(x.wd||'')}" data-step="${esc(x.step||'')}">${x.label}</button></li>`;
     const [tag, title, note] = x.kind === 'pending-end' ? [stateTag('pending'), `${x.job} 收工時間`, `${when(x.t)} 上班`]
       : x.kind === 'home' ? [stateTag('pending'), '到家時間', `${when(x.t)} 下班`]
       : x.kind === 'sleep' ? [stateTag('none'), '睡眠', '過去 24 小時沒有睡眠紀錄']
@@ -215,11 +219,13 @@ export function pendingCard(data, now) {
       : `<button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-sid="${esc(x.sid||'')}"${x.wd ? ` data-wd="${x.wd}"` : ''} data-step="${x.step}" aria-label="補上${esc(title)}">補上</button>`;
     return `<li class="todo-row">${tag}<div class="todo-text"><strong>${esc(title)}</strong><span>${note}</span></div>${btn}</li>`;
   }).join('');
-  return `<section class="card todo-card" aria-label="需要補的紀錄"><div class="card-head"><h2 class="card-title">需要補的紀錄</h2><span class="muted small">${items.length} 項</span></div><ul class="todo-list">${rows}</ul></section>`;
+  return `<section class="card todo-card" aria-label="需要補的紀錄"><div class="card-head"><h2 class="card-title">需要補的紀錄</h2><span class="count-pill">${items.length} 項</span></div><ul class="todo-list">${rows}</ul></section>`;
 }
 
 // 首頁「下一件事」：預計下班或下一班、下一餐，然後是睡前空檔和距離入睡。
 function nextCard(data, now) {
+  // 「需要補的紀錄」已經提咗上一餐，呢度就唔再講多次。
+  const mealDue = reminders(data, now).some((r) => r.action === 'quick-meal');
   const rows = [];
   const s = activeSession(data);
   if (s) {
@@ -235,7 +241,7 @@ function nextCard(data, now) {
   rows.push(meal
     ? `<li class="todo-row">${stateTag('plan')}<div class="todo-text"><strong>${esc(meal.name || '用餐')} ${fmtTime(meal.start)}</strong><span>${wdOf(meal.start)} ${fmtMD(dateKey(meal.start))} · 工作中用餐不扣休息</span></div><button type="button" class="btn btn-soft btn-sm" data-action="meal-confirm" data-id="${esc(meal.id)}" aria-label="${esc(meal.name || '用餐')}已經吃了">已經吃了</button></li>`
     : `<li class="todo-row">${stateTag('none', '未安排')}<div class="todo-text"><strong>下一餐</strong><span>還沒安排</span></div><a class="btn btn-soft btn-sm" href="#/meals">安排</a></li>`);
-  return `<section class="card next-card" aria-label="下一件事"><div class="card-head"><h2 class="card-title">下一件事</h2><a class="link" href="#/meals">用餐紀錄 ${icon('arrow', 16, 2)}</a></div><ul class="todo-list">${rows.join('')}</ul>${lastMealLine(data, now)}</section>`;
+  return `<section class="card next-card" aria-label="下一件事"><div class="card-head"><h2 class="card-title">下一件事</h2><a class="link" href="#/meals">用餐紀錄 ${icon('arrow', 16, 2)}</a></div><ul class="todo-list">${rows.join('')}</ul>${mealDue ? '' : lastMealLine(data, now)}</section>`;
 }
 
 // 手機首頁頂部：一行內有工作日切換、現在時間、同步入口和「我的」。
@@ -264,12 +270,12 @@ export function lifeTiles(data, now) {
   if (latestOpenSleep(data)) return '';
   const lm = lastMeal(data, now);
   const aw = awakeSince(data, now);
-  const mealNote = lm ? `上一餐 ${fmtDur(lm.ms)} 前` : '一撳記低現在';
-  const wakeNote = aw && aw.ms < 20 * HOUR ? `上次起身 ${fmtDur(aw.ms)} 前` : '記返啱啱嗰覺';
+  const mealNote = !lm ? '一撳記低現在' : lm.ms < 5 * MIN ? '啱啱記低咗' : `上一餐 <span class="nw">${fmtDur(lm.ms)} 前</span>`;
+  const wakeNote = aw && aw.ms < 20 * HOUR ? `上次起身 <span class="nw">${fmtDur(aw.ms)} 前</span>` : '記返啱啱嗰覺';
   return `<section class="life-tiles" aria-label="一撳就記">
-    <button type="button" class="tile life-tile" data-action="quick-meal"><span class="tile-icon k-meal">${icon('meal', 22)}</span><strong>食咗飯</strong><small>${mealNote}</small></button>
-    <button type="button" class="tile life-tile" data-action="quick-wake"><span class="tile-icon k-sleep">${icon('sun', 22)}</span><strong>瞓醒喇</strong><small>${wakeNote}</small></button>
-    <button type="button" class="tile life-tile" data-action="sleep-start"><span class="tile-icon k-sleep">${icon('moon', 22)}</span><strong>去瞓</strong><small>而家開始計</small></button>
+    <button type="button" class="tile life-tile lt-meal" data-action="quick-meal"><span class="tile-icon k-meal">${icon('meal', 22)}</span><strong>食咗飯</strong><small>${mealNote}</small></button>
+    <button type="button" class="tile life-tile lt-wake" data-action="quick-wake"><span class="tile-icon k-wake">${icon('sun', 22)}</span><strong>瞓醒喇</strong><small>${wakeNote}</small></button>
+    <button type="button" class="tile life-tile lt-sleep" data-action="sleep-start"><span class="tile-icon k-sleep">${icon('moon', 22)}</span><strong>去瞓</strong><small>而家開始計</small></button>
   </section>`;
 }
 
