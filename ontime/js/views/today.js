@@ -320,7 +320,7 @@ function eventTable(data, wd, now, ui) {
 }
 
 // 首頁主角：一日 24 小時嘅時間帶，連埋現在狀態同主掣。底色跟時段（夜晚、清晨、日間、黃昏）。
-function dayHero(ctx, wd, cycle, a, b, isAuto, other) {
+function dayHero(ctx, wd, cycle, a, b, isAuto, other, steps = '') {
   const { data, now, isDesktop } = ctx;
   const nav = `<div class="day-switch" role="group" aria-label="切換工作日">
       <button type="button" class="icon-btn" data-action="wd-shift" data-dir="-1" aria-label="前一個工作日">${icon('left', 18, 2)}</button>
@@ -334,7 +334,8 @@ function dayHero(ctx, wd, cycle, a, b, isAuto, other) {
     : dayBand(data, a, b, now);
   return `<section class="dayhero${isDesktop ? ' is-wide' : ''}" data-phase="${phaseOf(now)}" aria-label="今日時間帶同現在狀態">
     <div class="dh-head">${nav}${back}${clock}</div>
-    <div class="dh-band">${band}</div>
+    <div class="dh-band">${band}</div>${steps ? `
+    <div class="dh-steps" role="group" aria-label="這趟通勤與出勤"><div class="dh-steps-head"><h2>這趟通勤與出勤</h2><button type="button" class="link-inline" data-action="open-trip" data-wd="${wd}">整趟修改</button></div>${steps}</div>` : ''}
     <div class="dh-status">${statusCard(data, wd, cycle, now, other, true)}</div>
   </section>`;
 }
@@ -372,7 +373,8 @@ export function todayView(ctx) {
   const more = (inner) => `<details class="today-more" data-pref="todayMore"${ui.todayMore ? ' open' : ''}><summary class="section-label">詳細<span class="today-more-hint">通勤進度、睡眠數字</span></summary><div class="today-more-body">${inner}</div></details>`;
 
   // 次序：時間帶＋現在狀態（主掣）→ 一撳就記 → 需要補的紀錄 → 下一件事；詳細收起。
-  const hero = dayHero(ctx, wd, cycle, a, b, isAuto, other);
+  // 電腦版：通勤進度縮細放入時間帶框入面（色條下面），唔再獨立一張卡。
+  const hero = dayHero(ctx, wd, cycle, a, b, isAuto, other, isDesktop ? stepper(data, wd, cycle, now) : '');
   if (isDesktop) {
     const head = `<header class="today-head">
     <div class="today-head-text"><h1>今天</h1></div>
@@ -386,7 +388,6 @@ export function todayView(ctx) {
         <div class="stack today-main">${tiles}${todo}</div>
         <div class="today-side">${nextCard(data, now)}${budget}</div>
       </div>
-      ${stepCard}
       ${eventTable(data, wd, now, ui)}`;
   }
   return `${topBar(ctx)}${hero}${tiles}${todo}${stepUp ? stepCard : ''}${next}${budgetState==='unset' ? '<button class="btn btn-soft btn-block" data-action="plan-clock">設定睡眠計畫</button>' : ''}${more(`${budgetUp ? '' : budget}${stepUp ? '' : stepCard}`)}`;
