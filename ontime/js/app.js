@@ -1467,6 +1467,14 @@ function bind() {
     if(el.name==='payMode' && el.form?.dataset.form==='job') {
       el.form.querySelector('[data-job-rate]').hidden=el.value!=='hourly';
     }
+    // 設定頁「首頁街景插畫」開關：跟住剔咗定冇剔嚟存（之前只有按鈕會轉，開關撳咗無反應）。
+    if (el.dataset.action === 'hero-toggle' && el.type === 'checkbox') {
+      ui.heroCollapsed = !el.checked;
+      savePref('ontime-scene', el.checked ? 'on' : 'off');
+      toast(el.checked ? '已開啟首頁街景' : '已關閉首頁街景');
+      render();
+      return;
+    }
     if(el.dataset.action==='reminder-set') {
       act.saveSettings({reminders:{...store.get().settings.reminders,[el.dataset.key]:el.checked}});return;
     }
