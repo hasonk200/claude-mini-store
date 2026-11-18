@@ -104,6 +104,7 @@ export function syncSummary(sy = {}, st = {}) {
   if (st.saveError) {
     return { tone: 'warn', short: '未能儲存', line: '未能儲存', detail: `${st.saveError}。請盡快到「我的」匯出備份。`, actions: ['settings'] };
   }
+  if(sy.status==='cloud' && sy.pending>0) return {tone:'off',short:'待同步',line:`有 ${sy.pending} 筆修改待同步`,detail:'紀錄已存在裝置，連線後會上傳。',actions:['retry']};
   switch (sy.status) {
     case 'cloud': return { tone: 'ok', short: '已同步', line: '已同步到雲端', detail: `${sy.user?.email ? `${sy.user.email} · ` : ''}${sy.lastSync ? `最後同步 ${time(sy.lastSync)}` : ''}`, actions: ['settings'] };
     case 'loading': return { tone: 'off', short: '同步中', line: '正在同步…', detail: '已存在這部裝置，正在上傳到雲端。', actions: [] };

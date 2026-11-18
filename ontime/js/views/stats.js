@@ -1,3 +1,4 @@
+import { inlineIncome } from './planning.js';
 import { esc, icon, seg, money } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdShort, fmtDur, addDays, weekStartKey, monthStartKey, monthEndKey, fromKey, HOUR, daysBetween, wdOfKey } from '../time.js';
 import { periodStats, sessionWorkMs, splitWorkByDay, jobOf, sessionPay, sleepAverage, STEPS, tripTimes, tripSummary, journeyOfSession, workdayOfSession } from '../logic.js';
@@ -17,7 +18,7 @@ export function periodRange(ui, now) {
 function incomeCell(s, now) {
   if (s.payMode === 'hourly') return s.rate == null ? '<span class="chip chip-plan">未設時薪</span>' : `<b>${money(sessionPay(s, now))}</b>`;
   if (s.payMode === 'perOrder') {
-    return `<button type="button" class="chip ${s.income == null ? 'chip-plan' : 'chip-money'}" data-action="income-edit" data-id="${s.id}">${s.income == null ? '未填' : money(s.income)}${s.orders != null ? ` · ${s.orders} 單` : ''}</button>`;
+    return inlineIncome(s);
   }
   return '<span class="muted">不計薪</span>';
 }
@@ -76,13 +77,6 @@ export function statsView(ctx) {
 
   const cards = st.sessions.filter((s) => jobFilter === 'all' || s.jobId === jobFilter).sort((a, b) => b.start - a.start).map((s) => tripCard(data, s, now)).join('');
 
-  const editing = ui.incomeEdit ? data.sessions.find((s) => s.id === ui.incomeEdit) : null;
-  const incomeForm = editing ? `<section class="card"><form class="form" data-form="income"><input type="hidden" name="id" value="${editing.id}">
-    <div class="card-head"><h2 class="card-title">${wdOf(editing.start)} ${fmtMD(dateKey(editing.start))} · ${esc(jobOf(data, editing.jobId)?.name ?? '')} 的收入</h2><button type="button" class="btn btn-line btn-sm" data-action="income-cancel">取消</button></div>
-    <div class="field-pair"><label class="field"><span>整次實收（空白 = 未填）</span><input type="number" step="0.01" min="0" name="income" value="${editing.income ?? ''}" inputmode="decimal"></label>
-    <label class="field"><span>完成訂單數</span><input type="number" step="1" min="0" name="orders" value="${editing.orders ?? ''}" inputmode="numeric"></label></div>
-    <button class="btn btn-ink" type="submit">儲存</button><p class="fine">「未填」與「0」分開記錄：0 代表確實沒有收入。</p></form></section>` : '';
-
   return `${pageHead('統計與收入', `${title} · 收入按開始上班日期歸屬，跨日只算一次`, tools)}
     <section class="kpis">
       <div class="card card-ink kpi"><span>實際工時（按開班日）</span><strong>${fmtDur(st.workMs)}</strong><small class="c-lime">${st.sessions.length} 次出勤 · 跨期間的班算在開班那段</small></div>
@@ -96,7 +90,6 @@ export function statsView(ctx) {
     <section class="card"><div class="card-head"><h2 class="card-title">每個日曆日的工時（按日曆日）</h2><div class="legend"><span><i class="sw k-work"></i>前一工作日帶過來</span><span><i class="sw k-work-light"></i>當天開始</span></div></div>
       <div class="bars ${ui.statsPeriod === 'month' ? 'bars-dense' : ''}">${bars}</div>
       <p class="fine">這裡按實際發生的日曆日計，包括上一段期間開始、跨午夜進來的夜班，所以加起來可能跟上面「按開班日」的實際工時不一樣。</p></section>
-    ${incomeForm}
     <section class="card card-flush"><div class="card-head"><h2 class="card-title">出勤明細</h2>${filters}</div>
       ${!isDesktop && rows ? `<ul class="trip-cards">${cards}</ul>` : rows ? `<div class="table-wrap"><table class="table"><thead><tr><th scope="col">上班日</th><th scope="col">工作</th><th scope="col">實際時段</th><th scope="col">工時（分日）</th><th scope="col">計算方式</th><th scope="col" class="t-right">收入</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted pad">這段期間沒有出勤紀錄。</p>'}
     </section>`;

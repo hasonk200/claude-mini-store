@@ -1,3 +1,4 @@
+import { reminders } from '../planning.js';
 import { esc, icon, bubble, durHTML, STEP_ICON, STEP_KIND, seg, stateTag } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtDayMD, wdOfKey, fmtMD, MIN, HOUR, fmtDur, fmtDurLong, toDateInput, toTimeInput } from '../time.js';
 import {
@@ -142,7 +143,7 @@ function statusCard(data, wd, cycle, now, manual = false) {
 function budgetCards(data, now) {
   const b = beforeBedBudget(data, now);
   if (b.state === 'sleeping') {
-    return `<section class="metric-pair"><div class="card metric"><span class="metric-label">睡前未安排</span><span class="metric-value">—</span><span class="metric-note">正在睡眠</span></div><div class="card metric"><span class="metric-label">距離預計入睡</span><span class="metric-value">—</span><span class="metric-note">起床後重新計算</span></div></section>`;
+    return `<section class="metric-pair"><div class="card metric"><span class="metric-label">睡前未安排</span><span class="metric-value">—</span><span class="metric-note">正在睡眠</span><button class="btn btn-soft metric-btn" data-action="plan-clock">設定睡前安排</button></div><div class="card metric"><span class="metric-label">距離預計入睡</span><span class="metric-value">—</span><span class="metric-note">起床後重新計算</span><button class="btn btn-soft metric-btn" data-action="plan-clock">設定預計入睡</button></div></section>`;
   }
   const countdown = `<div class="card metric"><span class="metric-label">距離預計入睡</span>${durHTML(b.countdown, 'metric-value')}<span class="metric-note">${wdOf(b.target)} ${fmtTime(b.target)} · 仍含工作</span></div>`;
   if (b.state === 'unknown-end') {
@@ -163,8 +164,8 @@ function budgetCards(data, now) {
     const unknown = '<span class="metric-value metric-text">未記錄</span>';
     const awNote = !aw ? '還沒有起床紀錄' : `上次記錄起床 ${wdOf(aw.since)} ${fmtMD(dateKey(aw.since))} ${fmtTime(aw.since)}${aw.ms > 20 * HOUR ? ' · 可能漏記了睡眠' : ''}`;
     return `<section class="metric-pair">
-    <div class="card metric"><span class="metric-label">距離上次記錄起床</span>${aw ? durHTML(aw.ms, 'metric-value') : unknown}<span class="metric-note">${awNote}</span>${!aw || aw.ms > 20 * HOUR ? addSleep : ''}</div>
-    <div class="card metric k-sleep-soft"><span class="metric-label">過去 24 小時睡了</span>${sl.parts.length ? `${durHTML(sl.ms, 'metric-value c-sleep')}<span class="sleep24" aria-hidden="true">${bars}</span><span class="metric-note">分 ${sl.parts.length} 段 · 只計有記錄的睡眠</span>` : `${unknown}<span class="metric-note">這 24 小時沒有睡眠紀錄</span>${addSleep}`}</div>
+    <div class="card metric"><span class="metric-label">距離上次記錄起床</span>${aw ? durHTML(aw.ms, 'metric-value') : unknown}<span class="metric-note">${awNote}</span>${!aw || aw.ms > 20 * HOUR ? addSleep : ''}<button type="button" class="btn btn-soft metric-btn" data-action="plan-clock">設定預計入睡</button></div>
+    <div class="card metric k-sleep-soft"><span class="metric-label">過去 24 小時睡了</span>${sl.parts.length ? `${durHTML(sl.ms, 'metric-value c-sleep')}<span class="sleep24" aria-hidden="true">${bars}</span><span class="metric-note">分 ${sl.parts.length} 段 · 只計有記錄的睡眠</span>` : `${unknown}<span class="metric-note">這 24 小時沒有睡眠紀錄</span>${addSleep}`}<button type="button" class="btn btn-soft metric-btn" data-action="plan-clock">設定睡前安排</button></div>
   </section>`;
   }
   const we = b.workEnd;
@@ -186,18 +187,22 @@ export function lastMealLine(data, now) {
 
 // 首頁「需要補的紀錄」：待補收工、未記到家、未記錄睡眠、計畫中但未確認的餐。
 export function pendingCard(data, now) {
-  const items = pendingItems(data, now);
+  const extra = reminders(data, now);
+  const items = pendingItems(data,now).filter(x=>x.kind==='pending-end' || x.kind==='sleep' && data.settings.reminders?.sleep!==false && !extra.some(r=>r.action==='quick-wake'));
+  for(const m of data.meals.filter(m=>m.confirmed===false && m.start<=now).sort((a,b)=>b.start-a.start)) items.push({kind:'meal',t:m.start,id:m.id,name:m.name||'用餐'});
+  items.unshift(...extra);
   if (!items.length) return '';
   const when = (t) => `${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}`;
   const rows = items.map((x) => {
+    if (x.action) return `<li class="todo-row"><div class="todo-text"><strong>${esc(x.title)}</strong><span>${x.action === 'income-open' ? '收工 ' : ''}${when(x.t)}</span></div><button type="button" class="btn btn-soft" data-action="${x.action}" data-id="${esc(x.id||'')}" data-sid="${esc(x.sid||'')}" data-wd="${esc(x.wd||'')}" data-step="${esc(x.step||'')}">${x.label}</button></li>`;
     const [tag, title, note] = x.kind === 'pending-end' ? [stateTag('pending'), `${x.job} 收工時間`, `${when(x.t)} 上班`]
       : x.kind === 'home' ? [stateTag('pending'), '到家時間', `${when(x.t)} 下班`]
       : x.kind === 'sleep' ? [stateTag('none'), '睡眠', '過去 24 小時沒有睡眠紀錄']
       : [stateTag('plan'), `${x.name} ${fmtTime(x.t)}`, `${wdOf(x.t)} ${fmtMD(dateKey(x.t))} · 吃了嗎？`];
     const btn = x.kind === 'meal'
-      ? `<button type="button" class="btn btn-soft btn-sm" data-action="meal-confirm" data-id="${esc(x.id)}" aria-label="${esc(x.name)}已經吃了">已經吃了</button>`
+      ? `<button type="button" class="btn btn-soft btn-sm" data-action="meal-confirm" data-id="${esc(x.id)}" aria-label="${esc(x.name)}已經吃了">已經吃了</button><button type="button" class="btn btn-line btn-sm" data-action="meal-open" data-id="${esc(x.id)}">改時間</button>`
       : x.kind === 'sleep' ? '<button type="button" class="btn btn-soft btn-sm" data-action="quick-wake" aria-label="補上睡眠：我瞓醒喇">補上</button>'
-      : `<button type="button" class="btn btn-soft btn-sm" data-action="open-record"${x.wd ? ` data-wd="${x.wd}"` : ''} data-step="${x.step}" aria-label="補上${esc(title)}">補上</button>`;
+      : `<button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-sid="${esc(x.sid||'')}"${x.wd ? ` data-wd="${x.wd}"` : ''} data-step="${x.step}" aria-label="補上${esc(title)}">補上</button>`;
     return `<li class="todo-row">${tag}<div class="todo-text"><strong>${esc(title)}</strong><span>${note}</span></div>${btn}</li>`;
   }).join('');
   return `<section class="card todo-card" aria-label="需要補的紀錄"><div class="card-head"><h2 class="card-title">需要補的紀錄</h2><span class="muted small">${items.length} 項</span></div><ul class="todo-list">${rows}</ul></section>`;
@@ -347,5 +352,5 @@ export function todayView(ctx) {
       ${stepCard}
       ${eventTable(data, wd, now, ui)}`;
   }
-  return `${compactHead(ctx, wd, isAuto)}${status}${tiles}${stepUp ? stepCard : ''}${todo}${next}${more(`${budgetUp ? '' : budget}${ribbonCard}${stepUp ? '' : stepCard}`)}`;
+  return `${compactHead(ctx, wd, isAuto)}${status}${tiles}${todo}${stepUp ? stepCard : ''}${next}${budgetState==='unset' ? '<button class="btn btn-soft" data-action="plan-clock">設定睡眠計畫</button>' : ''}${more(`${budgetUp ? '' : budget}${ribbonCard}${stepUp ? '' : stepCard}`)}`;
 }

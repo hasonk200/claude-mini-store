@@ -168,8 +168,6 @@ function backfill(data, now, ui, wd) {
 function plans(data, now, ui) {
   const next = nextSleepPlan(data, now);
   const last = data.sleeps.filter((s) => s.start != null && s.end != null).sort((a, b) => b.end - a.end)[0];
-  const defStart = next ? next.planStart : now + HOUR;
-  const defEnd = next ? next.planEnd : now + 9 * HOUR;
   const reuse = last ? `<button type="button" class="btn btn-soft-night btn-block" data-action="sleep-reuse">沿用最近一次時段 ${fmtTime(last.start)}–${fmtTime(last.end)}</button>` : '';
   const list = data.sleeps.filter((s) => s.start == null && s.planStart != null && s.planStart > now).sort((a, b) => a.planStart - b.planStart).slice(0, 5)
     .map((s) => `<li class="row-click${ui.flash === `sleep:${s.id}` ? ' is-flash' : ''}" data-action="sleep-open" data-id="${s.id}">${bubble('moon', 'sleep', { plan: true, size: 'sm', iconSize: 15 })}<span>${wdOf(s.planStart)} ${fmtMD(dateKey(s.planStart))} ${fmtTime(s.planStart)} → ${dateKey(s.planEnd) !== dateKey(s.planStart) ? `${wdOf(s.planEnd)} ${fmtMD(dateKey(s.planEnd))} ` : ''}${fmtTime(s.planEnd)}${ui.flash === `sleep:${s.id}` ? ' <span class="saved-tag" role="status">已更新</span>' : ''}</span><button type="button" class="icon-btn icon-btn-sm" data-action="sleep-open" data-id="${s.id}" aria-label="修改計畫">${icon('edit', 16)}</button></li>`).join('');
@@ -177,10 +175,7 @@ function plans(data, now, ui) {
     <div class="card-head"><div><span class="eyebrow">下一次計畫</span><h2 class="card-title">${next ? `${wdOf(next.planStart)} ${fmtTime(next.planStart)} → ${fmtTime(next.planEnd)}` : '未設定'}</h2></div><span class="chip chip-plan">計畫</span></div>
     ${list ? `<ul class="plain-list">${list}</ul>` : ''}
     ${reuse}
-    <details class="more"><summary>新增計畫</summary><form class="form" data-form="sleep-plan">
-      <div class="field-pair"><label class="field"><span>入睡日期</span><input type="date" name="sd" value="${toDateInput(defStart)}" required></label><label class="field"><span>入睡時間</span><input type="time" name="st" value="${toTimeInput(defStart)}" required></label></div>
-      <div class="field-pair"><label class="field"><span>起床日期</span><input type="date" name="ed" value="${toDateInput(defEnd)}" required></label><label class="field"><span>起床時間</span><input type="time" name="et" value="${toTimeInput(defEnd)}" required></label></div>
-      <button class="btn btn-ink" type="submit">儲存計畫</button></form></details>
+    <button type="button" class="btn btn-ink" data-action="plan-clock">設定睡眠計畫</button>
     <p class="fine">計畫只是安排，不會產生實際睡眠紀錄。</p>
   </section>`;
 }

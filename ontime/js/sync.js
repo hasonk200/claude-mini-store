@@ -28,7 +28,26 @@ const uploadedPhotos = new Map();
 const listeners = new Set();
 const state = { status: 'off', user: null, lastSync: null, message: '' };
 
-export const syncState = () => state;
+let acknowledged = new Map();
+export function syncVersions(data) {
+  const versions = new Map();
+  for (const key of store.RECORD_KEYS) for (const row of data[key] || []) {
+    versions.set(key+'/'+store.keyOf(row),row.updatedAt ?? 0);
+  }
+  if (data.settings.updatedAt) versions.set('settings',data.settings.updatedAt);
+  return versions;
+}
+export function pendingCount(data, known) {
+  let count=0;
+  for (const [k,v] of syncVersions(data)) if (!known.has(k) || known.get(k)!==v) count++;
+  return count;
+}
+function acknowledge(data) {
+  acknowledged=syncVersions(data);
+  state.lastSync=Date.now();
+  try {localStorage.setItem('ontime-sync-checkpoint:'+user.uid,JSON.stringify([state.lastSync,[...acknowledged]]));} catch {}
+}
+export const syncState = () => ({...state,pending:pendingCount(store.getRaw(),acknowledged)});
 export function onSync(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 function set(patch) { Object.assign(state, patch); for (const fn of listeners) fn(state); }
 
@@ -43,7 +62,7 @@ export function mergeData(primary, secondary) {
       const cur = map.get(key);
       if (!cur || (x.updatedAt || 0) > (cur.updatedAt || 0)) {
         // 保留本機已有的相片，避免雲端版本（沒有相片）把它清走
-        const keep = cur && cur.photo && !x.photo && !x.deletedAt ? { ...x, photo: cur.photo } : x;
+        const keep = cur && cur.photo && !x.photo && x.hasPhoto !== false && !x.deletedAt ? { ...x, photo: cur.photo } : x;
         map.set(key, structuredClone(keep));
       }
     }
@@ -57,7 +76,7 @@ export function mergeData(primary, secondary) {
 export function stripPhotos(data) {
   const out = structuredClone(data);
   for (const m of out.meals) {
-    if (m.photo) { m.hasPhoto = true; m.photo = null; } else m.hasPhoto = false;
+    if (m.photo) { m.hasPhoto = true; m.photo = null; } else m.hasPhoto = !!m.hasPhoto && !m.deletedAt;
   }
   return out;
 }
@@ -65,7 +84,7 @@ export function stripPhotos(data) {
 // 套用雲端資料時，把本機已有的相片放回去。
 function withLocalPhotos(remote, local) {
   const photos = new Map(local.meals.filter((m) => m.photo).map((m) => [m.id, m.photo]));
-  for (const m of remote.meals) if (!m.photo && photos.has(m.id)) m.photo = photos.get(m.id);
+  for (const m of remote.meals) if (m.hasPhoto && !m.photo && photos.has(m.id)) m.photo = photos.get(m.id);
   return remote;
 }
 
@@ -105,7 +124,7 @@ function parseRemote(snap) {
 function applyRemote(remote) {
   const local = store.getRaw();
   const next = withLocalPhotos(mergeData(local, remote), local);
-  if (JSON.stringify(stripPhotos(next)) === JSON.stringify(stripPhotos(local))) return;
+  if (JSON.stringify(stripPhotos(next)) === JSON.stringify(stripPhotos(local))) { fetchMissingPhotos(next); return; }
   applyingRemote = true;
   store.replaceAll(next, { tombstone: false });
   applyingRemote = false;
@@ -113,13 +132,16 @@ function applyRemote(remote) {
 }
 
 async function fetchMissingPhotos(data) {
+  const owner=user;
   for (const m of data.meals) {
+    if (user!==owner) return;
     if (!m.hasPhoto || m.photo || !user) continue;
     try {
       const snap = await photoDoc(m.id).get();
       const photo = snap.exists ? snap.data().data : null;
-      if (!photo) continue;
-      uploadedPhotos.set(m.id, photo.length);
+      if (user!==owner) return;
+      if (!photo || !store.get().meals.some(y=>y.id===m.id && y.hasPhoto && !y.photo && y.updatedAt===m.updatedAt)) continue;
+      uploadedPhotos.set(m.id, photo);
       applyingRemote = true;
       store.replaceAll({ ...store.getRaw(), meals: store.getRaw().meals.map((y) => (y.id === m.id && !y.photo ? { ...y, photo } : y)) }, { tombstone: false });
       applyingRemote = false;
@@ -128,6 +150,13 @@ async function fetchMissingPhotos(data) {
 }
 
 async function onUser(u) {
+  if (u?.uid !== user?.uid) {
+    acknowledged=new Map(); state.lastSync=null; lastPushed=''; uploadedPhotos.clear();
+    try {
+      const saved=u && JSON.parse(localStorage.getItem('ontime-sync-checkpoint:'+u.uid));
+      if(saved) { acknowledged=new Map(saved[1]); state.lastSync=saved[0]; }
+    } catch {}
+  }
   user = u || null;
   if (unsub) { unsub(); unsub = null; }
   if (!user) {
@@ -138,6 +167,7 @@ async function onUser(u) {
   try {
     const ref = mainDoc();
     const snap = await ref.get();
+    if (user!==u) return;
     if (snap.exists) {
       const remote = parseRemote(snap);
       if (remote) {
@@ -146,14 +176,16 @@ async function onUser(u) {
       }
     }
     await push(true);
+    if (user!==u) return;
     unsub = ref.onSnapshot((s) => {
-      if (!s.exists || s.metadata.hasPendingWrites) return;
+      if (user!==u || !s.exists || s.metadata.hasPendingWrites || s.metadata.fromCache) return;
       const body = s.data() || {};
       if (body.json === lastPushed) return;
       const remote = parseRemote(s);
       if (remote) {
         applyRemote(remote);
-        set({ status: 'cloud', lastSync: Date.now() });
+        acknowledge(remote);
+        set({ status: 'cloud' });
         // 雲端少了本機較新的紀錄時，把合併結果寫回去
         if (JSON.stringify(stripPhotos(store.getRaw())) !== JSON.stringify(stripPhotos(remote))) push();
       }
@@ -163,19 +195,21 @@ async function onUser(u) {
   }
 }
 
-async function uploadPhotos(data) {
+async function uploadPhotos(data,owner) {
   for (const m of data.meals) {
+    if (user!==owner) return;
     if (!m.photo) continue;
-    if (uploadedPhotos.get(m.id) === m.photo.length) continue;
+    if (uploadedPhotos.get(m.id) === m.photo) continue;
     try {
       await photoDoc(m.id).set({ data: m.photo, updatedAt: fb.firestore.FieldValue.serverTimestamp() });
-      uploadedPhotos.set(m.id, m.photo.length);
-    } catch { /* 相片上傳失敗不影響主要資料 */ }
+      uploadedPhotos.set(m.id, m.photo);
+    } catch { throw Error('photo-upload'); }
   }
 }
 
 async function push(force = false) {
   if (!user || !db) return;
+  const owner=user;
   if (pushing) { pushAgain = true; return; }
   const data = store.getRaw();
   if (!force && JSON.stringify(stripPhotos(data)) === lastPushed) return;
@@ -186,6 +220,7 @@ async function push(force = false) {
     let merged = data;
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
+      if (user!==owner) throw Error('account-changed');
       const remote = snap.exists ? parseRemote(snap) : null;
       merged = remote ? mergeData(store.getRaw(), remote) : store.purge(store.getRaw());
       const json = JSON.stringify(stripPhotos(merged));
@@ -193,10 +228,15 @@ async function push(force = false) {
       lastPushed = json;
       tx.set(ref, { json, app: 'ONTIME', updatedAt: fb.firestore.FieldValue.serverTimestamp() });
     });
+    if (user!==owner) return;
     if (JSON.stringify(stripPhotos(merged)) !== JSON.stringify(stripPhotos(store.getRaw()))) applyRemote(merged);
-    set({ status: 'cloud', lastSync: Date.now(), message: '' });
-    uploadPhotos(data);
+    await uploadPhotos(merged,owner);
+    if (user!==owner) return;
+    acknowledge(merged);
+    set({ status: 'cloud', message: '' });
+
   } catch (e) {
+    if (user!==owner) return;
     lastPushed = '';
     if (e?.code === 'full') { set({ status: 'full', message: '雲端空間不足：請匯出備份，再刪除舊紀錄' }); return; }
     set({ status: navigator.onLine ? 'error' : 'offline', message: navigator.onLine ? '同步失敗，稍後會再試' : '離線中，連線後會自動上傳' });

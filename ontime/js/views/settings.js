@@ -1,6 +1,6 @@
 import { esc, icon, seg } from '../ui.js';
 import { fmtTime, wdOf, fmtMD, dateKey } from '../time.js';
-import { status } from '../store.js';
+import { status, demoMode } from '../store.js';
 import { sleepWorkdayChanges } from '../logic.js';
 import { syncState } from '../sync.js';
 import { pageHead } from './shared.js';
@@ -12,7 +12,7 @@ function jobsCard(data, ui) {
   const list = data.jobs.map((j) => {
     const used = data.sessions.some((s) => s.jobId === j.id);
     return `<li><i class="sw k-${j.color === 'deliv' ? 'deliv' : 'work'}"></i><div><strong>${esc(j.name)}</strong><span>${PAY[j.payMode] || ''}${j.payMode === 'hourly' && j.rate != null ? ` · $${j.rate}/小時` : ''}</span></div>
-      <button type="button" class="icon-btn icon-btn-sm" data-action="job-edit" data-id="${j.id}" aria-label="修改 ${esc(j.name)}">${icon('edit', 16)}</button>
+      <button type="button" class="btn btn-line btn-sm" data-action="job-edit" data-id="${j.id}" aria-label="修改 ${esc(j.name)}">修改</button>
       ${used ? '' : `<button type="button" class="icon-btn icon-btn-sm" data-action="job-delete" data-id="${j.id}" aria-label="刪除 ${esc(j.name)}">${icon('trash', 16)}</button>`}</li>`;
   }).join('');
   const j = editing || {};
@@ -23,18 +23,21 @@ function jobsCard(data, ui) {
       <div class="field-pair"><label class="field"><span>名稱</span><input name="name" value="${esc(j.name || '')}" placeholder="例如：倉庫夜班" required></label>
       <label class="field"><span>顏色</span><select name="color"><option value="work"${j.color !== 'deliv' ? ' selected' : ''}>橙色（主要工作）</option><option value="deliv"${j.color === 'deliv' ? ' selected' : ''}>綠色（外送／第二份）</option></select></label></div>
       <div class="field-pair"><label class="field"><span>計算方式</span><select name="payMode">${Object.entries(PAY).map(([k, v]) => `<option value="${k}"${(j.payMode || 'hourly') === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
-      <label class="field"><span>時薪（選填）</span><input type="number" name="rate" step="0.01" min="0" value="${j.rate ?? ''}" inputmode="decimal"></label></div>
+      <label class="field" data-job-rate ${j.payMode && j.payMode!=='hourly'?'hidden':''}><span>每小時薪金（時薪工作）</span><input type="number" name="rate" step="0.01" min="0" value="${j.rate ?? ''}" inputmode="decimal"></label></div>
       <p class="fine">改時薪只影響之後的出勤；舊紀錄保留當時的計薪快照。</p>
       <div class="btn-wrap"><button class="btn btn-ink" type="submit">${editing ? '儲存修改' : '新增工作'}</button>${editing ? '<button class="btn btn-line" type="button" data-action="job-cancel">取消</button>' : ''}</div>
     </form></details></section>`;
 }
 
 function cloudCard() {
+  if (demoMode) return '<section class="card"><h2 class="card-title">雲端同步</h2><p>示範模式的紀錄只存在這部裝置。</p></section>';
   const sy = syncState();
   const T = { off: '未開啟', signin: '未登入', loading: '正在連線…', cloud: '已同步', error: '同步失敗', offline: '離線中', full: '雲端空間不足' };
   const signed = !!sy.user;
-  return `<section class="card" aria-label="雲端同步"><div class="card-head"><h2 class="card-title">雲端同步</h2><span class="chip ${sy.status === 'cloud' ? 'chip-real' : 'chip-plan'}">${T[sy.status] || ''}</span></div>
+  return `<section class="card" aria-label="雲端同步"><div class="card-head"><h2 class="card-title">雲端同步</h2><span class="chip ${sy.status === 'cloud' ? 'chip-real' : 'chip-plan'}">${sy.status==='cloud' && sy.pending?'待同步':T[sy.status] || ''}</span></div>
     ${signed ? `<div class="status-line"><i class="dot ${sy.status === 'cloud' ? 'k-ok' : 'is-warn'}"></i><div><strong>${esc(sy.user.name || sy.user.email)}</strong><span>${esc(sy.user.email)}${sy.lastSync ? ` · 最後同步 ${fmtTime(sy.lastSync)}` : ''}</span></div></div>` : ''}
+    <p class="fine">${signed ? `待同步 ${sy.pending} 筆 · ${sy.lastSync ? '上次成功 '+dateKey(sy.lastSync)+' '+fmtTime(sy.lastSync) : '等候首次上傳'}` : `本機有 ${sy.pending} 筆紀錄或修改；登入後可核對雲端。`}</p>
+    ${['offline','error','full'].includes(sy.status) ? '<button class="btn btn-line" data-action="sync-retry">檢查網絡後再試同步</button>' : ''}
     ${sy.message ? `<p class="fine">${esc(sy.message)}</p>` : ''}
     <p class="fine">用 Google 帳戶登入後，紀錄會同步到雲端；換手機或電腦登入同一個帳戶就能看到。沒有網絡時照樣記錄，連線後自動上傳。</p>
     <div class="btn-wrap">${signed
@@ -57,8 +60,11 @@ function dataCard(data) {
     <p class="fine">紀錄先存在這個瀏覽器，沒有網絡也能用。清除網站資料或換裝置前，請先匯出備份。</p>
     <div class="data-actions">
       <button type="button" class="btn btn-ink" data-action="export-json">${icon('download', 18, 2)}匯出 JSON 備份</button>
-      <label class="btn btn-line file-btn">${icon('upload', 18, 2)}匯入 JSON 備份<input type="file" accept="application/json,.json" data-action="import-json" hidden></label>
-      <button type="button" class="btn btn-line" data-action="export-csv">${icon('download', 18, 2)}匯出 CSV（試算表）</button>
+      <label class="btn btn-line file-btn">${icon('upload', 18, 2)}匯入 JSON／完整 CSV 備份<input type="file" accept=".csv,.json,application/json,text/csv" data-action="import-json" hidden></label>
+      <button type="button" class="btn btn-line" data-action="export-csv">${icon('download', 18, 2)}匯出工時報表 CSV</button>
+      <button class="btn btn-line" data-action="export-full-csv">匯出完整 CSV 備份</button>
+      <button class="btn btn-line" data-action="temp-open">從臨時版匯入</button>
+      <button class="btn btn-line" data-action="recovery-download">下載上次取代前的備份</button>
       <button type="button" class="btn btn-line" data-action="sleep-wd-reset">重新計算睡眠歸屬${changes ? `（${changes} 筆）` : ''}</button>
     </div>
     <p class="fine">${resetLine}手動指定過的不受影響。</p>
@@ -66,7 +72,27 @@ function dataCard(data) {
       <label><input type="radio" name="importMode" value="merge" checked> 合併：只加入新的紀錄</label>
       <label><input type="radio" name="importMode" value="replace"> 取代：用備份覆蓋目前資料</label>
     </fieldset>
-    <p class="fine">JSON 備份包含所有紀錄和用餐相片，可以用來搬到另一部裝置。CSV 只包含出勤、通勤和收入，方便用試算表查看。</p>
+    <p class="fine">JSON 備份包含所有紀錄和用餐相片，可以用來搬到另一部裝置。完整 CSV 也可以還原全部資料；工時報表 CSV 供試算表查看。</p>
+  </section>`;
+}
+
+function reminderCard(prefs = {}) {
+  const options = [
+    ['sleep', '睡眠提醒', '起身後 20 小時未記睡眠'],
+    ['home', '到家提醒', '收工後 3 小時未記到家'],
+    ['meal', '用餐提醒', '上一餐後 6 小時未記用餐'],
+    ['income', '收入提醒', '按單班次收工後 48 小時內仍未填收入'],
+  ];
+  return `<section class="card" aria-label="漏記提醒">
+    <h2 class="card-title">漏記提醒</h2>
+    <div class="reminder-list">${options.map(([key, label, detail]) => `
+      <label class="reminder-row">
+        <span><strong id="reminder-${key}">${label}</strong><small id="reminder-${key}-detail">${detail}</small></span>
+        <input type="checkbox" role="switch" data-action="reminder-set" data-key="${key}" aria-labelledby="reminder-${key}" aria-describedby="reminder-${key}-detail"${prefs?.[key] !== false ? ' checked' : ''}>
+        <span class="reminder-state" aria-hidden="true"><span class="when-on">已開啟</span><span class="when-off">已關閉</span></span>
+      </label>`).join('')}</div>
+    <button class="btn btn-line" data-action="export-ics">匯出行事曆提醒</button>
+    <p class="fine">手機行事曆會在排班下班後 30 分鐘及計畫起身時間提示。更改計畫後可重新匯出。</p>
   </section>`;
 }
 
@@ -91,6 +117,7 @@ export function settingsView(ctx) {
         ${jobsCard(data, ui)}
       </div>
       <div class="stack">
+        ${reminderCard(st.reminders)}
         ${cloudCard()}
         ${dataCard(data)}
         <section class="card" aria-label="安裝與示範"><div class="card-head"><h2 class="card-title">安裝與示範</h2></div>
@@ -98,7 +125,7 @@ export function settingsView(ctx) {
           <div class="btn-wrap">${ui.canInstall ? '<button type="button" class="btn btn-ink" data-action="install">安裝 App</button>' : ''}
           <button type="button" class="btn btn-line" data-action="demo">載入示範資料</button>
           <button type="button" class="btn btn-danger" data-action="clear-all">清除所有資料</button></div>
-          <p class="fine">載入示範資料和清除資料都會取代目前的紀錄，執行前會再問一次。</p>
+          <p class="fine">示範模式有獨立資料，清除個人紀錄前會自動保存完整備份。</p>
           <p class="fine">目前版本：<strong>${esc(ui.appVersion || '讀取中…')}</strong></p>
         </section>
       </div>
