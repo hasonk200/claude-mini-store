@@ -1406,3 +1406,19 @@ body { background: linear-gradient(180deg, var(--wash) 0, var(--bg) 460px) no-re
 .todo-row.is-act .btn { min-width: 108px; }
 .btn.btn-meal { background: var(--meal); color: #FFFFFF; box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--meal) 80%, transparent); }
 .btn.btn-meal:hover { background: var(--meal-deep); }
+.dayhero.tl-band { padding: 18px 14px 10px; border-radius: 20px; }
+.dayhero .day-switch { overflow: hidden; }
+.dayhero .wd-label { min-width: 0; overflow: hidden; }
+.dayhero .wd-label strong, .dayhero .wd-label small { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 400px) {
+  .dh-clock b { font-size: 28px; }
+  .dh-clock small { font-size: 11px; }
+  .dayhero .wd-label strong { font-size: 14px; }
+  .dayhero .wd-label small { font-size: 11px; }
+  .dayhero .icon-btn { width: 32px; height: 32px; }
+}
+@media (max-width: 380px) {
+  .dh-clock small { display: none; }
+  .dh-clock b { font-size: 26px; }
+  .dayhero .wd-label strong { font-size: 13px; }
+}

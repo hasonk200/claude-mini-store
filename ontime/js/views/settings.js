@@ -113,7 +113,7 @@ export function settingsView(ctx) {
         <section class="card" aria-label="外觀"><div class="card-head"><h2 class="card-title">外觀</h2></div>
           ${seg('theme', '顏色模式', [['auto', '跟隨系統'], ['light', '淺色'], ['dark', '深色']], st.theme || 'auto')}
           <p class="fine">深色模式適合夜班和睡前使用。首頁時間帶同頁頂底色會跟時段（夜晚、清晨、日間、黃昏）轉色。</p>
-          <label class="reminder-row"><span><strong id="scene-label">首頁街景插畫</strong><small id="scene-detail">喺首頁最頂加一幅會跟時間變化嘅街景</small></span><input type="checkbox" role="switch" data-action="hero-toggle" aria-labelledby="scene-label" aria-describedby="scene-detail"${ui.heroCollapsed ? '' : ' checked'}><span class="reminder-state" aria-hidden="true"><span class="when-on">已開啟</span><span class="when-off">已關閉</span></span></label>
+          <label class="reminder-row is-pref"><span><strong id="scene-label">首頁街景插畫</strong><small id="scene-detail">喺首頁最頂加一幅會跟時間變化嘅街景</small></span><input type="checkbox" role="switch" data-action="hero-toggle" aria-labelledby="scene-label" aria-describedby="scene-detail"${ui.heroCollapsed ? '' : ' checked'}><span class="reminder-state" aria-hidden="true"><span class="when-on">已開啟</span><span class="when-off">已關閉</span></span></label>
         </section>
         ${jobsCard(data, ui)}
       </div>
