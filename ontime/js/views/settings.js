@@ -76,6 +76,26 @@ function dataCard(data) {
   </section>`;
 }
 
+function reminderCard(prefs = {}) {
+  const options = [
+    ['sleep', '睡眠提醒', '起身後 20 小時未記睡眠'],
+    ['home', '到家提醒', '收工後 3 小時未記到家'],
+    ['meal', '用餐提醒', '上一餐後 6 小時未記用餐'],
+    ['income', '收入提醒', '按單班次收工後 48 小時內仍未填收入'],
+  ];
+  return `<section class="card" aria-label="漏記提醒">
+    <h2 class="card-title">漏記提醒</h2>
+    <div class="reminder-list">${options.map(([key, label, detail]) => `
+      <label class="reminder-row">
+        <span><strong id="reminder-${key}">${label}</strong><small id="reminder-${key}-detail">${detail}</small></span>
+        <input type="checkbox" role="switch" data-action="reminder-set" data-key="${key}" aria-labelledby="reminder-${key}" aria-describedby="reminder-${key}-detail"${prefs?.[key] !== false ? ' checked' : ''}>
+        <span class="reminder-state" aria-hidden="true"><span class="when-on">已開啟</span><span class="when-off">已關閉</span></span>
+      </label>`).join('')}</div>
+    <button class="btn btn-line" data-action="export-ics">匯出行事曆提醒</button>
+    <p class="fine">手機行事曆會在排班下班後 30 分鐘及計畫起身時間提示。更改計畫後可重新匯出。</p>
+  </section>`;
+}
+
 export function settingsView(ctx) {
   const { data, ui } = ctx;
   const st = data.settings;
@@ -97,7 +117,7 @@ export function settingsView(ctx) {
         ${jobsCard(data, ui)}
       </div>
       <div class="stack">
-        <section class="card"><h2 class="card-title">漏記提醒</h2>${[['sleep','起身後 20 小時未記睡眠'],['home','下班 3 小時未記到家'],['meal','上一餐後 6 小時未記用餐']].map(([k,label])=>`<label class="verify-toggle"><input type="checkbox" data-action="reminder-set" data-key="${k}" ${st.reminders?.[k]!==false?'checked':''}>${label}</label>`).join('')}<button class="btn btn-line" data-action="export-ics">匯出行事曆提醒</button><p class="fine">手機行事曆會在排班下班後 30 分鐘及計畫起身時間提示。更改計畫後可重新匯出。</p></section>
+        ${reminderCard(st.reminders)}
         ${cloudCard()}
         ${dataCard(data)}
         <section class="card" aria-label="安裝與示範"><div class="card-head"><h2 class="card-title">安裝與示範</h2></div>

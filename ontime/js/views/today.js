@@ -194,7 +194,7 @@ export function pendingCard(data, now) {
   if (!items.length) return '';
   const when = (t) => `${wdOf(t)} ${fmtMD(dateKey(t))} ${fmtTime(t)}`;
   const rows = items.map((x) => {
-    if (x.action) return `<li class="todo-row"><div class="todo-text"><strong>${x.title}</strong><span>${when(x.t)}</span></div><button type="button" class="btn btn-soft" data-action="${x.action}" data-id="${esc(x.id||'')}" data-sid="${esc(x.sid||'')}" data-wd="${esc(x.wd||'')}" data-step="${esc(x.step||'')}">${x.label}</button></li>`;
+    if (x.action) return `<li class="todo-row"><div class="todo-text"><strong>${esc(x.title)}</strong><span>${x.action === 'income-open' ? '收工 ' : ''}${when(x.t)}</span></div><button type="button" class="btn btn-soft" data-action="${x.action}" data-id="${esc(x.id||'')}" data-sid="${esc(x.sid||'')}" data-wd="${esc(x.wd||'')}" data-step="${esc(x.step||'')}">${x.label}</button></li>`;
     const [tag, title, note] = x.kind === 'pending-end' ? [stateTag('pending'), `${x.job} 收工時間`, `${when(x.t)} 上班`]
       : x.kind === 'home' ? [stateTag('pending'), '到家時間', `${when(x.t)} 下班`]
       : x.kind === 'sleep' ? [stateTag('none'), '睡眠', '過去 24 小時沒有睡眠紀錄']

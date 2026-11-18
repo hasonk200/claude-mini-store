@@ -824,6 +824,22 @@ details.more .form { padding: 0 14px 14px; }
 .ride-fields .btn[aria-pressed="true"] { background: var(--solid); color: var(--on-solid); }
 
 /* 已驗證：你手動確認「這個時間是對的」。 */
+.reminder-list { margin: 8px 0 16px; }
+.reminder-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; min-height: 44px; padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.reminder-row small { display: block; color: var(--muted); }
+.reminder-row input { appearance: none; position: relative; width: 38px; height: 22px; margin: 0; border: 2px solid var(--muted); border-radius: 20px; background: var(--surface); cursor: pointer; }
+.reminder-row input::before { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); }
+.reminder-row input:checked { background: var(--accent); border-color: var(--accent); }
+.reminder-row input:checked::before { left: auto; right: 2px; background: var(--on-accent); }
+.reminder-row input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.reminder-state { color: var(--ink-2); font-size: .875rem; }
+.reminder-row input:not(:checked) + .reminder-state .when-on,
+.reminder-row input:checked + .reminder-state .when-off { display: none; }
+@media (forced-colors: active) {
+  .reminder-row input { appearance: auto; }
+  .reminder-row input::before { content: none; }
+}
+
 .verify-toggle { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); cursor: pointer; position: relative; }
 .verify-toggle input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .verify-box { flex: none; width: 26px; height: 26px; border-radius: 6px; border: 2px solid var(--faint); display: grid; place-items: center; color: transparent; background: var(--surface); transition: background .15s, border-color .15s, color .15s; }

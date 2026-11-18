@@ -1,5 +1,5 @@
 // Calendar arithmetic uses local dates so overnight entries keep their wall clocks across DST.
-import { addDays, dateKey, fmtTime, fromInputs, normTime, HOUR, MIN } from './time.js';
+import { addDays, dateKey, fmtDayMD, fmtTime, fromInputs, normTime, HOUR, MIN } from './time.js';
 import { awakeSince, lastMeal, workdayOfSession, journeyOfSession } from './logic.js';
 
 export function clockAt(date, raw) {
@@ -42,8 +42,14 @@ export function reminders(data, now) {
     rows.push({ title: '收工超過 3 小時，未記到家', action: 'open-trip', label: '補到家', t:s.end, sid:s.id, wd:workdayOfSession(s,data), step:'home' });
   if (prefs.meal !== false && !sleeping && meal?.ms >= 6 * HOUR)
     rows.push({ title:'上一餐已過 6 小時', action:'quick-meal', label:'食咗飯', t:meal.at });
-  const unpaid = closed.find(s => s.payMode === 'perOrder' && s.income == null);
-  if (unpaid) rows.push({ title:'輸入今晚收入', action:'income-open', label:'填收入／單數', t:unpaid.end, id:unpaid.id });
+  if (prefs.income !== false) {
+    for (const session of closed) {
+      if (now - session.end > 48 * HOUR) break;
+      if (session.payMode !== 'perOrder' || session.income != null) continue;
+      const day = fmtDayMD(workdayOfSession(session, data));
+      rows.push({ title: `${day} 工作日收入未填`, action: 'income-open', label: '填收入／單數', t: session.end, id: session.id });
+    }
+  }
   return rows;
 }
 

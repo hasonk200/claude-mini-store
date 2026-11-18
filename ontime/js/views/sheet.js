@@ -140,7 +140,7 @@ function recordSheet(ctx) {
   let n = 0;
   const title = (text) => `<div class="sheet-step-title"><span class="step-no">${++n}</span>${text}</div>`;
   // 揀好類別之後縮成一行，少捲動；頂部固定顯示「正在補：…」。
-  const cats = `${title('要補什麼？')}<div class="step-chips cat-chips${cat ? ' is-compact' : ''}">${CATS.map(([k, label, ic, kind]) => `<button type="button" class="step-chip cat-chip${k === cat ? ' is-on' : ''}" data-action="rec-cat" data-cat="${k}" aria-pressed="${k === cat}">${bubble(ic, kind, { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${label}</strong>${cat ? '' : `<small>${k === 'work' || k === 'commute' ? '先選班次' : k === 'rest' ? '沒有班次時' : '直接填'}</small>`}</span></button>`).join('')}</div>`;
+  const cats = `${title('要補什麼？')}<div class="step-chips cat-chips${cat ? ' is-compact' : ''}">${CATS.map(([k, label, ic, kind]) => `<button type="button" class="step-chip cat-chip${k === cat ? ' is-on' : ''}" data-action="rec-cat" data-cat="${k}" aria-pressed="${k === cat}">${bubble(ic, kind, { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${label}</strong>${cat ? '' : `<small>${k === 'work' || k === 'commute' ? '先選班次' : '直接填'}</small>`}</span></button>`).join('')}</div>`;
   const catLabel = CATS.find(([k]) => k === cat)?.[1];
   const crumb = cat ? `<div class="sheet-crumb" aria-live="polite">正在補：<strong>${catLabel}${step && cat !== 'meal' && cat !== 'rest' ? ` › ${LABEL[step]}` : ''}</strong> · ${wdOfKey(wd)} ${fmtMD(wd)} 工作日</div>` : '';
   let body = '';
@@ -192,7 +192,7 @@ function stepChips(data, wd, sid, steps, step, sess) {
   }).join('')}</div>`;
 }
 
-// 補登一段獨立休息（沒有班次時）：開始、結束一齊填；歸屬跟補登面板頂部的工作日。
+// 班內與獨立休息共用同一個時間範圍表單。
 function restForm(ctx, wd) {
   const { data, now, ui } = ctx;
   const key = 'rest:new';
@@ -211,7 +211,7 @@ function restForm(ctx, wd) {
       ${workdayField({ mode: 'sheet', value: wd })}
       <div class="cross-note" data-wd-preview aria-live="polite">${workdayPreview(t, wd, auto)}</div>
       ${verifyToggle(v('verified', false))}
-      <p class="fine">這裡記沒有班次時的休息，不影響工時。上班中的休息請用「工作 › 休息」，會從工時扣除。</p>
+      <p class="fine">選「按時間配對班次」，整段在同一班內就扣該班工時，整段在班外就記為獨立休息。跨過上下班時間請分開填。手動選班會扣該班工時，選「獨立休息」就不扣工時。</p>
       <div class="sheet-foot btn-pair"><button class="btn btn-line btn-lg" type="submit" name="after" value="stay">儲存並繼續</button><button class="btn btn-ink btn-lg" type="submit" name="after" value="close">儲存並關閉</button></div>
     </form>`;
 }
