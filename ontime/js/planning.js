@@ -1,5 +1,5 @@
 // Calendar arithmetic uses local dates so overnight entries keep their wall clocks across DST.
-import { addDays, dateKey, fmtDayMD, fmtTime, fromInputs, normTime, HOUR, MIN } from './time.js';
+import { addDays, dateKey, fmtDayMD, fmtTime, fmtDurLong, fromInputs, normTime, HOUR, MIN } from './time.js';
 import { awakeSince, lastMeal, workdayOfSession, journeyOfSession } from './logic.js';
 
 export function clockAt(date, raw) {
@@ -35,13 +35,13 @@ export function reminders(data, now) {
   const awake = awakeSince(data, now), meal = lastMeal(data, now), rows = [];
   const sleeping = data.sleeps.some(s => s.start != null && s.end == null);
   if (prefs.sleep !== false && !sleeping && awake?.ms >= 20 * HOUR)
-    rows.push({ title: '上次起身後已過 20 小時', action: 'quick-wake', label: '瞓醒喇', t: awake.since });
+    rows.push({ title: `起身後已過 ${fmtDurLong(awake.ms)}，可能漏記咗瞓覺`, action: 'quick-wake', label: '瞓醒喇', t: awake.since });
   const closed = data.sessions.filter(s => s.end != null && s.end <= now).sort((a,b) => b.end-a.end);
   const s = closed[0];
   if (prefs.home !== false && s && now - s.end >= 3 * HOUR && !journeyOfSession(data,s)?.home)
-    rows.push({ title: '收工超過 3 小時，未記到家', action: 'open-trip', label: '補到家', t:s.end, sid:s.id, wd:workdayOfSession(s,data), step:'home' });
+    rows.push({ title: `收工已經 ${fmtDurLong(now - s.end)}，未記到家`, action: 'open-trip', label: '補到家', t:s.end, sid:s.id, wd:workdayOfSession(s,data), step:'home' });
   if (prefs.meal !== false && !sleeping && meal?.ms >= 6 * HOUR)
-    rows.push({ title:'上一餐已過 6 小時', action:'quick-meal', label:'食咗飯', t:meal.at });
+    rows.push({ title: `上一餐已過 ${fmtDurLong(meal.ms)}`, action:'quick-meal', label:'食咗飯', t:meal.at });
   if (prefs.income !== false) {
     for (const session of closed) {
       if (now - session.end > 48 * HOUR) break;

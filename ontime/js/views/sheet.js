@@ -446,8 +446,11 @@ function addMenuSheet(ctx) {
       ${item('quick-meal', '', 'meal', 'meal', '用餐', '一撳記低現在，之後可以改時間')}
       ${item('rest-open', ` data-wd="${wd}" data-step="rest"`, 'cup', 'commute', '休息', '補一段休息')}
     </div>
-    <button type="button" class="btn btn-text btn-block" data-action="open-record" data-wd="${wd}" data-step="meal">補舊的一餐／安排之後的一餐</button>
-    <button type="button" class="btn btn-text btn-block" data-action="open-record" data-wd="${wd}" data-step="clockIn">逐項補登（交通方式、上車地點、個別時間）</button>`);
+    <h3 class="add-sub-title">其他補記方式</h3>
+    <div class="add-sub">
+      <button type="button" class="add-sub-row" data-action="open-record" data-wd="${wd}" data-step="meal">${icon('calendar', 18, 2)}<span>補舊的一餐，或者安排之後的一餐</span>${icon('right', 16, 2)}</button>
+      <button type="button" class="add-sub-row" data-action="open-record" data-wd="${wd}" data-step="clockIn">${icon('edit', 18, 2)}<span>逐項補登：交通、上車地點、個別時間</span>${icon('right', 16, 2)}</button>
+    </div>`);
 }
 
 // ---------- 一撳就記的小面板 ----------

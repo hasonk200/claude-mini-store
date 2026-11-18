@@ -81,10 +81,10 @@ export function statsView(ctx) {
     <section class="kpis">
       <div class="card card-ink kpi"><span>實際工時（按開班日）</span><strong>${fmtDur(st.workMs)}</strong><small class="c-lime">${st.sessions.length} 次出勤 · 跨期間的班算在開班那段</small></div>
       ${st.sessions.some((s) => s.payMode === 'hourly')
-        ? `<div class="card kpi"><span>計薪 · 時薪</span><strong>${money(st.hourlyPay)}</strong><small>${st.hourlyKnown ? '用每班的計薪快照' : '部分班次未設時薪'}</small></div>`
+        ? `<div class="card kpi k-work-soft"><span>計薪 · 時薪</span><strong>${money(st.hourlyPay)}</strong><small>${st.hourlyKnown ? '用每班的計薪快照' : '部分班次未設時薪'}</small></div>`
         : `<div class="card kpi"><span>平均每班工時</span><strong>${st.sessions.length ? fmtDur(st.workMs / st.sessions.length) : '—'}</strong><small>${st.sessions.length} 班</small></div>`}
       <div class="card kpi k-deliv-soft"><span>按單實收</span><strong>${st.perOrderCount ? money(st.income) : '—'}</strong><small>${st.perOrderCount ? `${st.orders} 單 · ${st.perOrderCount - st.incomeKnown} 班未填` : '沒有按單班次'}</small></div>
-      <div class="card kpi"><span>通勤</span><strong>${fmtDur(st.commuteMs)}</strong><small>只計完整路程</small></div>
+      <div class="card kpi k-commute-soft"><span>通勤</span><strong>${fmtDur(st.commuteMs)}</strong><small>只計完整路程</small></div>
       <div class="card kpi k-sleep-soft"><span>平均睡眠</span><strong>${sleep.avg == null ? '—' : fmtDur(sleep.avg)}</strong><small>${sleep.count} 天有完整紀錄</small></div>
     </section>
     <section class="card"><div class="card-head"><h2 class="card-title">每個日曆日的工時（按日曆日）</h2><div class="legend"><span><i class="sw k-work"></i>前一工作日帶過來</span><span><i class="sw k-work-light"></i>當天開始</span></div></div>

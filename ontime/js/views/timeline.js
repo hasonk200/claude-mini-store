@@ -36,14 +36,15 @@ function workdayList(data, wd, now) {
     }
     const last = i === ev.length - 1;
     return `${divider}<li class="tl-item${last ? ' is-last' : ''} k-${e.kind}">
-      <div class="tl-time${e.plan ? ' is-plan-text' : ''}"><strong>${fmtTime(e.t)}</strong><span>${wdOf(e.t)}</span>${e.plan ? '' : verifyBtn(e)}</div>
+      <div class="tl-time${e.plan ? ' is-plan-text' : ''}"><strong>${fmtTime(e.t)}</strong><span>${wdOf(e.t)}</span></div>
       <div class="tl-rail">${bubble(e.icon, e.kind, { plan: e.plan, iconSize: 18 })}<i></i></div>
       <button type="button" class="tl-body" data-action="edit-ref" data-ref="${esc(refKey(e.ref))}" data-t="${e.t}" data-title="${esc(e.title)}" data-plan="${e.plan ? 1 : 0}">
         <strong>${esc(e.title)}</strong>${e.detail ? `<span>${esc(e.detail)}</span>` : ''}${e.pending ? stateTag('pending') : e.plan ? stateTag('plan') : ''}${e.verified ? stateTag('verified') : ''}
       </button>
+      <div class="tl-vf">${e.plan ? '' : verifyBtn(e)}</div>
     </li>`;
   }).join('');
-  return `<div class="card"><div class="card-head"><h2 class="card-title">${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</h2><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}">整趟修改</button></div><p class="muted small tl-note">${verifiedNote(ev)}勾選表示已對照追蹤 App；點時間項目可修改</p>${sessionsOfWorkday(data,wd).map(s=>{
+  return `<div class="card"><div class="card-head"><h2 class="card-title">${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</h2><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}">整趟修改</button></div><p class="muted small tl-note">${verifiedNote(ev)}右邊圓圈剔咗即係已對照追蹤 App；點項目可以修改</p>${sessionsOfWorkday(data,wd).map(s=>{
     const j=data.journeys.find(x=>x.sessionId===s.id);
     const step=s.end==null?'clockOut':j?.home==null?'home':null;
     return step?`<button type="button" class="btn btn-line" data-action="open-trip" data-wd="${wd}" data-sid="${esc(s.id)}" data-step="${step}">${fmtTime(s.start)} 班 · 補記${step==='home'?'到家':'下班'}</button>`:'';

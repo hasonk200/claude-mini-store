@@ -58,23 +58,32 @@ function dataCard(data) {
     <div class="status-line"><i class="dot ${st.saveError ? 'is-warn' : 'k-ok'}"></i><div><strong>${st.saveError ? esc(st.saveError) : '已儲存在這部裝置'}</strong><span>${counts}${st.lastSaved ? ` · 最後儲存 ${fmtTime(st.lastSaved)}` : ''}</span></div></div>
     <p class="fine">${st.persisted === true ? '已受保護：瀏覽器不會在空間不足時自動清除這些紀錄。' : '瀏覽器可能在空間不足時清除本機紀錄，請定期匯出備份或登入雲端同步。'}</p>
     <p class="fine">紀錄先存在這個瀏覽器，沒有網絡也能用。清除網站資料或換裝置前，請先匯出備份。</p>
-    <div class="data-actions">
-      <button type="button" class="btn btn-ink" data-action="export-json">${icon('download', 18, 2)}匯出 JSON 備份</button>
-      <label class="btn btn-line file-btn">${icon('upload', 18, 2)}匯入 JSON／完整 CSV 備份<input type="file" accept=".csv,.json,application/json,text/csv" data-action="import-json" hidden></label>
-      <button type="button" class="btn btn-line" data-action="export-csv">${icon('download', 18, 2)}匯出工時報表 CSV</button>
-      <button class="btn btn-line" data-action="export-full-csv">匯出完整 CSV 備份</button>
-      <button class="btn btn-line" data-action="temp-open">從臨時版匯入</button>
-      <button class="btn btn-line" data-action="recovery-download">下載上次取代前的備份</button>
-      <button type="button" class="btn btn-line" data-action="sleep-wd-reset">重新計算睡眠歸屬${changes ? `（${changes} 筆）` : ''}</button>
+    <h3 class="set-group">備份</h3>
+    <div class="set-list">
+      ${setRow('export-json', 'download', '匯出 JSON 備份', '全部紀錄同用餐相片，可以搬去另一部裝置', true)}
+      ${setRow('export-full-csv', 'download', '匯出完整 CSV 備份', '一樣可以還原全部資料')}
+      ${setRow('export-csv', 'chart', '匯出工時報表 CSV', '俾試算表睇，唔用嚟還原')}
     </div>
-    <p class="fine">${resetLine}手動指定過的不受影響。</p>
-    <fieldset class="radio-row"><legend>匯入時</legend>
-      <label><input type="radio" name="importMode" value="merge" checked> 合併：只加入新的紀錄</label>
-      <label><input type="radio" name="importMode" value="replace"> 取代：用備份覆蓋目前資料</label>
-    </fieldset>
-    <p class="fine">JSON 備份包含所有紀錄和用餐相片，可以用來搬到另一部裝置。完整 CSV 也可以還原全部資料；工時報表 CSV 供試算表查看。</p>
+    <h3 class="set-group">還原</h3>
+    <div class="set-list">
+      <label class="set-row">${setIcon('upload')}<span class="set-txt"><strong>匯入 JSON／完整 CSV 備份</strong><small>揀檔案之前，先喺下面揀合併定取代</small></span>${icon('right', 16, 2)}<input type="file" accept=".csv,.json,application/json,text/csv" data-action="import-json" hidden></label>
+      <fieldset class="radio-row set-radio"><legend>匯入時</legend>
+        <label><input type="radio" name="importMode" value="merge" checked> 合併：只加入新的紀錄</label>
+        <label><input type="radio" name="importMode" value="replace"> 取代：用備份覆蓋目前資料</label>
+      </fieldset>
+      ${setRow('temp-open', 'list', '從臨時版匯入', '將臨時版記低嘅紀錄搬入嚟')}
+      ${setRow('recovery-download', 'cloud', '下載上次取代前的備份', '用「取代」之前自動留低嗰份')}
+    </div>
+    <h3 class="set-group">維護</h3>
+    <div class="set-list">
+      ${setRow('sleep-wd-reset', 'moon', `重新計算睡眠歸屬${changes ? `（${changes} 筆）` : ''}`, `${resetLine}手動指定過的不受影響。`)}
+    </div>
   </section>`;
 }
+
+// 設定清單行：左邊圖示、中間標題同說明、右邊箭咀；primary 用實色圖示突出最常用嗰個。
+const setIcon = (ic, primary = false) => `<span class="set-ic${primary ? ' is-primary' : ''}" aria-hidden="true">${icon(ic, 18, 2)}</span>`;
+const setRow = (action, ic, title, sub, primary = false) => `<button type="button" class="set-row" data-action="${action}">${setIcon(ic, primary)}<span class="set-txt"><strong>${title}</strong><small>${sub}</small></span>${icon('right', 16, 2)}</button>`;
 
 function reminderCard(prefs = {}) {
   const options = [
