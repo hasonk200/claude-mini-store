@@ -1588,3 +1588,24 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
 .kpi.k-work-soft span, .kpi.k-work-soft small { color: var(--work-deep); }
 .kpi.k-commute-soft span, .kpi.k-commute-soft small { color: var(--commute-deep); }
 .kpi.k-sleep-soft span, .kpi.k-sleep-soft small { color: var(--sleep-deep); }
+
+/* 2.38 電腦版：「這趟通勤與出勤」縮細放入時間帶框，色條下面 */
+.dayhero.is-wide { grid-template-areas: "head head" "band status" "steps status"; }
+.dayhero.is-wide .dh-status { grid-row: 2 / span 2; }
+.dh-steps { grid-area: steps; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--hb-line); }
+.dh-steps-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.dh-steps-head h2 { font-size: 13px; font-weight: 600; color: var(--hb-muted); }
+.dh-steps-head .link-inline { font-size: 12.5px; color: var(--hb-fg); }
+.dh-steps .stepper::before, .dh-steps .stepper::after { top: 13px; }
+.dh-steps .stepper::before { background: var(--hb-line); }
+.dh-steps .bubble.b-lg { width: 28px; height: 28px; border-radius: 8px; }
+.dh-steps .bubble svg { width: 15px; height: 15px; }
+.dh-steps .bubble-check { width: 13px; height: 13px; right: -4px; bottom: -4px; border-width: 1.5px; }
+.dh-steps .bubble-check svg { width: 8px; height: 8px; }
+.dh-steps .bubble.is-empty, .dh-steps .bubble.is-plan { background: transparent; }
+.dh-steps .step { gap: 1px; cursor: pointer; }
+.dh-steps .step-label { margin-top: 3px; font-size: 11px; color: var(--hb-muted); }
+.dh-steps .step.is-done .step-label, .dh-steps .step.is-current .step-label { color: var(--hb-fg); }
+.dh-steps .step-time { font-size: 12.5px; color: var(--hb-muted); }
+.dh-steps .step.is-done .step-time { color: var(--hb-fg); }
+.dh-steps .step-note { font-size: 10px; color: var(--hb-muted); }
