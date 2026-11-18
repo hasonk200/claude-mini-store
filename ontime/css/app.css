@@ -1445,3 +1445,5 @@ body { background: linear-gradient(180deg, var(--wash) 0, var(--bg) 460px) no-re
 .meal-hero .sh-big { color: var(--ink); }
 .meal-hero.is-long .sh-big { color: var(--meal-deep); }
 .meal-hero .link-inline { margin-left: 4px; }
+/* 深色重點卡（統計總工時、本週工時）：用夜晚時間帶嘅深藍，同首頁同一套語言 */
+.card-ink:not(.status-card) { background: radial-gradient(120% 90% at 90% 0%, #34386E 0%, rgba(52, 56, 110, 0) 60%), linear-gradient(170deg, #121A34 0%, #1C2650 60%, #232B5A 100%); color: #EEF1FB; box-shadow: 0 0 0 1px rgba(255, 255, 255, .06), 0 18px 40px -24px rgba(18, 26, 52, .6); }
