@@ -389,15 +389,6 @@ const handlers = {
     $('#hero-host .hero-toggle')?.focus();
   },
   'sync-out': () => { signOut(); toast('已登出，這部裝置上的紀錄仍然保留'); },
-  'hero-poke': () => {
-    const h = $('.hero');
-    if (!h) return;
-    h.classList.remove('is-poked');
-    void h.getBoundingClientRect();
-    h.classList.add('is-poked');
-    clearTimeout(handlers.pokeT);
-    handlers.pokeT = setTimeout(() => h.classList.remove('is-poked'), 1000);
-  },
   'step': (el) => {
     const step = el.dataset.step;
     const r = act.recordStep(step, nowFn());
