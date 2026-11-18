@@ -34,7 +34,7 @@ const ui = {
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
   selRef: null, sheet: null, incomeEdit: null, jobEdit: null, canInstall: false,
   pendingRecord: null, pendingDelete: null, flash: null, sleepSaved: null,
-  drafts: loadDrafts(), heroCollapsed: loadPref('ontime-hero') === 'collapsed',
+  drafts: loadDrafts(), heroCollapsed: loadPref('ontime-scene') !== 'on',
   todayMore: loadPref('ontime-today-more') === 'open',
   sleepFill: loadPref('ontime-sleep-fill') === 'open', sleepAttr: loadPref('ontime-sleep-attr') === 'open'
 };
@@ -196,7 +196,7 @@ function applyTheme(theme) {
   if (theme === 'light' || theme === 'dark') root.dataset.theme = theme; else delete root.dataset.theme;
   try { localStorage.setItem('ontime-theme', theme || 'auto'); } catch { /* 忽略 */ }
   const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0E1116' : '#F4F5F1');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0B1018' : '#EEF1F5');
 }
 
 // 背景重畫（同步、定時更新、標示過期）遇到你正在欄位裡打字：先不換畫面，離開欄位後才更新。
@@ -384,7 +384,7 @@ const handlers = {
   'sync-retry': () => { retrySync(); toast('正在再試一次同步'); render(); },
   'hero-toggle': () => {
     ui.heroCollapsed = !ui.heroCollapsed;
-    savePref('ontime-hero', ui.heroCollapsed ? 'collapsed' : 'open');
+    savePref('ontime-scene', ui.heroCollapsed ? 'off' : 'on');
     render();
     $('#hero-host .hero-toggle')?.focus();
   },
@@ -868,6 +868,8 @@ function tripTyped(f) {
   }
   const sum = f.querySelector('[data-trip-sum]');
   if (sum) sum.innerHTML = tripSummaryHTML(st);
+  // 實際日期未手動揀過：跟住第一格自動變（凌晨 4 點前 = 工作日隔天）。
+  if (st.anchorAuto && f.anchor && f.anchor.value !== st.anchor) f.anchor.value = st.anchor;
 }
 
 // ---------- 補登防撳錯 ----------

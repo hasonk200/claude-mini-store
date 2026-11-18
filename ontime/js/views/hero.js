@@ -141,7 +141,7 @@ function heroStrip({ now, headline, line, eyebrow }) {
   const sky = skyOf(d.getHours() + d.getMinutes() / 60);
   return `<section class="hero hero-strip" data-sky="${sky}" aria-label="今天的狀態">
     <div class="hero-text"><span class="hero-eyebrow">${esc(eyebrow)}</span><strong class="hero-headline">${esc(headline)}</strong>${line ? `<span class="hero-line">${esc(line)}</span>` : ''}</div>
-    <button type="button" class="hero-toggle" data-action="hero-toggle" aria-expanded="false" aria-label="展開街景">展開</button>
+    <button type="button" class="hero-toggle" data-action="hero-toggle" aria-expanded="false" aria-label="展開街景">街景</button>
   </section>`;
 }
 

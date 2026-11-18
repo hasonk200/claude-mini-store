@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyData, replaceAll, get } from '../js/store.js';
 import { at, HOUR, fmtTime } from '../js/time.js';
-import { tripWorkdaySuggestion, resolveTrip, checkTrip, tripState, tripsOfWorkday, tripTimes, findTrip, tripSummary, tripErrorText, tripAllVerified, workdayOfSession, sessionWorkMs, STEPS } from '../js/logic.js';
+import { tripWorkdaySuggestion, resolveTripDetail, resolveTrip, checkTrip, tripState, tripsOfWorkday, tripTimes, findTrip, tripSummary, tripErrorText, tripAllVerified, workdayOfSession, sessionWorkMs, STEPS } from '../js/logic.js';
 import { saveTrip, deleteTrip } from '../js/actions.js';
 import { sheetView, openTripSheet } from '../js/views/sheet.js';
 
@@ -223,4 +223,57 @@ test('漏記睡眠嘅提示：週四晚開工但計咗入週三工作日 → 建
   // 啱啱起身幾個鐘就開工（正常情況）：唔會提示。
   fresh({ jobs: [job], sleeps: [{ id: 'z', start: at('2026-11-12', '09:00'), end: at('2026-11-12', '17:00') }], sessions: [ses('s1', at('2026-11-13', '00:30'), at('2026-11-13', '07:00'))] });
   assert.equal(tripWorkdaySuggestion(get(), findTrip(get(), { sessionId: 's1' })), null);
+});
+
+test('舊紀錄日期記錯（上班記早咗一日）：打開就按次序排好，講明改咗邊格，儲存就修正', () => {
+  // 真實情況：出門 週一 00:29、下班 週一 09:37 都啱，但上班被記成 週日 01:14（早咗一日）。
+  const s0 = ses('s1', at('2026-11-15', '01:14'), at('2026-11-16', '09:37'), { workdayDate: '2026-11-15', workdayManual: true });
+  fresh({ jobs: [job], sessions: [s0], journeys: [{ id: 'j1', sessionId: 's1', out: at('2026-11-16', '00:29'), ride: null, arrive: null, leave: null, ride2: null, home: null }] });
+  const now = at('2026-11-16', '14:00');
+  const st = tripState(get(), { wd: '2026-11-15', sessionId: 's1' }, now);
+  assert.deepEqual(st.repaired, ['clockIn']);
+  assert.equal(st.error, null);
+  assert.equal(st.times.out, at('2026-11-16', '00:29'));
+  assert.equal(st.times.clockIn, at('2026-11-16', '01:14'));
+  assert.equal(st.times.clockOut, at('2026-11-16', '09:37'));
+  const html = sheetView({ data: get(), now, ui: { sheet: { type: 'trip', wd: '2026-11-15', sessionId: 's1' } } });
+  assert.match(html, /「上班」記成 <strong>週日 11\/15<\/strong>，已按次序改成 <strong>週一 11\/16<\/strong>/);
+  assert.equal(saveTrip({ sessionId: 's1', wd: '2026-11-15', times: st.times }, now).ok, true);
+  const d = get();
+  assert.equal(d.sessions[0].start, at('2026-11-16', '01:14'));
+  assert.equal(sessionWorkMs(d.sessions[0], now), (8 * 60 + 23) * 60000);
+  assert.equal(workdayOfSession(d.sessions[0], d), '2026-11-15');
+  assert.deepEqual(tripState(d, { wd: '2026-11-15', sessionId: 's1' }, now).repaired, []);
+});
+
+test('舊紀錄日期記錯（下面嗰格遲咗成日）：一樣按次序拉返埋；正常嘅夜班唔會被當成錯', () => {
+  const orig = { ...blank(), out: at('2026-11-13', '20:10'), clockIn: at('2026-11-14', '21:00'), clockOut: at('2026-11-15', '07:30') };
+  const vals = Object.fromEntries(STEPS.map((k) => [k, orig[k] == null ? '' : fmtTime(orig[k])]));
+  const r = resolveTripDetail(orig, vals, '2026-11-13');
+  assert.deepEqual(r.repaired, ['clockIn', 'clockOut']);
+  assert.equal(r.times.clockIn, at('2026-11-13', '21:00'));
+  assert.equal(r.times.clockOut, at('2026-11-14', '07:30'));
+  const ok = { ...blank(), out: at('2026-11-13', '20:10'), clockIn: at('2026-11-13', '21:00'), clockOut: at('2026-11-14', '07:30'), home: at('2026-11-14', '08:15') };
+  const okVals = Object.fromEntries(STEPS.map((k) => [k, ok[k] == null ? '' : fmtTime(ok[k])]));
+  assert.deepEqual(resolveTripDetail(ok, okVals, '2026-11-13').repaired, []);
+});
+
+test('新的一趟：第一格係凌晨 4 點前嘅鐘數 → 自動係工作日嘅隔天凌晨（唔會記早一日）', () => {
+  fresh({ jobs: [job] });
+  const now = at('2026-11-16', '14:00');
+  const v = (o) => ({ out: '', ride: '', arrive: '', clockIn: '', clockOut: '', ride2: '', home: '', ...o });
+  // 週日工作日，凌晨 00:29 出門、01:14 上班、09:37 下班 → 全部係週一。
+  const st = tripState(get(), { wd: '2026-11-15', isNew: true, vals: v({ out: '00:29', clockIn: '01:14', clockOut: '09:37' }) }, now);
+  assert.equal(st.anchor, '2026-11-16');
+  assert.equal(st.times.out, at('2026-11-16', '00:29'));
+  assert.equal(st.times.clockIn, at('2026-11-16', '01:14'));
+  assert.equal(st.times.clockOut, at('2026-11-16', '09:37'));
+  assert.equal(st.error, null);
+  // 夜晚出門（正常夜班）照舊係工作日當日。
+  const st2 = tripState(get(), { wd: '2026-11-13', isNew: true, vals: v({ out: '20:10', clockIn: '21:00' }) }, now);
+  assert.equal(st2.anchor, '2026-11-13');
+  assert.equal(st2.times.out, at('2026-11-13', '20:10'));
+  // 你自己揀咗實際日期：照你揀嗰日，唔再自動估。
+  const st3 = tripState(get(), { wd: '2026-11-15', isNew: true, anchor: '2026-11-15', vals: v({ clockIn: '01:14' }) }, now);
+  assert.equal(st3.times.clockIn, at('2026-11-15', '01:14'));
 });

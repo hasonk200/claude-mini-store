@@ -337,13 +337,13 @@ export function todayView(ctx) {
       <button type="button" class="btn btn-ink" data-action="open-record">${icon('plus', 18, 2.4)}新增記錄 <kbd>N</kbd></button>
     </div>
   </header>`;
+    // 桌面：成個工作日嘅時間軸放最頂（一眼睇到今日點過），之後先係現在狀態同要做嘅事。
     return `${head}
+      ${ribbonCard}
       <div class="grid-today">
         <div class="stack today-main">${status}${tiles}</div>
         <div class="today-side">${todo}${nextCard(data, now)}${budget}</div>
       </div>
-      <h2 class="section-label">詳細</h2>
-      ${ribbonCard}
       ${stepCard}
       ${eventTable(data, wd, now, ui)}`;
   }

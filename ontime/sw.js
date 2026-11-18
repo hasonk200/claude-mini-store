@@ -2,14 +2,16 @@
 // 版本：主.次.修（semver）。主版 2 代表目前這一代；次版延續舊的流水號（原本 v17）。
 // 改功能或畫面 → 升次版；只修錯字、註解或微調 → 升修訂版。
 // 這個字串也是快取名稱，改了才會讓舊快取失效、使用者拿到新檔。
-const VERSION = '2.32.0';
+const VERSION = '2.33.0';
 const CACHE = `ontime-${VERSION}`;
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/sync.js', './js/legacy.js', './js/actions.js', './js/logic.js', './js/time.js', './js/ui.js',
   './js/views/shared.js', './js/views/today.js', './js/views/hero.js', './js/views/timeline.js', './js/views/week.js',
   './js/views/sleep.js', './js/views/meals.js', './js/views/stats.js', './js/views/settings.js', './js/views/sheet.js',
-  './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'
+  './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
+  './fonts/ibm-plex-sans-latin-400-normal.woff2', './fonts/ibm-plex-sans-latin-500-normal.woff2', './fonts/ibm-plex-sans-latin-600-normal.woff2', './fonts/ibm-plex-sans-latin-700-normal.woff2',
+  './fonts/ibm-plex-sans-condensed-latin-500-normal.woff2', './fonts/ibm-plex-sans-condensed-latin-600-normal.woff2', './fonts/ibm-plex-sans-condensed-latin-700-normal.woff2'
 ];
 const FONT_CACHE = 'ontime-fonts';
 
