@@ -1,6 +1,6 @@
 // Calendar arithmetic uses local dates so overnight entries keep their wall clocks across DST.
 import { addDays, dateKey, fmtDayMD, fmtTime, fmtDurLong, fromInputs, normTime, HOUR, MIN, DAY } from './time.js';
-import { awakeSince, lastMeal, workdayOfSession, journeyOfSession, sleepByWorkday, sessionsOfWorkday, latestOpenSleep } from './logic.js';
+import { awakeSince, lastMeal, workdayOfSession, journeyOfSession, sleepByWorkday, sessionsOfWorkday, latestOpenSleep, STEPS, shiftsOfWorkday, tripState, currentWorkday, currentCycle } from './logic.js';
 
 export function clockAt(date, raw) {
   const clock = normTime(raw);
@@ -160,4 +160,207 @@ export function restTarget(data, range, mode, now) {
   if (!session && mode === 'auto' && data.sessions.some(s => s.start<end && (s.end ?? (s.endPending?s.start:now))>start))
     return {error:'休息跨過上下班，請分開兩段'};
   return {session};
+}
+
+// ---------- 整趟面板輔助（2.42）：通勤時間差預填、單一「現在」步驟、兩點即時時長 ----------
+// 不改 resolveTrip / tripState / checkTrip 任何規則；只算出 HH:MM 與起始日交回原本邏輯推算與驗證。
+const MAX_COMMUTE_OFFSET_MS = 4 * HOUR;
+
+export function tripCommuteTemplate(data, { jobId = null, excludeSessionId = null, excludeJourneyId = null } = {}) {
+  const sessions = (data.sessions || [])
+    .filter((s) => s.id !== excludeSessionId && s.start != null)
+    .sort((a, b) => b.start - a.start);
+  const ordered = jobId
+    ? [...sessions.filter((s) => s.jobId === jobId), ...sessions.filter((s) => s.jobId !== jobId)]
+    : sessions;
+
+  let go = null;
+  let back = null;
+  let hasHistory = false;
+
+  for (const s of ordered) {
+    const j = journeyOfSession(data, s);
+    if (!j || j.id === excludeJourneyId) continue;
+    if (!go) {
+      const out = j.out != null && s.start >= j.out && s.start - j.out <= MAX_COMMUTE_OFFSET_MS ? s.start - j.out : null;
+      const ride = j.ride != null && s.start >= j.ride && s.start - j.ride <= MAX_COMMUTE_OFFSET_MS ? s.start - j.ride : null;
+      const arrive = j.arrive != null && s.start >= j.arrive && s.start - j.arrive <= MAX_COMMUTE_OFFSET_MS ? s.start - j.arrive : null;
+      const okOrder = (out == null || ride == null || out >= ride)
+        && (ride == null || arrive == null || ride >= arrive)
+        && (out == null || arrive == null || out >= arrive);
+      if (okOrder && (out != null || ride != null || arrive != null)) {
+        go = { out, ride, arrive };
+        hasHistory = true;
+      }
+    }
+    if (!back && s.end != null) {
+      const ride2 = j.ride2 != null && j.ride2 >= s.end && j.ride2 - s.end <= MAX_COMMUTE_OFFSET_MS ? j.ride2 - s.end : null;
+      const home = j.home != null && j.home >= s.end && j.home - s.end <= MAX_COMMUTE_OFFSET_MS ? j.home - s.end : null;
+      const okOrder = ride2 == null || home == null || home >= ride2;
+      if (okOrder && (ride2 != null || home != null)) {
+        back = { ride2, home };
+        hasHistory = true;
+      }
+    }
+    if (go && back) break;
+  }
+
+  const outMin = data.settings?.commuteOutMin ?? 45;
+  const backMin = data.settings?.commuteBackMin ?? 45;
+  if (!go && outMin > 0) go = { out: outMin * MIN, ride: null, arrive: null };
+  if (!back && backMin > 0) back = { ride2: null, home: backMin * MIN };
+  return { go, back, hasHistory };
+}
+
+export function tripPrefill(data, sh, now, mode = 'all') {
+  const cur = tripState(data, sh, now);
+  const vals = { ...cur.vals };
+  const ts = { ...cur.times };
+  const preSet = new Set(sh.prefilled || []);
+  const canFill = (k) => !vals[k] || preSet.has(k);
+  const shifts = shiftsOfWorkday(data, sh.wd);
+  const shift = (sh.jobId && shifts.find((x) => x.jobId === sh.jobId)) || shifts[0] || null;
+  const targetJobId = sh.jobId || cur.trip?.session?.jobId || shift?.jobId || data.jobs?.[0]?.id || null;
+  const tpl = tripCommuteTemplate(data, {
+    jobId: targetJobId,
+    excludeSessionId: cur.trip?.session?.id ?? null,
+    excludeJourneyId: cur.trip?.journey?.id ?? null
+  });
+
+  const filledSteps = [];
+  const skippedFuture = [];
+  let nextJobId = sh.jobId || null;
+
+  if (mode === 'shift' || mode === 'all') {
+    if (!shift) {
+      return { ok: false, reason: 'no-shift' };
+    }
+    if (!sh.jobId && !cur.exists && shift.jobId) nextJobId = shift.jobId;
+    for (const [k, t] of [['clockIn', shift.start], ['clockOut', shift.end]]) {
+      if (t == null || !canFill(k)) continue;
+      if (t <= now) {
+        ts[k] = t;
+        vals[k] = fmtTime(t);
+        filledSteps.push(k);
+      } else {
+        skippedFuture.push(k);
+      }
+    }
+  }
+
+  if (mode === 'commute' || mode === 'all') {
+    const ci = ts.clockIn;
+    const co = ts.clockOut;
+    if (ci == null && co == null) {
+      if (mode === 'commute') return { ok: false, reason: 'need-work-time' };
+    } else {
+      if (ci != null && tpl.go) {
+        for (const k of ['out', 'ride', 'arrive']) {
+          const off = tpl.go[k];
+          if (off == null || !canFill(k)) continue;
+          const t = ci - off;
+          if (t <= now) {
+            ts[k] = t;
+            vals[k] = fmtTime(t);
+            filledSteps.push(k);
+          } else {
+            skippedFuture.push(k);
+          }
+        }
+      }
+      if (co != null && tpl.back) {
+        for (const k of ['ride2', 'home']) {
+          const off = tpl.back[k];
+          if (off == null || !canFill(k)) continue;
+          const t = co + off;
+          if (t <= now) {
+            ts[k] = t;
+            vals[k] = fmtTime(t);
+            filledSteps.push(k);
+          } else {
+            skippedFuture.push(k);
+          }
+        }
+      }
+    }
+  }
+
+  if (!filledSteps.length) {
+    return { ok: false, reason: skippedFuture.length ? 'all-future' : 'already-filled' };
+  }
+
+  const firstStep = STEPS.find((k) => vals[k]);
+  const earliestT = firstStep ? ts[firstStep] : null;
+  const prevAnchor = cur.anchor;
+  const newAnchor = earliestT != null ? dateKey(earliestT) : prevAnchor;
+  const anchorShifted = newAnchor !== prevAnchor;
+  const anchorShiftNote = anchorShifted
+    ? (newAnchor < prevAnchor
+      ? `已自動調前至 ${fmtDayMD(newAnchor)}（第一格在午夜前）`
+      : `已自動調至 ${fmtDayMD(newAnchor)}`)
+    : '';
+
+  return {
+    ok: true,
+    vals,
+    anchor: newAnchor,
+    anchorShifted,
+    anchorShiftFrom: prevAnchor,
+    anchorShiftNote,
+    filledSteps,
+    skippedFuture,
+    jobId: nextJobId,
+    hasHistory: tpl.hasHistory
+  };
+}
+
+// 「現在」掣：補舊日子完全唔出；只有今日進行緊嗰趟，喺下一格未填嘅位置保留一粒。
+export function tripNowStep(data, sh, st, now, { commuteCollapsed = false } = {}) {
+  const todayWd = currentWorkday(data, now);
+  if (sh.wd !== todayWd && st.workday !== todayWd) return null;
+  if (st.times.home != null) return null;
+  if (st.exists) {
+    const s = st.trip.session;
+    if (s && (data.sessions || []).some((x) => x.id !== s.id && x.start > s.start)) return null;
+    if (s && s.end != null && now - s.end > 6 * HOUR) return null;
+    const cyc = currentCycle(data, now);
+    if (cyc.session && (!s || cyc.session.id !== s.id)) return null;
+  }
+  let lastIdx = -1;
+  STEPS.forEach((k, i) => { if (st.times[k] != null) lastIdx = i; });
+  if (lastIdx === -1) return commuteCollapsed ? 'clockIn' : 'out';
+  if (lastIdx >= STEPS.length - 1) return null;
+  if (commuteCollapsed && lastIdx === 4) return null;
+  return STEPS[lastIdx + 1];
+}
+
+export function tripWorkBreakMs(st) {
+  const ci = st.times?.clockIn;
+  const co = st.times?.clockOut;
+  if (ci == null || co == null) return 0;
+  return (st.trip?.session?.breaks || []).reduce((n, b) => {
+    if (b.start == null || b.end == null) return n;
+    const a = Math.max(b.start, ci);
+    const e = Math.min(b.end, co);
+    return e > a ? n + (e - a) : n;
+  }, 0);
+}
+
+// 相鄰已填步驟之間的真實用時（支援中間跳格，例如出門直接到上班）。
+export function tripStepGaps(st) {
+  const gaps = {};
+  let prevStep = null;
+  let prevT = null;
+  let prevIdx = -1;
+  STEPS.forEach((k, idx) => {
+    const t = st.times?.[k];
+    if (t == null) return;
+    if (prevT != null && t >= prevT) {
+      gaps[k] = { from: prevStep, to: k, ms: t - prevT, skipped: idx - prevIdx > 1 };
+    }
+    prevStep = k;
+    prevT = t;
+    prevIdx = idx;
+  });
+  return gaps;
 }
