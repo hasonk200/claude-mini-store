@@ -18,7 +18,7 @@ import {
 import { texturesSettled } from './textures.mjs';
 import { createLoop } from './loop.mjs';
 import { syncOverlay, resetOverlay, projectPoint } from './overlay.mjs';
-import { spotPosition } from './layout.mjs';
+import { spotPosition, orbitPosition } from './layout.mjs';
 import { forwardClicks } from './picking.mjs';
 import { palette } from './palette.mjs';
 
@@ -71,7 +71,8 @@ function use3D() {
 function draw() {
   if (!current) return;
   const { THREE } = loadedThree();
-  getRenderer().render(current.scene.scene, current.scene.camera);
+  if (current.scene.render) current.scene.render(getRenderer());
+  else getRenderer().render(current.scene.scene, current.scene.camera);
   syncOverlay(THREE, current.scene.camera, current.container, current.scene.anchors());
   afterOverlay(current.container);
 }
@@ -98,6 +99,25 @@ function resize() {
   draw();
 }
 
+function setOrbitLimits(controls, setup) {
+  controls.minAzimuthAngle = radians(setup.azimuth - setup.azimuthRange);
+  controls.maxAzimuthAngle = radians(setup.azimuth + setup.azimuthRange);
+  controls.minPolarAngle = radians(setup.polarMin);
+  controls.maxPolarAngle = radians(setup.polarMax);
+}
+
+// Change the framing in place, keeping the mounted canvas and its scenery.
+function setSceneView(kind, view) {
+  const scene = scene3D(kind);
+  if (!scene?.setView) return;
+  scene.setView(view);
+  const setup = scene.cameraSetup;
+  current.controls.target.set(...setup.target);
+  scene.camera.position.set(...orbitPosition(setup));
+  setOrbitLimits(current.controls, setup);
+  resize();
+}
+
 function attach(container) {
   const canvas = getRenderer().domElement;
   const moved = current.container !== container || canvas.parentElement !== container;
@@ -112,7 +132,7 @@ function attach(container) {
   resize();
 }
 
-function create(kind, container, reducedMotion) {
+function create(kind, container, reducedMotion, makeSnapshot) {
   const { THREE, OrbitControls } = loadedThree();
   const canvas = getRenderer().domElement;
   let loop = null;
@@ -123,9 +143,23 @@ function create(kind, container, reducedMotion) {
     reducedMotion,
     requestRender: () => loop && loop.requestRender(),
   });
+  // Some browsers deliver a media-query change after their next animation frame.
+  // Check the same query before advancing the lake as well, so no wave or camera
+  // motion slips through when the user has already asked for a still picture.
+  const motion = kind === 'haven' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  function syncMotion() {
+    if (motion.matches === reducedMotion || current?.scene !== scene) return false;
+    const view = scene.describe().view;
+    mount3D(kind, current.container, makeSnapshot);
+    setSceneView(kind, view);
+    return true;
+  }
+  motion?.addEventListener('change', syncMotion);
   loop = createLoop({
     render: draw,
-    tick: (dt) => scene.tick(dt),
+    tick: (dt) => {
+      if (!motion || !syncMotion()) scene.tick(dt);
+    },
     busy: () => scene.busy(),
     ambient: () => scene.ambient(),
     reducedMotion,
@@ -137,10 +171,7 @@ function create(kind, container, reducedMotion) {
   controls.enableZoom = false;
   controls.enablePan = false;
   controls.rotateSpeed = 0.45;
-  controls.minAzimuthAngle = radians(setup.azimuth - setup.azimuthRange);
-  controls.maxAzimuthAngle = radians(setup.azimuth + setup.azimuthRange);
-  controls.minPolarAngle = radians(setup.polarMin);
-  controls.maxPolarAngle = radians(setup.polarMax);
+  setOrbitLimits(controls, setup);
   controls.enabled = !reducedMotion;
   controls.addEventListener('change', () => loop.requestRender());
   // Vertical swipes still scroll the page on touch screens.
@@ -153,6 +184,7 @@ function create(kind, container, reducedMotion) {
     controls,
     reducedMotion,
     observer: new ResizeObserver(resize),
+    stopMotion: () => motion?.removeEventListener('change', syncMotion),
     stopClicks: forwardClicks(
       canvas,
       () => current && current.scene,
@@ -192,7 +224,7 @@ function mount3D(kind, container, makeSnapshot) {
         });
       return false;
     }
-    create(kind, container, reducedMotion);
+    create(kind, container, reducedMotion, makeSnapshot);
   } else attach(container);
   current.scene.update(makeSnapshot());
   draw();
@@ -212,12 +244,13 @@ function unmount3D(kind) {
   // Leaving 3D altogether (not just one scene) also puts the photo studio away.
   if (!kind && !use3D()) closeStudio();
   if (!current || (kind && current.kind !== kind)) return;
-  const { scene, loop, controls, observer, stopClicks, container } = current;
+  const { scene, loop, controls, observer, stopClicks, stopMotion, container } = current;
   current = null;
   loop.stop();
   controls.dispose();
   observer.disconnect();
   stopClicks();
+  stopMotion();
   resetOverlay(container, scene.anchors());
   scene.dispose();
   getRenderer().domElement.remove();
@@ -336,6 +369,7 @@ export {
   unmount3D,
   ready3D,
   scene3D,
+  setSceneView,
   use3D,
   local3DSetting,
   setLocal3DSetting,

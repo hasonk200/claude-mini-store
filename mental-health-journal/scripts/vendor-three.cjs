@@ -11,6 +11,8 @@ const target = path.join(root, 'vendor', 'three');
 const FILES = [
   ['build/three.module.min.js', 'three.module.min.js'],
   ['examples/jsm/controls/OrbitControls.js', 'addons/controls/OrbitControls.js'],
+  ['examples/jsm/objects/Reflector.js', 'addons/objects/Reflector.js'],
+  ['examples/jsm/objects/Sky.js', 'addons/objects/Sky.js'],
   ['LICENSE', 'LICENSE'],
 ];
 const EXPECTED_VERSION = '0.170.0';

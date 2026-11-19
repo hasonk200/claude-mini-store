@@ -51,6 +51,7 @@ test('without WebGL the quiet lakeside shows its painted picture', async ({ page
   await expect(page.locator('#haven-scene .haven-pet svg')).toHaveCount(1);
   await expect(page.locator('canvas.scene3d')).toHaveCount(0);
   await expect(page.locator('#haven-scene')).not.toHaveClass(/\bis-3d\b/);
+  await expect(page.locator('#haven-view')).toBeHidden();
   await page.locator('#haven-rest').click();
   await expect(page.locator('#haven-copy')).toContainText('60 秒');
 });

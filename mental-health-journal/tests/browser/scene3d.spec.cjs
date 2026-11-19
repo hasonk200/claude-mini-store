@@ -257,6 +257,7 @@ test('quiet mode always shows the flat room', async ({ page }) => {
   data.settings.quiet = true;
   await open(page, 'pet', data);
   await expect(page.locator('#room > svg.scene')).toHaveCount(1);
+  await expect(page.locator('#haven-view')).toBeHidden();
   await expect(page.locator('canvas.scene3d')).toHaveCount(0);
   expect(await live(page)).toBe(null);
 });
@@ -603,6 +604,39 @@ test('the night street is 3D, and is night at any hour', async ({ page }) => {
   expect(await live(page)).toBe('home');
 });
 
+// Count the actual WebGL submissions independently of three.js statistics. The
+// mirror camera draws to a texture, then the main camera finishes on the canvas.
+async function expectHavenFrameInBudget(page) {
+  const frame = await page.evaluate(async () => {
+    const { getRenderer } = await import('/js/scene3d/renderer.mjs');
+    const { scene3D } = await import('/js/scene3d/mount.mjs');
+    const renderer = getRenderer(),
+      gl = renderer.getContext();
+    let calls = 0,
+      triangles = 0,
+      reflectedCalls = 0;
+    const originals = { drawArrays: gl.drawArrays, drawElements: gl.drawElements };
+    try {
+      for (const [method, original] of Object.entries(originals)) {
+        gl[method] = function (mode, ...args) {
+          calls++;
+          if (renderer.getRenderTarget()) reflectedCalls++;
+          if (mode === gl.TRIANGLES) triangles += (method === 'drawArrays' ? args[1] : args[0]) / 3;
+          return original.call(this, mode, ...args);
+        };
+      }
+      scene3D('haven').render(renderer);
+      return { calls, triangles, reflectedCalls, info: window.JournalScene3D.info() };
+    } finally {
+      Object.assign(gl, originals);
+    }
+  });
+  expect(frame.reflectedCalls).toBeGreaterThan(0);
+  expect(frame.info).toMatchObject({ calls: frame.calls, triangles: frame.triangles });
+  expect(frame.triangles).toBeLessThanOrEqual(50000);
+  expect(frame.calls).toBeLessThanOrEqual(80);
+}
+
 test('the quiet lakeside is 3D, keeps its one-minute rest, and frees itself on leaving', async ({
   page,
 }) => {
@@ -620,21 +654,63 @@ test('the quiet lakeside is 3D, keeps its one-minute rest, and frees itself on l
   await expect(page.locator('#haven-scene')).toHaveAttribute('aria-label', /湖畔碼頭/);
   await expect(page.locator('#haven-scene canvas.scene3d')).toHaveAttribute('aria-hidden', 'true');
   expect(painted).toEqual([]);
-  const haven = await scene(page);
-  // The companion sits at the edge of the landing, not on the walking line.
-  expect(haven.pet).toMatchObject({ expr: 'normal', x: 0.3 });
-  expect(haven.moving).toBe(false);
-  const info = await page.evaluate(() => window.JournalScene3D.info());
-  expect(info.triangles).toBeLessThanOrEqual(50000);
-  expect(info.calls).toBeLessThanOrEqual(80);
+  const toggle = page.getByRole('button', { name: '陪你／望湖，切換望湖視角' });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  const before = await saved(page);
+  const initial = await scene(page);
+  expect(initial).toMatchObject({
+    view: 'company',
+    water: 'reflective',
+    waveTime: 0,
+    pet: { expr: 'normal', x: 0, z: 1.85, heading: 0.05 },
+  });
+  const cameraPose = () =>
+    page.evaluate(async () => {
+      const { scene3D } = await import('/js/scene3d/mount.mjs');
+      const c = scene3D('haven').camera;
+      return [...c.position.toArray(), ...c.quaternion.toArray(), c.fov];
+    });
+  const originalCamera = await cameraPose();
+  const canvas = await page.locator('#haven-scene canvas').elementHandle();
+  await expectHavenFrameInBudget(page);
   expect(await twoFrames(page)).toBe(true);
-
-  // The rest itself is the same code as in 2D.
-  await page.locator('#haven-rest').click();
+  await page.locator('#haven-rest').focus();
+  await page.keyboard.press('Enter');
   await expect(page.locator('#haven-copy')).toContainText('60 秒');
+  await toggle.focus();
+  await page.keyboard.press('Space');
+  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#haven-scene')).toHaveAttribute('aria-label', /背向你/);
+  const lake = await scene(page);
+  expect(lake).toMatchObject({
+    view: 'lake',
+    water: 'reflective',
+    waveTime: 0,
+    moving: false,
+    pet: { x: 0.3, z: -1 },
+  });
+  expect(lake.pet.heading).toBeCloseTo(Math.PI - 0.18);
+  const finalCamera = await cameraPose();
+  expect(finalCamera).not.toEqual(originalCamera);
+  expect(await canvas.evaluate((el) => el === document.querySelector('#haven-scene canvas'))).toBe(
+    true,
+  );
+  await expectHavenFrameInBudget(page);
+  expect(await twoFrames(page)).toBe(true);
+  expect(await cameraPose()).toEqual(finalCamera);
+  expect((await scene(page)).waveTime).toBe(0);
   await expect(page.locator('#haven-rest')).toHaveText('隨時結束');
-  expect(await live(page)).toBe('haven');
-
+  // Advancing wall time leaves the real interval running and proves switching kept its deadline.
+  await page.clock.setFixedTime(new Date('2026-10-25T20:00:40Z'));
+  await expect(page.locator('#haven-copy')).toContainText('20 秒');
+  await page.keyboard.press('Enter');
+  (await cameraPose()).forEach((value, i) => expect(value).toBeCloseTo(originalCamera[i], 10));
+  expect(await saved(page)).toEqual(before);
+  await page.clock.setFixedTime(new Date('2026-10-25T20:01:00Z'));
+  await expect(page.locator('#haven-copy')).toContainText('一分鐘過咗');
+  await expect(page.locator('#haven-rest')).toHaveText('陪我坐一分鐘');
+  await toggle.press('Space');
   await go(page, 'island');
   await expectStage3D(page, '#island-world');
   expect(await live(page)).toBe('island');
@@ -646,12 +722,117 @@ test('the quiet lakeside is 3D, keeps its one-minute rest, and frees itself on l
   expect(after.textures).toBe(0);
 });
 
+test('returning to the quiet lakeside resets the view and releases the reflection renderer', async ({
+  page,
+}) => {
+  const settings = () =>
+    page.evaluate(async () => {
+      const { getRenderer } = await import('/js/scene3d/renderer.mjs');
+      const r = getRenderer();
+      return {
+        tone: r.toneMapping,
+        exposure: r.toneMappingExposure,
+        space: r.outputColorSpace,
+        autoReset: r.info.autoReset,
+        shadows: r.shadowMap.enabled,
+        updateShadows: r.shadowMap.autoUpdate,
+        screen: r.getRenderTarget() === null,
+        xr: r.xr.enabled,
+        pixelRatio: r.getPixelRatio(),
+        shaderHandler: r.debug.onShaderError === null,
+      };
+    });
+  await open(
+    page,
+    'pet',
+    awakeState({ sp: 'dog', acc: 'beanie', shiny: true, xp: 1300, traits: { adv: 15 } }),
+  );
+  await expectRoom3D(page);
+  const original = await settings();
+  await go(page, 'haven');
+  await expectStage3D(page, '#haven-scene');
+  await page.locator('#haven-view').press('Enter');
+  expect((await scene(page)).view).toBe('lake');
+  await expectHavenFrameInBudget(page);
+  await go(page, 'pet');
+  await expectRoom3D(page);
+  expect(await settings()).toEqual(original);
+  await go(page, 'haven');
+  await expectStage3D(page, '#haven-scene');
+  expect((await scene(page)).view).toBe('company');
+  await expect(page.locator('#haven-view')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('the quiet lakeside ripples with motion allowed and freezes when the system requests reduced motion', async ({
+  page,
+}) => {
+  await page.setViewportSize(MOTION_VIEWPORT);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await open(page, 'haven', awakeState());
+  await expectStage3D(page, '#haven-scene');
+  await expect.poll(async () => (await scene(page)).waveTime).toBeGreaterThan(0);
+  await page.locator('#haven-view').press('Space');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // Switching a live scene to a still rebuilds its GPU resources on SwiftShader.
+  await expect
+    .poll(() => scene(page), { timeout: 20000 })
+    .toMatchObject({ view: 'lake', waveTime: 0, water: 'reflective' });
+  expect(await twoFrames(page)).toBe(true);
+});
+
+test('the quiet lakeside keeps its painted 3D water if the reflection addon fails to load', async ({
+  page,
+}) => {
+  await page.route('**/addons/objects/Reflector.js', (route) => route.abort());
+  await open(page, 'haven', awakeState());
+  await expectStage3D(page, '#haven-scene');
+  expect((await scene(page)).water).toBe('painted');
+  for (const view of ['company', 'lake']) {
+    expect((await scene(page)).view).toBe(view);
+    const painted = await page.evaluate(async () => {
+      const { scene3D } = await import('/js/scene3d/mount.mjs');
+      const water = scene3D('haven').scene.getObjectByName('Painted lake');
+      if (!water?.visible) return false;
+      const image = water.material.map.image,
+        g = image.getContext('2d');
+      const near = g.getImageData(image.width / 2, image.height * 0.9, 1, 1).data;
+      const far = g.getImageData(image.width / 2, image.height * 0.1, 1, 1).data;
+      return (
+        near[3] === 255 &&
+        far[3] === 255 &&
+        near.slice(0, 3).some((channel, i) => Math.abs(channel - far[i]) > 10)
+      );
+    });
+    expect(painted).toBe(true);
+    await page.locator('#haven-view').press('Enter');
+  }
+  await expect(page.locator('#haven-scene .haven-art')).toHaveCount(0);
+});
+
 test('the 3D lakeside shows a companion even before one is adopted', async ({ page }) => {
   const data = awakeState();
   data.pet = null;
+  await page.setViewportSize({ width: 390, height: 844 });
   await open(page, 'haven', data);
   await expectStage3D(page, '#haven-scene');
   expect((await scene(page)).pet).toMatchObject({ expr: 'normal' });
+  const landmarksFit = await page.evaluate(() => {
+    const box = document.querySelector('#haven-scene').getBoundingClientRect();
+    // Boat bow, reeds, front flower beds, lamp finial, balloon crown and lighthouse.
+    return [
+      [-6.7, 0, 0.2],
+      [-7.8, 1.7, 0],
+      [-2.8, 0.5, 3.6],
+      [5.8, 0.5, 3.4],
+      [5.9, 4.4, -0.7],
+      [-30, 25.1, -110],
+      [19.4, 5.3, -52.3],
+    ].every(([x, y, z]) => {
+      const p = window.JournalScene3D.pointOnPage({ x, y, z });
+      return p.x >= box.left && p.x <= box.right && p.y >= box.top && p.y <= box.bottom;
+    });
+  });
+  expect(landmarksFit).toBe(true);
 });
 
 test('quiet mode always shows the painted lakeside', async ({ page }) => {
@@ -924,7 +1105,7 @@ test('review screenshots of the 3D room', async ({ page }) => {
   }
 });
 
-test('review screenshots of the 3D outings, lakeside and island', async ({ page }) => {
+test('review screenshots of the 3D outings and island', async ({ page }) => {
   test.skip(!process.env.UPDATE_3D_SCREENSHOTS, 'only when refreshing docs/screenshots');
   test.slow();
   const folder = path.join(__dirname, '..', '..', 'docs', 'screenshots');
@@ -937,8 +1118,6 @@ test('review screenshots of the 3D outings, lakeside and island', async ({ page 
     ['lake-dusk', '2026-10-25T22:30:00Z', 'lake'],
     ['lake-night', '2026-10-26T03:00:00Z', 'lake'],
     ['street-night', '2026-10-26T03:00:00Z', 'street'],
-    ['haven-day', '2026-10-25T16:00:00Z', 'haven'],
-    ['haven-night', '2026-10-26T03:00:00Z', 'haven'],
     ['island-day', '2026-10-25T16:00:00Z', 'island'],
     ['island-dusk', '2026-10-25T22:30:00Z', 'island'],
     ['island-night', '2026-10-26T03:00:00Z', 'island'],
@@ -954,18 +1133,64 @@ test('review screenshots of the 3D outings, lakeside and island', async ({ page 
     await page
       .evaluate(({ LS, data }) => localStorage.setItem(LS, JSON.stringify(data)), { LS, data })
       .catch(() => {});
-    const island = place === 'island',
-      own = island || place === 'haven';
-    await open(page, own ? place : 'pet', data);
+    const island = place === 'island';
+    await open(page, island ? place : 'pet', data);
     await page.reload();
-    if (!own) {
+    if (!island) {
       await subtab(page, 'pettab', 'out');
       await page.locator('[data-place="' + place + '"]').click();
       await expect(page.locator('#trip-home')).toBeVisible({ timeout: 15000 });
     }
-    const stage = island ? '#island-world' : place === 'haven' ? '#haven-scene' : '#outstage';
+    const stage = island ? '#island-world' : '#outstage';
     await expectStage3D(page, stage);
     await page.waitForTimeout(800);
     await page.locator(stage).screenshot({ path: path.join(folder, '3d-' + name + '.png') });
   }
 });
+
+for (const [name, hour] of [
+  ['day', 16],
+  ['dusk', 22],
+  ['night', 3],
+  ['mobile', 22],
+]) {
+  test('review screenshots of both quiet lakeside views at ' + name, async ({ page }) => {
+    test.skip(!process.env.UPDATE_3D_SCREENSHOTS, 'only when refreshing docs/screenshots');
+    await page.setViewportSize(
+      name === 'mobile' ? { width: 390, height: 844 } : { width: 1440, height: 900 },
+    );
+    await page.clock.setFixedTime(new Date(Date.UTC(2026, 9, 25, hour, 30)));
+    const data = awakeState({ acc: 'scarf' });
+    data.settings.buddy = false;
+    await open(page, 'haven', data);
+    await expectStage3D(page, '#haven-scene');
+    const stage = page.locator('#haven-scene');
+    for (const view of ['company', 'lake']) {
+      if (view === 'lake') await page.locator('#haven-view').press('Enter');
+      expect(await scene(page)).toMatchObject({
+        view,
+        water: 'reflective',
+        time: name === 'mobile' ? 'dusk' : name,
+      });
+      const box = await stage.boundingBox();
+      const info = await page.evaluate(() => window.JournalScene3D.info());
+      console.log(
+        'haven',
+        name,
+        view,
+        Math.round(box.width),
+        Math.round(box.height),
+        info.triangles,
+        info.calls,
+      );
+      await stage.screenshot({
+        style: '#toast { visibility: hidden !important; }',
+        path: path.join(
+          __dirname,
+          '../../docs/screenshots',
+          '3d-haven-' + (view === 'company' ? '' : view + '-') + name + '.png',
+        ),
+      });
+    }
+  });
+}
