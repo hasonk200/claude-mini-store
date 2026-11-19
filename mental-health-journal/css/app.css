@@ -552,8 +552,13 @@ canvas.scene3d{position:absolute;inset:0;width:100%;height:100%;display:block;z-
 #room.is-3d{aspect-ratio:4/3}
 @media(max-width:560px){#room.is-3d{aspect-ratio:5/4}}
 /* Island map in 3D: the painted map, its shade and sparkles and the flat companion step aside. */
-.haven-scene.is-3d,.haven-scene.awaits-3d{aspect-ratio:16/10;max-height:78vh;width:100%}
-@media(max-width:560px){.haven-scene.is-3d,.haven-scene.awaits-3d{aspect-ratio:4/5}}
+.haven-scene.is-3d,.haven-scene.awaits-3d{aspect-ratio:16/10;max-height:88svh;width:100%}
+#haven-view{display:none;align-items:center;gap:2px;padding:3px;border:1px solid var(--rule);border-radius:24px;background:var(--sheet);color:var(--ink-2);font:inherit;font-size:13px;cursor:pointer}
+#page-haven:has(.is-3d) #haven-view{display:inline-flex}
+#haven-view span{padding:7px 12px;border-radius:20px}
+#haven-view[aria-pressed=false] span:first-child,#haven-view[aria-pressed=true] span:last-child{background:var(--red);color:var(--on-red)}
+@media(max-width:560px){.haven-scene.is-3d,.haven-scene.awaits-3d{width:calc(100% + 32px);margin-inline:-16px;aspect-ratio:3/4;max-height:86svh}
+#page-haven .island-heading>.row{justify-content:flex-end}#haven-view span{padding:7px 9px}}
 .world.is-3d .world-shade,.world.is-3d .world-sparkles,.world.is-3d .world-companion{display:none}
 .world-art[hidden]{display:none}
 /* In 3D the stops are compact name tags so they do not hide the buildings; the short

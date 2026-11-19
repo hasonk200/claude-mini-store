@@ -406,6 +406,10 @@ function createOuting(ctx, place) {
       };
     },
     update,
+    setSeat(seat) {
+      place.seat = seat;
+      layout();
+    },
     tick(dt) {
       clock += dt;
       for (const animate of animated) animate(clock);
@@ -477,7 +481,13 @@ function createOuting(ctx, place) {
     describe: () => ({
       time: sceneryKey,
       animated: animated.length,
-      pet: pet ? { expr: pet.expr, x: +pet.group.position.x.toFixed(2) } : null,
+      pet: pet
+        ? {
+            expr: pet.expr,
+            x: +pet.group.position.x.toFixed(2),
+            ...(place.seat ? { z: pet.group.position.z, heading: pet.group.rotation.y } : {}),
+          }
+        : null,
       npc: npc
         ? { id: npcId, visible: npc.group.visible, x: +npc.group.position.x.toFixed(2) }
         : null,

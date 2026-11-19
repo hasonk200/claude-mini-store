@@ -1,47 +1,39 @@
 // 靜靜湖畔 in 3D: a wooden landing on a quiet lake – a bench with a blanket, a lantern on
 // its post, a rowing boat among the lily pads, a village and mountains across the water.
 // Follows the painted picture (assets/lakeside.webp) the flat page shows; here it also
-// follows the time of day. The companion sits at the edge of the landing with their back to
-// us, looking out over a wide lake to the mountains; nothing here asks anything of them.
+// follows the time of day. Both seats share the same landing, light and water.
 import { createOuting } from './outing.mjs';
 import { stars, clouds } from './city.mjs';
 import { leafyTree } from '../props.mjs';
 import { paintWater, paintRipples, paintBoards } from './lake-paint.mjs';
 import { rng } from '../../art/math.mjs';
 
-// Higher than the street scenes, to look out over the water as the picture does.
-const CAMERA = {
-  fov: 35,
-  // Low and level, from just behind the companion: the edge of the landing along the bottom,
-  // then water all the way to the mountains.
-  target: [0.3, 1.9, -2.5],
-  distance: 11,
-  azimuth: 0,
-  // A wide look-around: there is more of the lakeside to either side than fits at once.
-  azimuthRange: 30,
-  polar: 84,
-  polarMin: 78,
-  polarMax: 88,
-  // In a tall box (a phone held upright) the sides are cropped rather than everything
-  // shrinking; turning the view brings them back.
-  needWidth: 6.6,
-  needHeight: 6.9,
-  // The mountains are a long way off.
-  far: 320,
-};
+// Optional as a unit: missing either addon still gives the full painted 3D scene.
+const effects = await import('./haven-atmosphere.mjs').catch(() => null);
 
-const DOCK = { left: -3.3, right: 6.9, back: -1.3, front: 9.4 };
-// The grassy bank beside the landing.
-const BANK = { left: DOCK.right, right: 32, back: -8.5, front: DOCK.front };
+const DOCK = { left: -3.3, right: 7.4, back: -1.3, front: 14 };
+const BANK = { left: DOCK.right, right: 36, back: -8.5, front: DOCK.front };
 const SHORE = -38;
-// Where the far shore ends up once it has been pushed back.
-const SHORE_Z = -112;
-// The far shore is built at `SHORE`, then pushed a long way back and enlarged only a
-// little: the lake is wide, and the other side is small with distance yet can be made out.
-const FAR = { scale: 1.35, shift: -62 };
-const WATER = { y: -0.5, far: SHORE_Z, farHalf: 200, nearHalf: 36 };
-// Where the companion sits: on the very edge, turned a little so a cheek still shows.
-const SEAT = { x: 0.3, z: DOCK.back + 0.3, heading: Math.PI - 0.3 };
+const FAR = { scale: 1.6, shift: -72 };
+const WATER = { y: -0.5, far: SHORE * FAR.scale + FAR.shift, farHalf: 240, nearHalf: 60 };
+const VIEWS = {
+  company: {
+    target: [-0.3, 2.85, 0.65],
+    distance: 15,
+    polar: 83.5,
+    width: 16.4,
+    height: 10.8,
+    seat: { x: 0, z: 1.85, heading: 0.05 },
+  },
+  lake: {
+    target: [0.3, 1.75, -3.3],
+    distance: 10.0,
+    polar: 85.5,
+    width: 8.4,
+    height: 6.6,
+    seat: { x: 0.3, z: DOCK.back + 0.3, heading: Math.PI - 0.18 },
+  },
+};
 const SUN_X = 14;
 
 const TONES = {
@@ -179,7 +171,43 @@ function waterSheet(THREE, y, repeat) {
   return geometry;
 }
 
-function build(env) {
+function paintedLake(env, shore) {
+  const { THREE, group, textures, time, animated } = env;
+  const c = TONES[time];
+  const wide = WATER.farHalf * 2;
+  const water = env.flat(
+    waterSheet(THREE, WATER.y),
+    textures.canvasTexture('place:haven:water:' + time, 1024, 512, (g, w, h) =>
+      paintWater(g, w, h, {
+        time,
+        tones: c.water,
+        sun: 0.5 + SUN_X / wide,
+        shore: shore.map(([x, height, width]) => [
+          0.5 + (x * FAR.scale) / wide,
+          (width * FAR.scale) / wide,
+          height / 9,
+        ]),
+      }),
+    ),
+  );
+  water.name = 'Painted lake';
+  water.material.map.anisotropy = 8;
+  group.add(water);
+  const ripples = textures.canvasTexture('place:haven:ripples:' + time, 256, 256, (g, w, h) =>
+    paintRipples(g, w, h, time),
+  );
+  ripples.wrapS = ripples.wrapT = THREE.RepeatWrapping;
+  const drift = env.flat(waterSheet(THREE, WATER.y + 0.012, [5, 9]), ripples, {
+    transparent: true,
+    depthWrite: false,
+    opacity: 0.45,
+  });
+  drift.renderOrder = 1;
+  group.add(drift);
+  animated.push((t) => (ripples.offset.x = (t * 0.004) % 1));
+}
+
+function build(env, renderer, enableEffects) {
   const { THREE, B, G, S, group, animated, textures, materials, time, night } = env;
   const c = TONES[time],
     dusk = time === 'dusk',
@@ -187,11 +215,12 @@ function build(env) {
   B.bevel = 1;
   const lit = night ? B : G;
 
+  const distant = env.builder();
   /* ---- far away: range behind range of mountains, paler the further off ---- */
   // Each peak is two halves, one catching the light and one in shade, like folded paper.
   const slope = (r, h, light, shade, at) => {
-    G.add(new THREE.ConeGeometry(r, h, 3, 1, true, 0, Math.PI), light, at);
-    G.add(new THREE.ConeGeometry(r, h, 3, 1, true, Math.PI, Math.PI), shade, at);
+    distant.add(new THREE.ConeGeometry(r, h, 3, 1, true, 0, Math.PI), light, at);
+    distant.add(new THREE.ConeGeometry(r, h, 3, 1, true, Math.PI, Math.PI), shade, at);
   };
   const peak = rng(11);
   const range = (z, count, [low, high], [narrow, broad], [light, shade], snowAbove) => {
@@ -240,17 +269,24 @@ function build(env) {
       depthWrite: false,
     });
     band.position.set(0, WATER.y + tall / 2, z);
+    band.layers.enable(1);
     group.add(band);
   }
 
   /* ---- the far shore: wooded hills, a village, rocks at the water's edge ---- */
   const pine = (x, z, s, tone) => {
-    G.cone(0.75 * s, 1.5 * s, c.pine[tone], { x, y: WATER.y + 0.5 + 1.0 * s, z }, 6);
-    G.cone(0.55 * s, 1.3 * s, c.pine[tone], { x, y: WATER.y + 0.5 + 1.8 * s, z }, 6);
-    G.cone(0.34 * s, 1.0 * s, c.pine[1 - tone], { x, y: WATER.y + 0.5 + 2.5 * s, z }, 6);
+    const tier = (radius, height, rise, colour) =>
+      distant.add(new THREE.ConeGeometry(radius * s, height * s, 6, 1, true), colour, {
+        x,
+        y: WATER.y + 0.5 + rise * s,
+        z,
+      });
+    tier(0.75, 1.5, 1, c.pine[tone]);
+    tier(0.55, 1.3, 1.8, c.pine[tone]);
+    tier(0.34, 1, 2.5, c.pine[1 - tone]);
   };
   const shore = [];
-  G.within({ y: (1 - FAR.scale) * WATER.y, z: FAR.shift, s: FAR.scale }, () => {
+  distant.within({ y: (1 - FAR.scale) * WATER.y, z: FAR.shift, s: FAR.scale }, () => {
     [
       [-64, 3.0, 15, 1],
       [-44, 3.5, 14, 0],
@@ -261,13 +297,17 @@ function build(env) {
       [52, 3.6, 15, 0],
       [70, 2.9, 14, 1],
     ].forEach(([x, h, w, tone]) =>
-      G.ball(1, c.hills[tone], { x, y: WATER.y, z: SHORE - 7, sx: w, sy: h, sz: 4 }, 12),
+      distant.add(
+        new THREE.SphereGeometry(1, 12, 4, 0, Math.PI * 2, 0, Math.PI / 2),
+        c.hills[tone],
+        { x, y: WATER.y, z: SHORE - 7, sx: w, sy: h, sz: 4 },
+      ),
     );
     // The near shore across the water: a band of land with rocks along its edge.
-    G.box(170, 0.5, 5, c.hills[1], { y: WATER.y + 0.2, z: SHORE - 1.6 });
+    distant.box(170, 0.5, 5, c.hills[1], { y: WATER.y + 0.2, z: SHORE - 1.6 });
     for (let i = 0; i < 80; i++) {
       const x = -78 + i * 1.95 + random() * 0.8;
-      G.ball(
+      distant.ball(
         0.4 + random() * 0.5,
         c.rock[i % 2],
         { x, y: WATER.y + 0.15, z: SHORE + 0.9 + random() * 0.5, sy: 0.6 },
@@ -282,15 +322,15 @@ function build(env) {
       if (x > -17 && x < -4.5 && z > SHORE - 3) continue;
       if (random() < 0.3) {
         const tone = c.autumn[i % 3];
-        G.cylinder(0.08, 0.1, 0.8 * s, c.woodDark, { x, y: WATER.y + 0.5 + 0.4 * s, z }, 4);
-        G.ball(0.85 * s, tone, { x, y: WATER.y + 0.5 + 1.25 * s, z, sy: 0.95 }, 6);
+        distant.cylinder(0.08, 0.1, 0.8 * s, c.woodDark, { x, y: WATER.y + 0.5 + 0.4 * s, z }, 4);
+        distant.ball(0.85 * s, tone, { x, y: WATER.y + 0.5 + 1.25 * s, z, sy: 0.95 }, 6);
       } else pine(x, z, s, i % 2);
       shore.push([x, 1.8 * s, 1.6 * s]);
     }
     // The village: cottages with mossy roofs around a chapel with a green dome.
     const cottage = (x, z, w, h) => {
-      G.box(w, h, 1.6, c.wall, { x, y: WATER.y + 0.5 + h / 2, z });
-      G.add(new THREE.CylinderGeometry(0.01, 1, 0.9, 4, 1), c.roof[x > -11 ? 0 : 1], {
+      distant.box(w, h, 1.6, c.wall, { x, y: WATER.y + 0.5 + h / 2, z });
+      distant.add(new THREE.CylinderGeometry(0.01, 1, 0.9, 4, 1), c.roof[x > -11 ? 0 : 1], {
         x,
         y: WATER.y + 0.5 + h + 0.45,
         z,
@@ -300,14 +340,14 @@ function build(env) {
       });
       for (const dx of [-0.2, 0.22])
         if (!night || dx > 0)
-          G.box(0.24, 0.3, 0.05, c.woodDark, {
+          distant.box(0.24, 0.3, 0.05, c.woodDark, {
             x: x + w * dx,
             y: WATER.y + 0.5 + h * 0.5,
             z: z + 0.82,
           });
       if (!night) return;
       // A lit window.
-      G.box(0.26, 0.3, 0.05, '#ffd27a', {
+      distant.box(0.26, 0.3, 0.05, '#ffd27a', {
         x: x - w * 0.2,
         y: WATER.y + 0.5 + h * 0.5,
         z: z + 0.82,
@@ -318,18 +358,18 @@ function build(env) {
     cottage(-7.4, SHORE - 1.2, 2.4, 1.4);
     cottage(-5.6, SHORE - 2.4, 2.0, 1.6);
     const chapel = { x: -10.1, z: SHORE - 2 };
-    G.box(1.3, 3.6, 1.3, c.wall, { ...chapel, y: WATER.y + 0.5 + 1.8 });
-    G.ball(0.8, c.roof[0], { ...chapel, y: WATER.y + 4.3, sy: 1.05 }, 9);
-    G.cone(0.16, 0.9, c.roof[1], { ...chapel, y: WATER.y + 5.5 }, 6);
+    distant.box(1.3, 3.6, 1.3, c.wall, { ...chapel, y: WATER.y + 0.5 + 1.8 });
+    distant.ball(0.8, c.roof[0], { ...chapel, y: WATER.y + 4.3, sy: 1.05 }, 9);
+    distant.cone(0.16, 0.9, c.roof[1], { ...chapel, y: WATER.y + 5.5 }, 6);
     if (night)
-      G.box(0.3, 0.5, 0.05, '#ffd27a', { ...chapel, y: WATER.y + 2.8, z: chapel.z + 0.67 });
+      distant.box(0.3, 0.5, 0.05, '#ffd27a', { ...chapel, y: WATER.y + 2.8, z: chapel.z + 0.67 });
     shore.push([-10.1, 9, 5], [-15, 5, 3], [-6.5, 5, 3]);
   });
   // A little island out in the lake.
-  G.within({ x: 1, z: -27 }, () => {
-    G.ball(1, c.hills[0], { x: 16, y: WATER.y, z: -25, sx: 5.4, sy: 0.9, sz: 2.4 }, 10);
+  distant.within({ x: 1, z: -27 }, () => {
+    distant.ball(1, c.hills[0], { x: 16, y: WATER.y, z: -25, sx: 5.4, sy: 0.9, sz: 2.4 }, 10);
     for (let i = 0; i < 9; i++)
-      G.ball(
+      distant.ball(
         0.35 + random() * 0.3,
         c.rock[i % 2],
         { x: 11.6 + i * 1.1, y: WATER.y + 0.1, z: -23 + Math.sin(i) * 0.5, sy: 0.6 },
@@ -341,40 +381,8 @@ function build(env) {
       [17.2, -25.8, 1.2],
       [18.6, -25.2, 0.9],
     ].forEach(([x, z, s], i) => pine(x, z, s, i % 2));
-    G.ball(1.0, c.autumn[0], { x: 14.5, y: WATER.y + 1.5, z: -24.6 }, 6);
+    distant.ball(1.0, c.autumn[0], { x: 14.5, y: WATER.y + 1.5, z: -24.6 }, 6);
   });
-
-  /* ---- the lake ---- */
-  const wide = WATER.farHalf * 2;
-  const water = env.flat(
-    waterSheet(THREE, WATER.y),
-    textures.canvasTexture('place:haven:water:' + time, 1024, 512, (g, w, h) =>
-      paintWater(g, w, h, {
-        time,
-        tones: c.water,
-        sun: 0.5 + SUN_X / wide,
-        shore: shore.map(([x, height, width]) => [
-          0.5 + (x * FAR.scale) / wide,
-          (width * FAR.scale) / wide,
-          height / 9,
-        ]),
-      }),
-    ),
-  );
-  water.material.map.anisotropy = 8;
-  group.add(water);
-  const ripples = textures.canvasTexture('place:haven:ripples:' + time, 256, 256, (g, w, h) =>
-    paintRipples(g, w, h, time),
-  );
-  ripples.wrapS = ripples.wrapT = THREE.RepeatWrapping;
-  const drift = env.flat(waterSheet(THREE, WATER.y + 0.012, [5, 9]), ripples, {
-    transparent: true,
-    depthWrite: false,
-    opacity: 0.45,
-  });
-  drift.renderOrder = 1;
-  group.add(drift);
-  animated.push((t) => (ripples.offset.x = (t * 0.004) % 1));
 
   /* lily pads with white flowers, drifting almost not at all */
   const pads = new THREE.Group(),
@@ -457,6 +465,7 @@ function build(env) {
   boat.add(bb.build(materials.lit));
   boat.position.set(-5.0, WATER.y, 0.2);
   boat.rotation.y = 0.38;
+  boat.children[0].layers.enable(1);
   group.add(boat);
   animated.push((t) => {
     boat.position.y = WATER.y + Math.sin(t * 0.6) * 0.025;
@@ -500,7 +509,12 @@ function build(env) {
     B.cylinder(0.2, 0.22, h + 0.5, c.wood, { x, y: h / 2 - 0.25, z, shade: 0.2 }, 9);
     B.cylinder(0.21, 0.21, 0.03, c.woodDark, { x, y: h + 0.01, z, shade: 0 }, 9);
     for (const y of [0.52, 0.62, 0.72])
-      B.torus(0.22, 0.045, c.rope, { x, y: h * y, z, rx: Math.PI / 2 });
+      B.add(new THREE.TorusGeometry(0.22, 0.045, 5, 12), c.rope, {
+        x,
+        y: h * y,
+        z,
+        rx: Math.PI / 2,
+      });
   };
   post(DOCK.left + 0.05, DOCK.back + 0.1, 1.0);
   post(DOCK.left + 0.05, 1.5, 0.9);
@@ -710,14 +724,15 @@ function build(env) {
   );
   B.torus(0.19, 0.015, c.woodDark, { x: DOCK.left + 0.75, y: 0.34, z: DOCK.back + 0.5 }, Math.PI);
 
-  /* a string of small lamps from the lantern post to the apple tree on the bank */
-  const pole = { x: 8.9, z: -1.2 };
+  /* a string of small lamps from the left post across the landing to the lantern */
+  const pole = { x: DOCK.left + 0.3, z: DOCK.back + 0.25 };
+  B.cylinder(0.05, 0.07, 3.2, c.wood, { ...pole, y: 1.6, shade: 0.2 }, 6);
   const bulbs = ['#ffd98a', '#ffb7a0', '#fff3c4', '#bfe6c8'];
   // The string sags between its two ends.
   const along = (k) =>
     new THREE.Vector3(
       pole.x + (lamp.x - pole.x) * k,
-      3.5 + (4.25 - 3.5) * k - Math.sin(k * Math.PI) * 0.3,
+      3.15 + (4.25 - 3.15) * k - Math.sin(k * Math.PI) * 0.55,
       pole.z + (lamp.z - pole.z) * k,
     );
   const wire = [];
@@ -725,22 +740,41 @@ function build(env) {
   B.add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(wire), 28, 0.012, 4), c.woodDark, {
     shade: 0,
   });
+  const lamps = [];
   for (let i = 1; i < 14; i++) {
     const at = along(i / 14);
     G.ball(0.075, bulbs[i % 4], { x: at.x, y: at.y - 0.1, z: at.z }, 6);
+    lamps.push(at.x, at.y - 0.1, at.z + 0.06);
   }
-  if (time !== 'day')
-    for (let i = 2; i < 14; i += 3) {
-      const k = i / 14;
-      env.sprite(
-        textures.radial('bulb', 'rgba(255,224,160,.5)', 'rgba(255,224,160,0)'),
-        along(k).x,
-        along(k).y - 0.1,
-        along(k).z + 0.1,
-        0.9,
-        0.7,
-      );
-    }
+  // All thirteen pools of light share one draw, including the small lantern on the crate.
+  lamps.push(crate.x, 0.72, crate.z + 0.16);
+  const halos = new THREE.BufferGeometry();
+  halos.setAttribute('position', new THREE.Float32BufferAttribute(lamps, 3));
+  group.add(
+    new THREE.Points(
+      halos,
+      new THREE.PointsMaterial({
+        size: night ? 0.95 : 0.72,
+        color: '#ffcf8c',
+        map: textures.canvasTexture('place:haven:halos', 64, 64, (g) => {
+          const glow = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+          for (const [at, alpha] of [
+            [0, 1],
+            [0.16, 0.72],
+            [0.4, 0.23],
+            [1, 0],
+          ])
+            glow.addColorStop(at, 'rgba(255,255,255,' + alpha + ')');
+          g.fillStyle = glow;
+          g.fillRect(0, 0, 64, 64);
+        }),
+        opacity: night ? 0.85 : dusk ? 0.68 : 0.36,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    ),
+  );
 
   /* ---- the bank beside the landing: fruit trees, a hammock and a little tea hut ---- */
   const bankWide = BANK.right - BANK.left,
@@ -967,6 +1001,7 @@ function build(env) {
   });
   ducks.add(db.build(materials.lit));
   ducks.position.set(-3.2, WATER.y, -6.5);
+  ducks.children[0].layers.enable(1);
   group.add(ducks);
   animated.push((t) => {
     ducks.position.x = -3.2 + Math.sin(t * 0.05) * 2.4;
@@ -999,6 +1034,7 @@ function build(env) {
   yacht.add(yb.build(materials.lit));
   yacht.position.set(-9, WATER.y, -44);
   yacht.scale.setScalar(2.0);
+  yacht.children[0].layers.enable(1);
   group.add(yacht);
   animated.push((t) => {
     yacht.position.x = -9 + Math.sin(t * 0.02) * 3;
@@ -1011,7 +1047,7 @@ function build(env) {
     ['#fbf7ee', 2.0, 0.5, 0.44],
     ['#e8593f', 3.0, 0.44, 0.4],
   ].forEach(([tone, y, low, high]) =>
-    G.cylinder(
+    distant.cylinder(
       high,
       low,
       1.0,
@@ -1020,8 +1056,8 @@ function build(env) {
       10,
     ),
   );
-  G.cylinder(0.56, 0.56, 0.1, c.woodDark, { ...beacon, y: WATER.y + 4.85 }, 10);
-  G.cylinder(
+  distant.cylinder(0.56, 0.56, 0.1, c.woodDark, { ...beacon, y: WATER.y + 4.85 }, 10);
+  distant.cylinder(
     0.3,
     0.3,
     0.55,
@@ -1029,7 +1065,7 @@ function build(env) {
     { ...beacon, y: WATER.y + 5.15 },
     8,
   );
-  G.cone(0.46, 0.5, '#e8593f', { ...beacon, y: WATER.y + 5.68 }, 8);
+  distant.cone(0.46, 0.5, '#e8593f', { ...beacon, y: WATER.y + 5.68 }, 8);
   if (time !== 'day')
     env.sprite(
       textures.radial('beacon', 'rgba(255,240,190,.6)', 'rgba(255,240,190,0)'),
@@ -1039,40 +1075,34 @@ function build(env) {
       night ? 5 : 3.4,
     );
 
-  /* a hot-air balloon drifting far off (by day and at dusk) */
-  if (!night) {
-    const balloon = new THREE.Group(),
-      hb = env.builder();
-    hb.ball(1.5, '#f29b7a', { y: 0, sy: 1.12 }, 12);
-    for (const [y, r, tone] of [
-      [0.75, 1.17, '#fff4d8'],
-      [0.0, 1.52, '#f2c94a'],
-      [-0.75, 1.2, '#fff4d8'],
-    ])
-      hb.cylinder(r, r, 0.3, tone, { y }, 14);
-    hb.cone(0.7, 0.9, '#f29b7a', { y: -1.75, rx: Math.PI }, 10);
-    hb.box(0.5, 0.42, 0.5, '#8a6040', { y: -2.75 });
-    balloon.add(hb.build(materials.glow));
-    balloon.position.set(-30, 21, -110);
-    balloon.scale.setScalar(2.4);
-    group.add(balloon);
-    animated.push((t) => {
-      balloon.position.x = -30 + Math.sin(t * 0.015) * 8;
-      balloon.position.y = 21 + Math.sin(t * 0.09) * 0.4;
-    });
-  }
+  const reflectedShore = distant.build(materials.glow);
+  reflectedShore.layers.enable(1);
+  group.add(reflectedShore);
+
+  /* a hot-air balloon drifting far off */
+  const balloon = new THREE.Group(),
+    hb = env.builder();
+  hb.ball(1.5, night ? '#795b70' : '#f29b7a', { y: 0, sy: 1.12 }, 12);
+  for (const [y, r, tone] of [
+    [0.75, 1.17, night ? '#ab93a2' : '#fff4d8'],
+    [0.0, 1.52, night ? '#a88365' : '#f2c94a'],
+    [-0.75, 1.2, night ? '#ab93a2' : '#fff4d8'],
+  ])
+    hb.cylinder(r, r, 0.3, tone, { y }, 14);
+  hb.cone(0.7, 0.9, night ? '#795b70' : '#f29b7a', { y: -1.75, rx: Math.PI }, 10);
+  hb.box(0.5, 0.42, 0.5, c.woodDark, { y: -2.75 });
+  balloon.add(hb.build(materials.glow));
+  balloon.position.set(-30, 21, -110);
+  balloon.scale.setScalar(2.4);
+  group.add(balloon);
+  animated.push((t) => {
+    balloon.position.x = -30 + Math.sin(t * 0.015) * 8;
+    balloon.position.y = 21 + Math.sin(t * 0.09) * 0.4;
+  });
 
   /* ---- sky ---- */
   if (night) {
-    G.ball(6, c.sun, { x: SUN_X * 4, y: 41, z: -235 }, 16);
-    env.sprite(
-      textures.radial('moon', 'rgba(243,230,180,.35)', 'rgba(243,230,180,0)'),
-      SUN_X * 4,
-      41,
-      -234,
-      36,
-    );
-    stars(env, { count: 130, seed: 5, x: [-230, 230], y: [22, 70], z: -240, size: 1.0 });
+    stars(env, { count: 360, seed: 5, x: [-230, 230], y: [22, 175], z: -240, size: 1.0 });
     // Fireflies over the reeds: a steady glow that wanders slowly.
     const fr = rng(13);
     for (let i = 0; i < 7; i++) {
@@ -1090,34 +1120,167 @@ function build(env) {
         fly.position.y = base.y + Math.sin(t * 0.22 + i) * 0.25;
       });
     }
-  } else {
-    // By day the sun stands above the peaks; at dusk it is going down behind them.
-    G.ball(dusk ? 9.5 : 7.5, c.sun, { x: SUN_X * 4, y: dusk ? 24 : 42, z: -235 }, 16);
-    env.sprite(
-      textures.radial(
-        dusk ? 'sun-dusk' : 'sun',
-        dusk ? 'rgba(255,194,122,.55)' : 'rgba(255,240,170,.55)',
-        'rgba(255,220,150,0)',
-      ),
-      SUN_X * 4,
-      dusk ? 24 : 42,
-      -234,
-      dusk ? 62 : 46,
+  }
+  function usePaint() {
+    paintedLake(env, shore);
+    const disc = env.builder();
+    if (night) {
+      disc.ball(6, c.sun, { x: SUN_X * 4, y: 41, z: -235 }, 16);
+      env.sprite(
+        textures.radial('moon', 'rgba(243,230,180,.35)', 'rgba(243,230,180,0)'),
+        SUN_X * 4,
+        41,
+        -234,
+        36,
+      );
+    } else {
+      // By day the sun stands above the peaks; at dusk it is going down behind them.
+      disc.ball(dusk ? 9.5 : 7.5, c.sun, { x: SUN_X * 4, y: dusk ? 24 : 42, z: -235 }, 16);
+      env.sprite(
+        textures.radial(
+          dusk ? 'sun-dusk' : 'sun',
+          dusk ? 'rgba(255,194,122,.55)' : 'rgba(255,240,170,.55)',
+          'rgba(255,220,150,0)',
+        ),
+        SUN_X * 4,
+        dusk ? 24 : 42,
+        -234,
+        dusk ? 62 : 46,
+      );
+    }
+    group.add(disc.build(materials.glow));
+    clouds(
+      env,
+      [
+        [-34, 27, -150, 4.2, 0.03],
+        [-6, 31, -156, 3.2, 0.02],
+        [30, 26, -146, 4.0, 0.025],
+      ],
+      c.cloud,
     );
   }
-  clouds(
-    env,
-    [
-      [-34, 27, -150, 4.2, 0.03],
-      [-6, 31, -156, 3.2, 0.02],
-      [30, 26, -146, 4.0, 0.025],
-    ],
-    c.cloud,
-  );
+
+  let surface;
+  if (enableEffects && effects) {
+    try {
+      surface = effects.atmosphere(
+        env,
+        {
+          width: WATER.farHalf * 2,
+          length: DOCK.front - WATER.far,
+          y: WATER.y,
+          z: (DOCK.front + WATER.far) / 2,
+        },
+        renderer,
+      );
+    } catch (error) {
+      console.warn('Using the painted lake:', error);
+    }
+  }
+  if (surface) animated.push((t) => surface?.tick(t));
+  else usePaint();
+  return {
+    water: () => (surface ? 'reflective' : 'painted'),
+    waveTime: () => surface?.time() ?? null,
+    fallback() {
+      surface.dispose();
+      surface = null;
+      usePaint();
+    },
+  };
 }
 
 function createScene(ctx) {
-  return createOuting(ctx, { camera: CAMERA, lineZ: 1.7, standY: 0, seat: SEAT, build });
+  let view = 'company',
+    lake,
+    verified = false,
+    failed = false;
+  const camera = {
+    ...VIEWS.company,
+    azimuth: 0,
+    azimuthRange: 27,
+    polarMin: 72,
+    polarMax: 89,
+    fov: 38,
+    far: 400,
+  };
+  const stage = createOuting(ctx, {
+    camera,
+    seat: VIEWS.company.seat,
+    build(env) {
+      lake = build(env, ctx.renderer, !failed);
+      verified = false;
+    },
+  });
+  // Lit moving objects (the boat and ducks) also need light in the mirror camera.
+  for (const object of stage.scene.children) if (object.isLight) object.layers.enable(1);
+  const describe = stage.describe;
+  return {
+    ...stage,
+    frame(width, height) {
+      const aspect = width / height;
+      // Widen the vertical lens on a phone so both ends of the landing still fit.
+      stage.camera.aspect = aspect;
+      stage.camera.fov =
+        (2 *
+          Math.atan(Math.max(camera.height, camera.width / aspect) / (2 * camera.distance)) *
+          180) /
+        Math.PI;
+      stage.camera.updateProjectionMatrix();
+      return { target: camera.target, distance: camera.distance };
+    },
+    setView(next) {
+      if (!VIEWS[next]) return;
+      view = next;
+      Object.assign(camera, VIEWS[view]);
+      stage.setSeat(camera.seat);
+    },
+    render(renderer) {
+      if (lake?.water() !== 'reflective') {
+        renderer.render(stage.scene, stage.camera);
+        return;
+      }
+      // One frame includes BOTH cameras. Restore the borrowed renderer even when a
+      // driver rejects an effect during its first draw.
+      const { info, debug } = renderer;
+      const reset = info.autoReset,
+        previousError = debug.onShaderError;
+      const previousTarget = renderer.getRenderTarget(),
+        xr = renderer.xr.enabled,
+        shadows = renderer.shadowMap.autoUpdate;
+      let shaderFailed = false;
+      try {
+        info.autoReset = false;
+        info.reset();
+        if (!verified)
+          debug.onShaderError = (gl, program, vertex, fragment) => {
+            console.warn(
+              'Lake shader:',
+              gl.getProgramInfoLog(program),
+              gl.getShaderInfoLog(fragment),
+            );
+            shaderFailed = true;
+          };
+        renderer.render(stage.scene, stage.camera);
+        verified = !shaderFailed;
+      } catch (error) {
+        console.warn('Lake render:', error);
+        shaderFailed = true;
+      } finally {
+        info.autoReset = reset;
+        debug.onShaderError = previousError;
+        renderer.xr.enabled = xr;
+        renderer.shadowMap.autoUpdate = shadows;
+        renderer.setRenderTarget(previousTarget);
+      }
+      if (shaderFailed) {
+        failed = true;
+        lake.fallback();
+        renderer.render(stage.scene, stage.camera);
+      }
+    },
+    describe: () => ({ ...describe(), view, water: lake.water(), waveTime: lake.waveTime() }),
+  };
 }
 
 export { createScene };

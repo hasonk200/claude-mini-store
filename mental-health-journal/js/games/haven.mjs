@@ -2,7 +2,7 @@ import { $ } from '../shared/dom.mjs';
 import { companionArt } from '../pet/presentation.mjs';
 import { state } from '../state.mjs';
 import { petO } from '../pet/model.mjs';
-import { mount3D, use3D } from '../scene3d/mount.mjs';
+import { mount3D, use3D, scene3D, setSceneView } from '../scene3d/mount.mjs';
 
 // The same lakeside in 3D (when 3D is on). The scene only shows the place and the companion
 // sitting in it; the one-minute rest below works exactly as in the flat version.
@@ -31,14 +31,15 @@ function renderHaven() {
   else for (const flat of scene.querySelectorAll('.haven-art, .haven-pet')) flat.remove();
   scene.classList.toggle('awaits-3d', three);
   if (three) {
+    if (!scene3D('haven')) $('#haven-view').setAttribute('aria-pressed', 'false');
     scene.setAttribute('role', 'img');
-    scene.setAttribute('aria-label', '湖畔碼頭、木椅、提燈與遠山，伙伴靜靜坐喺度');
+    describeView();
   } else {
     scene.removeAttribute('role');
     scene.removeAttribute('aria-label');
   }
   haven3D();
-  $('#haven-copy').textContent = '坐低一陣，望吓湖水同遠山。';
+  if (!havenTimer) $('#haven-copy').textContent = '坐低一陣，望吓湖水同遠山。';
 }
 
 let havenTimer = null;
@@ -72,7 +73,23 @@ function startHaven() {
   havenTimer = setInterval(tick, 1000);
 }
 
+function describeView() {
+  const lake = $('#haven-view').getAttribute('aria-pressed') === 'true';
+  $('#haven-scene').setAttribute(
+    'aria-label',
+    '湖畔碼頭、木椅、提燈與遠山，' +
+      (lake ? '伙伴背向你，坐喺碼頭邊望湖。' : '伙伴面向你，坐喺野餐布旁邊。'),
+  );
+}
+
 function initializeHaven() {
+  const button = $('#haven-view');
+  button.addEventListener('click', () => {
+    const lake = button.getAttribute('aria-pressed') !== 'true';
+    setSceneView('haven', lake ? 'lake' : 'company');
+    button.setAttribute('aria-pressed', String(lake));
+    describeView();
+  });
   $('#haven-rest').addEventListener('click', startHaven);
 }
 

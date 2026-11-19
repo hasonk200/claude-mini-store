@@ -224,7 +224,16 @@ test('pet ball game completes five throws and leaving stops an in-flight ball', 
 });
 
 test('leaving the lake cancels its countdown', async ({ page }) => {
-  await open(page, 'haven');
+  const data = sampleState();
+  data.settings.quiet = false;
+  await open(page, 'haven', data);
+  if (test.info().project.name === '2d') {
+    await expect(page.locator('#haven-view')).toBeHidden();
+    await expect(page.locator('#haven-scene .haven-art')).toHaveAttribute(
+      'src',
+      'assets/lakeside.webp',
+    );
+  }
   await page.locator('#haven-rest').click();
   await expect(page.locator('#haven-copy')).toContainText('60 秒');
   await go(page, 'island');

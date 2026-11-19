@@ -24,6 +24,9 @@
 | --- | --- | --- |
 | `vendor/three/three.module.min.js` | [three.js](https://github.com/mrdoob/three.js) 0.170.0 `build/three.module.min.js` | MIT（見 `vendor/three/LICENSE`） |
 | `vendor/three/addons/controls/OrbitControls.js` | three.js 0.170.0 `examples/jsm/controls/OrbitControls.js` | MIT |
+| `addons/objects/Sky.js`、`addons/objects/Reflector.js`（位於 `vendor/three/`） | three.js 0.170.0 同名的 `examples/jsm/objects/` 檔案 | MIT |
+
+靜靜湖畔的水波法線和雲紋都是 `js/scene3d/scenes/haven-atmosphere.mjs` 在 256 × 256 的 canvas 上即場畫出來的。水面把兩層不同速度的波紋疊在一起，帶動山岸倒影和日光、月光的反射。兩張貼圖的額外下載量都是 0 B。
 
 - `vendor/three/` 由 `npm run vendor:three`（`scripts/vendor-three.cjs`）由 `node_modules/three` 原封不動複製，不要手改。升級版本時改 `package.json` 的 `three` 版本及腳本內的 `EXPECTED_VERSION`，再重新執行。
 - `npm run vendor:check`（CI 會執行）比對 vendor 檔案與 npm 套件的 SHA-256，不一致就失敗。
