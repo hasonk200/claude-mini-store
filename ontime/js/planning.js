@@ -34,11 +34,13 @@ export function reminders(data, now) {
   const prefs = data.settings.reminders || {};
   const awake = awakeSince(data, now), meal = lastMeal(data, now), rows = [];
   const sleeping = data.sleeps.some(s => s.start != null && s.end == null);
+  // 啱啱返到屋企 4 個鐘內（正常收工準備去瞓）：暫唔彈單日漏記睡眠，避免同主掣「去瞓」打架；超過 48 小時多日未記照提。
+  const recentHome = (data.journeys || []).some((j) => j.home != null && j.home <= now && now - j.home < 4 * HOUR);
   if (prefs.sleep !== false && !sleeping && awake?.ms >= 20 * HOUR) {
     if (awake.ms >= 48 * HOUR) {
       const days = Math.floor(awake.ms / DAY);
       rows.push({ title: `已經 ${days} 日冇記過瞓覺`, action: 'sleep-catchup', label: '補返近幾日', t: awake.since });
-    } else {
+    } else if (!recentHome) {
       rows.push({ title: `起身後已過 ${fmtDurLong(awake.ms)}，可能漏記咗瞓覺`, action: 'quick-wake', label: '瞓醒喇', t: awake.since });
     }
   }
@@ -51,8 +53,12 @@ export function reminders(data, now) {
       : `收工已經 ${fmtDurLong(gap)}，未記到家`;
     rows.push({ title, action: 'open-trip', label: '補到家', t:s.end, sid:s.id, wd:workdayOfSession(s,data), step:'home' });
   }
-  if (prefs.meal !== false && !sleeping && meal?.ms >= 6 * HOUR)
-    rows.push({ title: `上一餐已過 ${fmtDurLong(meal.ms)}`, action:'quick-meal', label:'食咗飯', t:meal.at });
+  if (prefs.meal !== false && !sleeping && meal?.ms >= 6 * HOUR) {
+    const title = meal.ms >= 48 * HOUR
+      ? `已經 ${Math.floor(meal.ms / DAY)} 日冇記過食飯`
+      : `上一餐已過 ${fmtDurLong(meal.ms)}`;
+    rows.push({ title, action:'quick-meal', label:'食咗飯', t:meal.at });
+  }
   if (prefs.income !== false) {
     for (const session of closed) {
       if (now - session.end > 48 * HOUR) break;
@@ -105,23 +111,20 @@ export function missingSleepDays(data, now, count = 7) {
       const home = journeyOfSession(data, sess)?.home;
       const raw = home != null && home >= sess.end ? home + 30 * MIN : sess.end + 60 * MIN;
       const s0 = Math.ceil(raw / (5 * MIN)) * 5 * MIN;
-      const e0 = Math.min(s0 + tplDur, Math.floor(now / (5 * MIN)) * 5 * MIN);
-      if (e0 - s0 >= HOUR) { sd = dateKey(s0); st = fmtTime(s0); et = fmtTime(e0); }
+      const e0 = s0 + tplDur;
+      // 唔好估一覺啱啱瞓到「而家」；未瞓完嘅時段直接跳過。
+      if (e0 > now) continue;
+      sd = dateKey(s0); st = fmtTime(s0); et = fmtTime(e0);
     } else if (daytimeSleeper) {
-      // 夜班朝早先瞓：工作日 wd 的睡眠發生在隔天早上（wd + 1）；若還沒開始睡就跳過，不跟前一日撞日。
+      // 夜班朝早先瞓：工作日 wd 的睡眠發生在隔天早上（wd + 1）；若預計起床未到（> now）就跳過，唔好截短估到「而家」。
       const nextDay = addDays(wd, 1);
       const rNext = clockRange(nextDay, tplStart, tplEnd);
-      if (!rNext || rNext.start >= now - HOUR) continue;
+      if (!rNext || rNext.end > now) continue;
       sd = nextDay;
     }
     const r = clockRange(sd, st, et);
-    if (!r || r.start >= now - HOUR) continue;
-    let end = r.end;
-    if (end > now) {
-      end = Math.floor(now / (5 * MIN)) * 5 * MIN;
-      if (end - r.start < HOUR) continue;
-      et = fmtTime(end);
-    }
+    if (!r || r.end > now) continue;
+    const end = r.end;
     if (overlapsExisting(r.start, end)) continue;
     used.push([r.start, end]);
     rows.push({ wd, sd, st, et });

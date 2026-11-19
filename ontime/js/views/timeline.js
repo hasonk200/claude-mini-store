@@ -44,7 +44,7 @@ function workdayList(data, wd, now) {
       <div class="tl-vf">${e.plan ? '' : verifyBtn(e)}</div>
     </li>`;
   }).join('');
-  return `<div class="card"><div class="card-head"><h2 class="card-title">${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</h2><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}">整趟修改</button></div><p class="muted small tl-note">${verifiedNote(ev)}右邊圓圈剔咗即係已對照追蹤 App；點項目可以修改</p>${sessionsOfWorkday(data,wd).map(s=>{
+  return `<div class="card"><div class="card-head"><h2 class="card-title">事件紀錄（${ev.length} 項）</h2><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}">整趟修改</button></div><p class="muted small tl-note">${verifiedNote(ev)}右邊圓圈剔咗即係已核對；點項目可以修改</p>${sessionsOfWorkday(data,wd).map(s=>{
     const j=data.journeys.find(x=>x.sessionId===s.id);
     const step=s.end==null?'clockOut':j?.home==null?'home':null;
     return step?`<button type="button" class="btn btn-line" data-action="open-trip" data-wd="${wd}" data-sid="${esc(s.id)}" data-step="${step}">${fmtTime(s.start)} 班 · 補記${step==='home'?'到家':'下班'}</button>`:'';
@@ -86,12 +86,12 @@ function workdaySummary(data, wd, now) {
   const commuteStep = ['out', 'arrive', 'leave', 'home'].find((k) => jr?.[k] == null) || 'out';
   const sl = tg.sleep;
   const sleepStep = !sl || sl.start == null ? 'sleepStart' : sl.end == null ? 'sleepEnd' : 'sleepStart';
-  const card = (cls, label, value, note, step) =>
-    `<button type="button" class="card mini mini-btn ${cls}" data-action="open-record" data-wd="${wd}" data-step="${step}" aria-label="修改${label}"><span>${label}</span><strong>${value}</strong><small>${note}</small></button>`;
+  const card = (cls, label, value, note, action, step) =>
+    `<button type="button" class="card mini mini-btn ${cls}" data-action="${action}" data-wd="${wd}" data-step="${step}" aria-label="修改${label}"><span>${label}</span><strong>${value}</strong><small>${note}</small></button>`;
   return `<section class="summary-3">
-    ${card(pending && !work ? 'is-pending' : '', '工時', pending && !work ? '待補收工' : fmtDur(work), esc(splitText), workStep)}
-    ${card('', '通勤', fmtDur(commute), '只計有完整起止的路程', commuteStep)}
-    ${card('k-sleep-soft', '睡眠', sleeps.length ? fmtDur(sleepMs) : '—', sleeping ? '進行中，計至現在' : sleeps.length ? '實際' : '未記錄', sleepStep)}
+    ${card(pending && !work ? 'is-pending' : '', '工時', pending && !work ? '待補收工' : fmtDur(work), esc(splitText), 'open-trip', workStep)}
+    ${card('', '通勤', fmtDur(commute), '只計有完整起止的路程', 'open-trip', commuteStep)}
+    ${card('k-sleep-soft', '睡眠', sleeps.length ? fmtDur(sleepMs) : '—', sleeping ? '進行中，計至現在' : sleeps.length ? '實際' : '未記錄', 'open-record', 'sleepPair')}
   </section>`;
 }
 

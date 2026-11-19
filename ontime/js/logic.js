@@ -979,8 +979,14 @@ export function quickWakeState(data, now, sel = {}) {
   if (startSel === 'custom') start = sel.startTime ? lastClockBefore(sel.startTime, wake) : null;
   else {
     // 未揀過：預先揀最似的那一個（同上次 → 到家後），讓你睇一眼就可以存。
+    // 若「同上次一樣」計出不足 3 小時，但「到家後半個鐘」落在 4–12 小時合理區間，優先預選「到家後半個鐘」。
     let opt = options.find((o) => o.key === startSel && !o.disabled);
-    if (!opt && !sel.startSel) opt = options.find((o) => o.key === 'last') || options.find((o) => o.key === 'home');
+    if (!opt && !sel.startSel) {
+      const lastOpt = options.find((o) => o.key === 'last');
+      const homeOpt = options.find((o) => o.key === 'home');
+      const preferHome = lastOpt && homeOpt && (wake - lastOpt.t < 3 * HOUR) && (wake - homeOpt.t >= 4 * HOUR && wake - homeOpt.t <= 12 * HOUR);
+      opt = preferHome ? homeOpt : (lastOpt || homeOpt);
+    }
     startSel = opt ? opt.key : null;
     start = opt ? opt.t : null;
   }

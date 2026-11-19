@@ -1646,3 +1646,42 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
   .cu-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cu-fields > .field:first-child { grid-column: 1 / -1; }
 }
+
+/* 2.41 第三輪打磨（PR C/D/E）：手機 44px 觸控、iPhone 安全區、一週頁與月曆窄屏、側欄與細節 */
+.app { padding-top: env(safe-area-inset-top); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.demo-banner { padding-top: calc(6px + env(safe-area-inset-top)); }
+.demo-banner + .app { padding-top: 0; }
+.sidebar .sync-card a { white-space: nowrap; }
+.bars-sleep .goal-line b { left: 0; right: auto; }
+.sync-chip.has-label { width: auto; padding: 0 12px; gap: 6px; }
+.sync-chip.has-label .dot { position: static; border: 0; width: 8px; height: 8px; }
+.sync-chip-text { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.life-tile small { font-size: 12px; }
+.wk-note-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.wk-swipe-hint { font-size: 11.5px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.wk-scroll-wrap { position: relative; }
+.wk-track .seg-bar.k-meal.is-thin { top: auto; bottom: 2px; height: 5px; border-radius: 3px; z-index: 2; }
+.cal-sleep-short { display: none; }
+.set-radio { padding: 10px 14px; }
+@media (max-width: 1023px) {
+  .main { padding-bottom: calc(108px + env(safe-area-inset-bottom)); }
+  .btn-sm, .seg button, .chip-btn, .link-ink { min-height: 44px; }
+  .icon-btn, .avatar, .sync-chip { min-width: 44px; height: 44px; }
+  .today-head.is-compact .avatar { width: 44px; height: 44px; }
+  .dayhero .icon-btn { min-width: 44px; width: 44px; height: 44px; }
+  .trip-row .trip-clear, .link-inline { position: relative; }
+  .trip-row .trip-clear::before { content: ''; position: absolute; inset: -4px -8px; }
+  .link-inline::before { content: ''; position: absolute; inset: -12px -8px; }
+  .wk-scroll-wrap::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 24px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--surface)); }
+}
+@media (max-width: 600px) {
+  .cal-week, .cal-grid { gap: 4px; }
+  .cal-cell { padding: 4px 3px; gap: 3px; }
+  .cal-top { gap: 2px; }
+  .cal-num { min-width: 16px; height: 18px; font-size: 11.5px; }
+  .cal-cell.is-today .cal-num { min-width: 20px; }
+  .cal-chip-name, .cal-sleep-full { display: none; }
+  .cal-sleep { font-size: 9.5px; letter-spacing: -.02em; flex-shrink: 0; }
+  .cal-sleep-short { display: inline; font-family: var(--font-num); }
+  .cal-chip { text-align: center; padding: 1px 2px; font-size: 10.5px; }
+}

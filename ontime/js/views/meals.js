@@ -97,11 +97,15 @@ export function mealsView(ctx) {
     </button></li>`;
   }).join('');
   const listHTML = `${dayNav('wd-shift', `${wdOfKey(wd)}工作日 · ${fmtMD(wd)}`, `${meals.length} 餐 · 點一餐可以修改`)}${list ? `<section class="card card-flush"><ul class="rec-list">${list}</ul></section>` : '<p class="card muted">這個工作日還沒有用餐紀錄。</p>'}`;
-  const form = `<section class="card" aria-label="補記或安排一餐"><div class="card-head"><div><h2 class="card-title">補記或安排一餐</h2><span class="muted small">啱啱食完用上面的掣就得；這裡補舊的或者安排之後的</span></div></div>
-    ${mealForm({ data, now, ui, key: 'meal:new', defaultStart: timeOnWorkday(data, wd, now) })}</section>`;
+  const hasDraft = Object.keys(ui.drafts?.['meal:new'] || {}).length > 0;
+  const openFill = ui.mealFill || hasDraft;
+  const formBody = mealForm({ data, now, ui, key: 'meal:new', defaultStart: timeOnWorkday(data, wd, now) });
+  const form = ctx.isDesktop
+    ? `<section class="card" aria-label="補記或安排一餐"><div class="card-head"><div><h2 class="card-title">補記或安排一餐</h2><span class="muted small">啱啱食完用上面的掣就得；這裡補舊的或者安排之後的</span></div></div>${formBody}</section>`
+    : `<details class="card card-fold" aria-label="補記或安排一餐" data-pref="mealFill"${openFill ? ' open' : ''}><summary><div><h2 class="card-title">補記或安排一餐</h2><span class="muted small">啱啱食完用上面掣；這裡補舊餐或者安排下一餐</span></div></summary><div class="card-fold-body">${formBody}</div></details>`;
   const body = ctx.isDesktop
     ? `<div class="grid-2-1"><div class="stack">${pendingHTML}${listHTML}</div><div class="stack">${form}</div></div>`
-    : `${pendingHTML}${form}${listHTML}`;
+    : `${pendingHTML}${listHTML}${form}`;
   // 頁頂：上一餐幾耐之前（大數字），一撳記低現在。超過 6 個鐘轉紅提你。
   const lm = lastMeal(data, now);
   const ago = lm ? `${Math.floor(lm.ms / HOUR)}<small>小時</small>${String(Math.floor((lm.ms % HOUR) / MIN)).padStart(2, '0')}<small>分</small>` : '—';

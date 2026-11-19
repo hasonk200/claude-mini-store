@@ -377,7 +377,19 @@ export function tripSummaryHTML(st) {
   const { go, work, back } = st.summary;
   const parts = [];
   if (go != null) parts.push(`去程 <strong>${fmtDur(go)}</strong>`);
-  if (work != null) parts.push(`上班 <strong>${fmtDur(work)}</strong>`);
+  if (work != null) {
+    // 已有班內休息時，顯示扣除休息後的淨上班時長，同時間線與統計一致（只改顯示，不改計數）。
+    const ci = st.times?.clockIn;
+    const co = st.times?.clockOut;
+    const brk = (st.trip?.session?.breaks || []).reduce((n, b) => {
+      if (b.start == null || b.end == null || ci == null || co == null) return n;
+      const a = Math.max(b.start, ci);
+      const e = Math.min(b.end, co);
+      return e > a ? n + (e - a) : n;
+    }, 0);
+    if (brk > 0) parts.push(`上班 <strong>${fmtDur(Math.max(0, work - brk))}</strong>（已扣 ${fmtDur(brk)} 休息）`);
+    else parts.push(`上班 <strong>${fmtDur(work)}</strong>`);
+  }
   if (back != null) parts.push(`回程 <strong>${fmtDur(back)}</strong>`);
   if (st.error && st.error.reason !== 'empty') return `<span class="c-danger">${esc(tripErrorText(st.error))}</span>`;
   if (!parts.length) return '<span class="muted">填了頭尾就會計出去程、上班、回程用了多久</span>';
@@ -507,7 +519,7 @@ function quickWakeSheet(ctx) {
 }
 
 // 「食咗飯」之後的小面板：唔係啱啱食就揀幾耐之前；餐名相片想加先加。
-export const MEAL_AGO = [[0, '啱啱'], [15, '15 分鐘前'], [30, '半個鐘前'], [60, '1 個鐘前'], [120, '2 個鐘前']];
+export const MEAL_AGO = [[0, '啱啱'], [15, '15 分鐘前'], [30, '半個鐘前'], [60, '1 個鐘前'], [120, '2 個鐘前'], [180, '3 個鐘前']];
 export function mealMovePreview(hhmm, now) {
   const t = hhmm ? lastClockBefore(hhmm, now, { inclusive: true }) : null;
   return t == null ? '' : `會改成 <strong>${whenText(t)}</strong>`;
@@ -531,7 +543,11 @@ function mealQuickSheet(ctx) {
       <div class="cross-note" data-mm-preview aria-live="polite"></div>
       <button class="btn btn-line btn-block" type="submit">改做這個時間</button>
     </form>
-    <button type="button" class="btn btn-soft btn-block" data-action="meal-open" data-id="${esc(m.id)}">加餐名、地點、相片</button>
+    ${m.photo ? `<img class="photo-preview" src="${esc(m.photo)}" alt="這一餐的相片">` : ''}
+    <div class="btn-pair">
+      <label class="btn btn-soft file-btn">${icon('camera', 17, 2)}${m.photo ? '換張相片' : '順手加相片'}<input type="file" accept="image/*" data-action="meal-quick-photo" data-id="${esc(m.id)}" hidden></label>
+      <button type="button" class="btn btn-soft" data-action="meal-open" data-id="${esc(m.id)}">加餐名、地點</button>
+    </div>
     <button type="button" class="btn btn-text-danger btn-block" data-action="meal-delete" data-id="${esc(m.id)}">撳錯咗？刪除這一餐</button>
     <div class="sheet-foot"><button type="button" class="btn btn-ink btn-block btn-lg" data-action="close-sheet">得喇</button></div>`);
 }
@@ -586,13 +602,14 @@ function sleepCatchupSheet(ctx) {
   }
   const focusWd = sh.focusWd || null;
   const items = rows.map((r, i) => {
-    const on = focusWd ? r.wd === focusWd : true;
+    // 預設全部唔剔（除非係喺睡眠頁特登點某一日灰柱入嚟），避免唔小心一次過存晒估出嚟嘅時間。
+    const on = focusWd ? r.wd === focusWd : false;
     const ed = sleepEndKey(r.sd, r.st, r.et);
     const start = fromInputs(r.sd, normTime(r.st) || '');
     const end = ed && r.et ? fromInputs(ed, normTime(r.et) || '') : null;
     const prev = sleepPairPreview(data, start, end, { now });
     return `<div class="cu-row${on ? '' : ' is-off'}" data-cu-row="${i}">
-      <label class="cu-head"><input type="checkbox" name="use_${i}"${on ? ' checked' : ''}><strong>${wdOfKey(r.wd)} ${fmtMD(r.wd)} 工作日</strong><span class="muted small">唔記得可以取消剔選</span></label>
+      <label class="cu-head"><input type="checkbox" name="use_${i}"${on ? ' checked' : ''}><strong>${wdOfKey(r.wd)} ${fmtMD(r.wd)} 工作日</strong><span class="muted small">${on ? '核對或改鐘數' : '剔咗先會存低'}</span></label>
       <div class="cu-fields">
         <label class="field"><span>入睡那天</span><input type="date" name="sd_${i}" value="${esc(r.sd)}"></label>
         <label class="field"><span>入睡</span><input type="time" name="st_${i}" value="${esc(r.st)}"></label>
@@ -601,11 +618,11 @@ function sleepCatchupSheet(ctx) {
       <div class="cross-note cu-preview" data-cu-preview="${i}" aria-live="polite">${prev}</div>
     </div>`;
   }).join('');
-  const checkedCount = focusWd ? rows.filter((r) => r.wd === focusWd).length : rows.length;
+  const checkedCount = focusWd ? rows.filter((r) => r.wd === focusWd).length : 0;
   return sheetWrap('補返近幾日睡眠', `<form class="form cu-form" data-form="sleep-catchup" data-cu-count="${rows.length}">
-      <p class="fine">填大概鐘數就得；起床早過入睡會自動算隔天。全部一齊存低，唔啱可以一鍵「復原」。</p>
+      <p class="fine">下面鐘數只係參考；記得邊日就逐日剔選再改時間，起床早過入睡會自動算隔天。存低後可以一鍵「復原」。</p>
       <div class="cu-list">${items}</div>
-      <div class="sheet-foot"><button class="btn btn-ink btn-block btn-lg" type="submit" data-cu-submit>一次存低 ${checkedCount} 筆睡眠</button></div>
+      <div class="sheet-foot"><button class="btn btn-ink btn-block btn-lg" type="submit" data-cu-submit${checkedCount ? '' : ' disabled'}>${checkedCount ? `一次存低 ${checkedCount} 筆睡眠` : '請先剔選要補的日子'}</button></div>
     </form>`, false);
 }
 

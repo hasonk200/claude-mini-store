@@ -6,7 +6,7 @@ import { workdayOfSession } from './logic.js';
 import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
-import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, wdOf, fmtMD, normTime, endOnOrAfter, fmtDur } from './time.js';
+import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, wdOf, fmtMD, fmtDayMD, normTime, endOnOrAfter, fmtDur } from './time.js';
 import { quickWakeState, QUICK_WAKE_ERROR, lastClockBefore, latestOpenSleep, STEPS, tripState, tripErrorText, tripAllVerified } from './logic.js';
 import { activeSession, shiftDateMismatch, mealWorkday, mealAutoWorkday, restWorkday, restAutoWorkday, journeyAutoWorkday, needsWorkdayConfirm, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
@@ -35,17 +35,19 @@ const ROUTES = {
 const SIDEBAR = ['today', 'timeline', 'week', 'sleep', 'meals', 'stats'];
 const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'], ['+', '', 'plus'], ['sleep', '睡眠', 'moon'], ['stats', '統計', 'chart']];
 
+const APP_VERSION = '2.41.0';
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
-  selRef: null, sheet: null, jobEdit: null, canInstall: false,
+  selRef: null, sheet: null, jobEdit: null, canInstall: false, appVersion: APP_VERSION,
   pendingRecord: null, pendingDelete: null, flash: null, sleepSaved: null,
   drafts: loadDrafts(), heroCollapsed: loadPref('ontime-scene') !== 'on',
   todayMore: loadPref('ontime-today-more') === 'open',
-  sleepFill: loadPref('ontime-sleep-fill') === 'open', sleepAttr: loadPref('ontime-sleep-attr') === 'open'
+  sleepFill: loadPref('ontime-sleep-fill') === 'open', sleepAttr: loadPref('ontime-sleep-attr') === 'open',
+  mealFill: loadPref('ontime-meal-fill') === 'open'
 };
 // 可以展開／收起、而且會記住的區塊。
-const PREF_KEYS = { todayMore: 'ontime-today-more', sleepFill: 'ontime-sleep-fill', sleepAttr: 'ontime-sleep-attr' };
+const PREF_KEYS = { todayMore: 'ontime-today-more', sleepFill: 'ontime-sleep-fill', sleepAttr: 'ontime-sleep-attr', mealFill: 'ontime-meal-fill' };
 
 // 只屬於這部裝置的小偏好（例如街景收起）；讀不到就用預設。
 function loadPref(key) { try { return localStorage.getItem(key); } catch { return null; } }
@@ -198,12 +200,17 @@ function scrollSheetToForm() {
 }
 let dirty = false;
 
-function applyTheme(theme) {
+const THEME_WASH = {
+  light: { night: '#DCE1F0', dawn: '#FBE8DC', day: '#D6E7FF', dusk: '#EDE3F3' },
+  dark: { night: '#111A31', dawn: '#21171A', day: '#111A28', dusk: '#1C1629' }
+};
+function applyTheme(theme, phase = 'day') {
   const root = document.documentElement;
   if (theme === 'light' || theme === 'dark') root.dataset.theme = theme; else delete root.dataset.theme;
   try { localStorage.setItem('ontime-theme', theme || 'auto'); } catch { /* 忽略 */ }
   const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0B1018' : '#EEF1F5');
+  const wash = THEME_WASH[dark ? 'dark' : 'light'][phase] || (dark ? '#0B1018' : '#EEF1F5');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', wash);
 }
 
 // 背景重畫（同步、定時更新、標示過期）遇到你正在欄位裡打字：先不換畫面，離開欄位後才更新。
@@ -219,9 +226,9 @@ function typingIn(sel) {
 
 function render() {
   const c = ctx();
-  applyTheme(c.data.settings.theme);
   // 頁頂底色跟時段（夜晚、清晨、日間、黃昏）；只按鐘數，唔會閃。
   const phase = phaseOf(c.now);
+  applyTheme(c.data.settings.theme, phase);
   if (document.documentElement.dataset.phase !== phase) document.documentElement.dataset.phase = phase;
   const r = ROUTES[ui.route] || ROUTES.today;
   document.title = `${r.title} · ONTIME`;
@@ -618,7 +625,7 @@ const handlers = {
       return;
     }
     flash(`meal:${r.id}`);
-    toast(`已記低食飯 ${wdOf(now)} ${fmtTime(now)}`, `${UNDO}<button type="button" class="btn btn-toast btn-sm" data-action="meal-quick-open" data-id="${esc(r.id)}">改時間</button>`, 7000);
+    toast(`已記低食飯 ${wdOf(now)} ${fmtTime(now)}`, `${UNDO}<button type="button" class="btn btn-toast btn-sm" data-action="meal-quick-open" data-id="${esc(r.id)}">改時間／加相</button>`, 7000);
   },
   'meal-quick-open': (el) => {
     const m = store.get().meals.find((x) => x.id === el.dataset.id);
@@ -903,7 +910,11 @@ function updateCatchupPreview(f) {
     const on = !!f[`use_${i}`]?.checked;
     if (on) count++;
     const row = f.querySelector(`[data-cu-row="${i}"]`);
-    if (row) row.classList.toggle('is-off', !on);
+    if (row) {
+      row.classList.toggle('is-off', !on);
+      const hint = row.querySelector('.cu-head .muted');
+      if (hint) hint.textContent = on ? '核對或改鐘數' : '剔咗先會存低';
+    }
     const box = f.querySelector(`[data-cu-preview="${i}"]`);
     if (!box) continue;
     const sd = f[`sd_${i}`]?.value;
@@ -915,7 +926,10 @@ function updateCatchupPreview(f) {
     box.innerHTML = start != null ? sleepPairPreview(data, start, end, { now }) : '<span class="c-danger">請填寫有效時間</span>';
   }
   const btn = f.querySelector('[data-cu-submit]');
-  if (btn) btn.textContent = count ? `一次存低 ${count} 筆睡眠` : '請先剔選要補的日子';
+  if (btn) {
+    btn.disabled = count === 0;
+    btn.textContent = count ? `一次存低 ${count} 筆睡眠` : '請先剔選要補的日子';
+  }
 }
 
 // 一邊填一邊更新「會存成…、歸屬…」的預覽。
@@ -928,10 +942,19 @@ function updateFormPreview(form) {
     let line=rangeText(r);
     if(form.restMode && r) {
       const {session,error}=restTarget(data,r,form.restMode.value,now);
-      line=error || line+' · '+(session?'班內休息 · 工作日 '+workdayOfSession(session,data):'獨立休息 · 工作日 '+(form.wd?.value || restAutoWorkday(r,data)));
+      const wdKey = session ? workdayOfSession(session, data) : (form.wd?.value || restAutoWorkday(r, data));
+      const wdLabel = wdKey ? fmtDayMD(wdKey) : '';
+      const note = form.querySelector('[data-wd-preview]');
+      if (note) {
+        note.innerHTML = error
+          ? `<span class="c-danger">${esc(error)}</span>`
+          : `${esc(line)} · ${session ? '班內休息' : '獨立休息'}${wdLabel ? ` · 歸屬 ${wdLabel} 工作日` : ''}`;
+        boxRange.textContent = '';
+        return;
+      }
+      line = error || `${line} · ${session ? '班內休息' : '獨立休息'}${wdLabel ? ` · 工作日 ${wdLabel}` : ''}`;
     }
     boxRange.textContent=line;
-    if(form.restMode && r) { const note=form.querySelector('[data-wd-preview]');if(note)note.textContent='';return; }
   }
   if (form.dataset.wdKind) {
     const box = form.querySelector('[data-wd-preview]');
@@ -1582,6 +1605,21 @@ function bind() {
       const cat = ui.sheet.cat;
       ui.sheet = { ...(cat ? { type: 'record', wd: el.value, cat, step: defaultStepIn(store.get(), el.value, cat) } : openRecordSheet(store.get(), el.value, null)), wdTouched: true };
       asUser(render);
+    }
+    if (el.dataset.action === 'meal-quick-photo' && el.files?.[0]) {
+      const m = store.get().meals.find((x) => x.id === el.dataset.id);
+      if (!m) { el.value = ''; return; }
+      try {
+        const photo = await compressPhoto(el.files[0]);
+        act.saveMeal({ ...m, photo, hasPhoto: true }, nowFn());
+        lastView = ''; lastSheet = null;
+        toast('已加入相片');
+        render();
+      } catch {
+        toast('這張相片太大或無法讀取，請換一張');
+      }
+      el.value = '';
+      return;
     }
     if (el.dataset.action === 'meal-photo' && el.files?.[0]) {
       // 先存好已填的文字，再處理相片；處理完重畫時欄位不會被清空。

@@ -206,15 +206,16 @@ test('H3 批次補記多日睡眠：跨午夜、連續兩晚夜班白天補睡�
   assert.equal(dateKey(get().sleeps[0].end), '2026-03-08');
   assert.equal(dateKey(get().sleeps[1].end), '2026-11-01');
 
-  // 4) 夜班朝早瞓（08:00–15:30），中午 13:35 開補睡眠：missingSleepDays 產生的 7 筆彼此不重疊，可直接整批存下
+  // 4) 夜班朝早瞓（08:00–15:30），中午 13:35 開補睡眠：唔好估一覺啱啱瞓到 13:35（跳過未完嘅 11/17），其餘 6 筆互不重疊可整批存下
   const dDay = emptyData();
   dDay.sleeps = [{ id: 'sl0', start: at('2026-11-07', '08:00'), end: at('2026-11-07', '15:30') }];
   replaceAll(dDay, { tombstone: false });
   const nowNoon = at('2026-11-18', '13:35');
   const gen = missingSleepDays(get(), nowNoon, 7);
-  assert.equal(gen.length, 7);
+  assert.equal(gen.length, 6);
+  assert.ok(gen.every((r) => fromInputs(sleepEndKey(r.sd, r.st, r.et), r.et) < nowNoon));
   const items = gen.map((r) => ({ start: fromInputs(r.sd, r.st), end: fromInputs(sleepEndKey(r.sd, r.st, r.et), r.et) }));
   const okAll = saveSleepBatch(items, nowNoon);
   assert.equal(okAll.ok, true);
-  assert.equal(okAll.count, 7);
+  assert.equal(okAll.count, 6);
 });
