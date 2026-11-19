@@ -54,10 +54,15 @@ function trend(data, now) {
   const bars = keys.map((k) => {
     const v = by[k];
     const h = v == null ? 0 : Math.min(1, v / max) * 100;
-    return `<div class="bar-col"><span class="bar-val">${v == null ? '—' : fmtDur(v).replace(' ', '')}</span><div class="bar-slot"><i class="${v == null ? 'is-unknown' : v >= 7 * HOUR ? 'k-sleep' : 'k-sleep-light'}" style="height:${v == null ? 18 : h}%"></i></div><span class="bar-label">${wdShort(k)}<br>${fmtMD(k)}</span></div>`;
+    const inner = `<span class="bar-val">${v == null ? '—' : fmtDur(v).replace(' ', '')}</span><div class="bar-slot"><i class="${v == null ? 'is-unknown' : v >= 7 * HOUR ? 'k-sleep' : 'k-sleep-light'}" style="height:${v == null ? 18 : h}%"></i></div><span class="bar-label">${wdShort(k)}<br>${fmtMD(k)}</span>`;
+    return v == null
+      ? `<button type="button" class="bar-col bar-col-btn" data-action="sleep-day-fill" data-wd="${k}" aria-label="補記 ${wdShort(k)} ${fmtMD(k)} 的睡眠">${inner}</button>`
+      : `<div class="bar-col">${inner}</div>`;
   }).join('');
-  return `<section class="card" aria-label="近七個工作日"><div class="card-head"><div><h2 class="card-title">近七個工作日</h2><span class="muted small">平均只計完整實際紀錄（${avg.count} / 7）</span></div><strong class="big-num">${avg.avg == null ? '—' : fmtDur(avg.avg)}</strong></div>
-    <div class="bars bars-sleep" style="--goal:${(8 * HOUR / max) * 100}%">${bars}<span class="goal-line"><b>目標 8h</b></span></div></section>`;
+  const missing = 7 - avg.count;
+  const catchup = missing >= 2 ? `<button type="button" class="btn btn-soft btn-block" data-action="sleep-catchup">一次補返缺漏的 ${missing} 日睡眠</button>` : '';
+  return `<section class="card" aria-label="近七個工作日"><div class="card-head"><div><h2 class="card-title">近七個工作日</h2><span class="muted small">平均只計完整實際紀錄（${avg.count} / 7）${missing ? ' · 點灰柱可補記' : ''}</span></div><strong class="big-num">${avg.avg == null ? '—' : fmtDur(avg.avg)}</strong></div>
+    <div class="bars bars-sleep" style="--goal:${(8 * HOUR / max) * 100}%">${bars}<span class="goal-line"><b>目標 8h</b></span></div>${catchup}</section>`;
 }
 
 export const SLEEP_PAIR_ERROR = {

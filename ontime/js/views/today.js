@@ -1,4 +1,4 @@
-import { reminders } from '../planning.js';
+import { reminders, staleJourney } from '../planning.js';
 import { esc, icon, bubble, durHTML, STEP_ICON, STEP_KIND, seg, stateTag } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtDayMD, wdOfKey, fmtMD, MIN, HOUR, fmtDur, fmtDurLong, toDateInput, toTimeInput } from '../time.js';
 import {
@@ -129,11 +129,14 @@ function statusCard(data, wd, cycle, now, manual = false, bare = false) {
   }
   // 切到別的工作日時，這張卡的按鈕仍然是「記錄現在」；講清楚，補舊日請用補登。
   const nowNote = manual ? `<div class="status-now-note">這裡的按鈕記錄的是<strong>現在 ${wdOf(now)} ${fmtMD(dateKey(now))} ${fmtTime(now)}</strong>，不是 ${wdOfKey(wd)} ${fmtMD(wd)}。</div>` : '';
+  const stale = staleJourney(data, now, cycle);
+  const staleNote = stale ? `<div class="stale-banner" role="status"><strong>${fmtTime(stale.t)} ${STEP_LABEL[stale.step]}，已過 ${fmtDurLong(stale.ms)} 仲未上班</strong><span>呢趟係咪冇返工，或者漏記咗上班？</span><div class="btn-pair"><button type="button" class="btn btn-sm btn-ghost-dark" data-action="open-trip" data-jid="${esc(stale.journey.id)}" data-wd="${wd}" data-step="clockIn">補記呢趟</button><button type="button" class="btn btn-sm btn-ghost-dark" data-action="stale-clear" data-jid="${esc(stale.journey.id)}">當冇返工・清除</button></div></div>` : '';
   if (bare) {
     const job = s ? jobOf(data, s.jobId)?.name ?? '' : '';
     return `<div class="status-body">
     <div class="status-main"><div class="status-title">${esc(st.title)}${job ? `<span class="status-job">${esc(job)}</span>` : ''}</div><div class="status-sub">${sub}</div></div>
     ${progress}
+    ${staleNote}
     ${nowNote}
     ${buttons.join('')}
     <div class="status-links">${wakeFix}<button type="button" class="link-ink" data-action="open-record">${manual ? `補登 ${wdOfKey(wd)} ${fmtMD(wd)} 的時間` : '補登其他時間'}</button></div>
@@ -143,6 +146,7 @@ function statusCard(data, wd, cycle, now, manual = false, bare = false) {
     <div class="status-top"><span class="live-dot"></span>現在狀態<span class="spacer"></span><span class="muted-ink">${esc(s ? jobOf(data, s.jobId)?.name ?? '' : '')}</span></div>
     <div class="status-main"><div class="status-title">${esc(st.title)}</div><div class="status-sub">${sub}</div></div>
     ${progress}
+    ${staleNote}
     ${nowNote}
     ${buttons.join('')}
     ${wakeFix}
@@ -196,13 +200,13 @@ export function lastMealLine(data, now) {
 }
 
 // 提醒動作用返類別顏色同圖示：起身係晨光橙、食飯係用餐紅、到家係到家綠、收入係外送綠。
-const ACT_KIND = { 'quick-wake': 'wake', 'quick-meal': 'meal', 'meal-open': 'meal', 'open-trip': 'home', 'income-open': 'deliv', 'sleep-start': 'sleep' };
-const ACT_ICON = { 'quick-wake': 'sun', 'quick-meal': 'meal', 'meal-open': 'meal', 'open-trip': 'home', 'income-open': 'wallet', 'sleep-start': 'moon' };
+const ACT_KIND = { 'quick-wake': 'wake', 'sleep-catchup': 'wake', 'quick-meal': 'meal', 'meal-open': 'meal', 'open-trip': 'home', 'income-open': 'deliv', 'sleep-start': 'sleep' };
+const ACT_ICON = { 'quick-wake': 'sun', 'sleep-catchup': 'sun', 'quick-meal': 'meal', 'meal-open': 'meal', 'open-trip': 'home', 'income-open': 'wallet', 'sleep-start': 'moon' };
 
 // 首頁「需要補的紀錄」：待補收工、未記到家、未記錄睡眠、計畫中但未確認的餐。
 export function pendingCard(data, now) {
   const extra = reminders(data, now);
-  const items = pendingItems(data,now).filter(x=>x.kind==='pending-end' || x.kind==='sleep' && data.settings.reminders?.sleep!==false && !extra.some(r=>r.action==='quick-wake'));
+  const items = pendingItems(data,now).filter(x=>x.kind==='pending-end' || x.kind==='sleep' && data.settings.reminders?.sleep!==false && !extra.some(r=>r.action==='quick-wake' || r.action==='sleep-catchup'));
   for(const m of data.meals.filter(m=>m.confirmed===false && m.start<=now).sort((a,b)=>b.start-a.start)) items.push({kind:'meal',t:m.start,id:m.id,name:m.name||'用餐'});
   items.unshift(...extra);
   if (!items.length) return '';

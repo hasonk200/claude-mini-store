@@ -67,9 +67,31 @@ function segHTML(x, a, b) {
   return `<div class="seg-bar k-${x.kind}${x.plan ? ' is-plan' : ''}" style="left:${pct(s, a, b)};width:${w.toFixed(2)}%" title="${esc(KIND[x.kind]?.label || '')} ${fmtTime(x.a)}–${fmtTime(x.b)}${x.plan ? '（計畫）' : ''}">${label}</div>`;
 }
 
+// 畫面時間帶專用：在 intervalsAround 之外，也把尚未掛到出勤的獨立通勤畫出來（不影響任何工時與通勤統計計算）。
+export function bandItems(data, a, b, now) {
+  const out = intervalsAround(data, a, b, now);
+  const sessIds = new Set((data.sessions || []).map((s) => s.id));
+  const add = (x, y) => {
+    if (x == null || y == null || y <= x || y <= a || x >= b) return;
+    out.push({ kind: 'commute', a: x, b: y, plan: false, label: '通勤' });
+  };
+  for (const j of data.journeys || []) {
+    if (j.sessionId && sessIds.has(j.sessionId)) continue;
+    const goEnd = j.arrive ?? j.ride;
+    if (j.out != null && goEnd != null && goEnd > j.out) add(j.out, goEnd);
+    else {
+      const pt = j.arrive ?? j.ride ?? j.out;
+      if (pt != null) add(pt, Math.min(pt + 15 * 60000, b));
+    }
+    const backStart = j.leave ?? j.ride2;
+    if (backStart != null && j.home != null && j.home > backStart) add(backStart, j.home);
+  }
+  return out;
+}
+
 // 單一色條（手機）或分行色條（桌面）。
 export function ribbon(data, a, b, now, { lanes = false } = {}) {
-  const items = intervalsAround(data, a, b, now);
+  const items = bandItems(data, a, b, now);
   const ticks = ticksFor(a, b, lanes);
   const showNow = now > a && now < b;
   const nowMark = showNow ? `<div class="now-line" style="left:${pct(now, a, b)}"><span class="now-pill">現在 ${fmtTime(now)}</span></div>` : '';
@@ -158,7 +180,7 @@ export const phaseName = (t) => PHASE_NAME[phaseOf(t)];
 // 手機：一條橫向時間帶。上面係鐘數，中間係色條（睡眠、通勤、上班、食飯、計畫），下面係標籤，而家有一條指針。
 const TAG = { sleep: '瞓', work: '上班', deliv: '上班', commute: '通勤', meal: '食' };
 export function dayBand(data, a, b, now) {
-  const items = intervalsAround(data, a, b, now);
+  const items = bandItems(data, a, b, now);
   const ticks = ticksFor(a, b, true);
   const grid = ticks.map((t) => `<i class="band-tick${t.mid ? ' is-mid' : ''}" style="left:${pct(t.t, a, b)}"></i>`).join('');
   const hours = ticks.map((t) => {
@@ -194,9 +216,10 @@ export function dayBand(data, a, b, now) {
   const f = nowIn ? (now - a) / (b - a) : 0;
   const needle = nowIn ? `<span class="band-now" style="left:${pct(now, a, b)}"><b style="transform:translateX(${f < 0.12 ? '0' : f > 0.88 ? '-100%' : '-50%'})">而家 ${fmtTime(now)}</b></span>` : '';
   const label = `由 ${wdOf(a)} ${fmtTime(a)} 到 ${wdOf(b)} ${fmtTime(b)}；${items.filter((x) => !x.plan).length} 段紀錄`;
+  const emptyMsg = items.length ? '' : '<span class="band-empty" aria-hidden="true">這段時間未有紀錄</span>';
   return `<div class="band" role="img" aria-label="${esc(label)}">
     <div class="band-hours" aria-hidden="true">${hours}</div>
-    <div class="band-track">${grid}${segs}${needle}</div>
+    <div class="band-track">${grid}${segs}${emptyMsg}${needle}</div>
     <div class="band-tags" aria-hidden="true">${tags}</div>
   </div>`;
 }

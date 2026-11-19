@@ -1,4 +1,4 @@
-import { clockRange, restTarget, copyWeek, reminderCalendar } from './planning.js';
+import { clockRange, restTarget, copyWeek, reminderCalendar, missingSleepDays } from './planning.js';
 import { rangeText } from './views/planning.js';
 import { backupCSV } from './backup.js';
 import { readTemp, tempPreview, importTemp } from './temp-import.js';
@@ -527,6 +527,35 @@ const handlers = {
     ui.sheet = el.dataset.new ? { type: 'trip', wd: sh.wd, isNew: true } : { type: 'trip', wd: sh.wd, sessionId: el.dataset.sid || null, journeyId: el.dataset.jid || null };
     render();
   },
+  'trip-job': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    const st = tripState(store.get(), sh, nowFn());
+    ui.sheet = { ...sh, focus: null, vals: st.vals, jobId: el.dataset.job };
+    render();
+  },
+  'stale-clear': (el) => {
+    if (!el.dataset.confirmed) staleJourneyToDelete = el.dataset.jid || null;
+    if (!staleJourneyToDelete) return;
+    if (confirmFirst(el, '清除這趟未上班紀錄？', '會先自動在本機保留一份安全備份，清除後亦可以即時「復原」。', '備份並清除')) {
+      const jid = staleJourneyToDelete;
+      staleJourneyToDelete = null;
+      afterRecovery(() => {
+        const r = act.deleteTrip({ journeyId: jid });
+        lastView = ''; lastSheet = null;
+        if (r.ok) toastUndo('已清除這趟未上班紀錄（已自動備份）'); else toast('找不到這一趟');
+        render();
+      });
+    }
+  },
+  'sleep-catchup': () => {
+    const rows = missingSleepDays(store.get(), nowFn(), 7);
+    showSheet('sleep-catchup', { rows });
+  },
+  'sleep-day-fill': (el) => {
+    const rows = missingSleepDays(store.get(), nowFn(), 7);
+    showSheet('sleep-catchup', { rows, focusWd: el.dataset.wd || null });
+  },
   'trip-day': (el) => {
     const sh = ui.sheet;
     if (sh?.type !== 'trip') return;
@@ -864,6 +893,31 @@ function formAutoWorkday(form, t) {
   return null;
 }
 
+// 批次補睡眠即時預覽：更新每行時數／跨午夜／錯誤與底部總筆數。
+function updateCatchupPreview(f) {
+  const n = Number(f.dataset.cuCount) || 0;
+  const data = store.get();
+  const now = nowFn();
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    const on = !!f[`use_${i}`]?.checked;
+    if (on) count++;
+    const row = f.querySelector(`[data-cu-row="${i}"]`);
+    if (row) row.classList.toggle('is-off', !on);
+    const box = f.querySelector(`[data-cu-preview="${i}"]`);
+    if (!box) continue;
+    const sd = f[`sd_${i}`]?.value;
+    const st = normTime(f[`st_${i}`]?.value || '');
+    const et = normTime(f[`et_${i}`]?.value || '');
+    const ed = sleepEndKey(sd, st || '', et || '');
+    const start = st ? fromInputs(sd, st) : null;
+    const end = ed && et ? fromInputs(ed, et) : null;
+    box.innerHTML = start != null ? sleepPairPreview(data, start, end, { now }) : '<span class="c-danger">請填寫有效時間</span>';
+  }
+  const btn = f.querySelector('[data-cu-submit]');
+  if (btn) btn.textContent = count ? `一次存低 ${count} 筆睡眠` : '請先剔選要補的日子';
+}
+
 // 一邊填一邊更新「會存成…、歸屬…」的預覽。
 function updateFormPreview(form) {
   const data = store.get();
@@ -935,6 +989,7 @@ function quickWakeTyped(f, name) {
 
 // 整趟面板打字：即時更新每格下面的日期、去程／上班／回程和錯誤提示，不重畫面板。
 let tripToDelete = null;
+let staleJourneyToDelete = null;
 function tripSync(f) {
   const sh = ui.sheet;
   if (sh?.type !== 'trip') return null;
@@ -952,7 +1007,7 @@ function tripTyped(f) {
   const st = tripSync(f);
   if (!st) return;
   const pay=f.querySelector('[data-trip-pay]');
-  if(pay) pay.hidden = act.tripPayMode(store.get(),st.trip,st.workday,st.times.clockIn)!=='perOrder';
+  if(pay) pay.hidden = act.tripPayMode(store.get(),st.trip,st.workday,st.times.clockIn,ui.sheet?.jobId)!=='perOrder';
   for (const r of st.rows) {
     const row = f.querySelector(`.trip-row[data-step="${r.step}"]`);
     if (!row) continue;
@@ -1243,12 +1298,37 @@ const forms = {
     const r = act.saveTrip({
       sessionId: st.trip.session?.id ?? null,
       journeyId: st.trip.session ? null : st.trip.journey?.id ?? null,
-      wd: sh.wd, wdTo: sh.wdTo && sh.wdTo !== st.wd0 ? sh.wdTo : null, times: st.times, verified, pay:f.income && !f.querySelector('[data-trip-pay]').hidden ? payFrom(f) : undefined
+      wd: sh.wd, wdTo: sh.wdTo && sh.wdTo !== st.wd0 ? sh.wdTo : null, times: st.times, verified,
+      pay:f.income && !f.querySelector('[data-trip-pay]').hidden ? payFrom(f) : undefined,
+      jobId: sh.jobId || null
     }, now);
     if (!r.ok) { toast(tripErrorText(r)); return; }
     ui.sheet = null;
     lastView = ''; lastSheet = null;
     toastUndo(`已儲存整趟${st.summary.work != null ? ` · 上班 ${fmtDur(st.summary.work)}` : ''}`);
+    render();
+  },
+  'sleep-catchup': (f) => {
+    const n = Number(f.dataset.cuCount) || 0;
+    const now = nowFn();
+    const items = [];
+    for (let i = 0; i < n; i++) {
+      if (!f[`use_${i}`]?.checked) continue;
+      const sd = f[`sd_${i}`]?.value;
+      const st = normTime(f[`st_${i}`]?.value || '');
+      const et = normTime(f[`et_${i}`]?.value || '');
+      const ed = sleepEndKey(sd, st || '', et || '');
+      const start = st ? fromInputs(sd, st) : null;
+      const end = ed && et ? fromInputs(ed, et) : null;
+      if (start == null || end == null) { toast('有勾選的日子時間未填妥'); return; }
+      items.push({ start, end });
+    }
+    if (!items.length) { toast('請最少剔選一日再儲存'); return; }
+    const r = act.saveSleepBatch(items, now);
+    if (!r.ok) { toast(`第 ${(r.index ?? 0) + 1} 筆：${SLEEP_PAIR_ERROR[r.reason] || '這段睡眠存不到'}`); return; }
+    ui.sheet = null;
+    lastView = ''; lastSheet = null;
+    toastUndo(`已一次補記 ${r.count} 筆睡眠`);
     render();
   },
   'quick-wake': (f) => {
@@ -1436,6 +1516,8 @@ function bind() {
       const box = mm.querySelector('[data-mm-preview]');
       if (box) box.innerHTML = mealMovePreview(normTime(e.target.value), nowFn());
     }
+    const cu = e.target.closest?.('form[data-form="sleep-catchup"]');
+    if (cu) updateCatchupPreview(cu);
   });
   // 「詳細」展開或收起：記住你的選擇（toggle 事件不會冒泡，用捕獲階段）。
   document.addEventListener('toggle', (e) => {
@@ -1448,6 +1530,7 @@ function bind() {
   }, true);
   document.addEventListener('change', (e) => {
     const any = e.target.closest('form');
+    if (any?.dataset.form === 'sleep-catchup') updateCatchupPreview(any);
     if (any && e.target.name === 'wd' && any.wdMode && any.wdMode.value !== 'sheet') { setWdMode(any, 'manual'); updateFormPreview(any); }
     const form = e.target.closest('form[data-draft]');
     if (form && e.target.type !== 'file') { captureDraft(form); updateFormPreview(form); }
