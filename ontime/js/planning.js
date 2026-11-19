@@ -212,18 +212,46 @@ export function tripCommuteTemplate(data, { jobId = null, excludeSessionId = nul
   return { go, back, hasHistory };
 }
 
+export function isShiftAlreadyRecorded(data, shift, { excludeSessionId = null } = {}) {
+  if (!shift) return false;
+  return (data.sessions || []).some((s) => {
+    if (s.id === excludeSessionId || s.start == null) return false;
+    if (s.shiftId && s.shiftId === shift.id) return true;
+    const end = s.end ?? s.start;
+    return s.start === shift.start || (s.start < shift.end && end > shift.start);
+  });
+}
+
+// 搵出這個工作日適合用來預填的班表：優先找同工作、仲未有出勤紀錄嘅班；
+// 如果全部符合條件嘅班都已經有出勤紀錄，回傳 { shift, recorded: true }。
+export function workdayShiftForTrip(data, wd, { jobId = null, explicitJob = false, excludeSessionId = null } = {}) {
+  const all = shiftsOfWorkday(data, wd);
+  if (!all.length) return { shift: null, recorded: false };
+  const pool = explicitJob && jobId && (data.jobs || []).length > 1
+    ? all.filter((x) => x.jobId === jobId)
+    : (jobId && all.some((x) => x.jobId === jobId) ? all.filter((x) => x.jobId === jobId) : all);
+  if (!pool.length) return { shift: null, recorded: false };
+  const open = pool.find((x) => !isShiftAlreadyRecorded(data, x, { excludeSessionId }));
+  if (open) return { shift: open, recorded: false };
+  return { shift: pool[0], recorded: true };
+}
+
 export function tripPrefill(data, sh, now, mode = 'all') {
   const cur = tripState(data, sh, now);
   const vals = { ...cur.vals };
   const ts = { ...cur.times };
   const preSet = new Set(sh.prefilled || []);
   const canFill = (k) => !vals[k] || preSet.has(k);
-  const shifts = shiftsOfWorkday(data, sh.wd);
-  const shift = (sh.jobId && shifts.find((x) => x.jobId === sh.jobId)) || shifts[0] || null;
+  const excludeSessionId = cur.trip?.session?.id ?? null;
+  const { shift, recorded } = workdayShiftForTrip(data, sh.wd, {
+    jobId: sh.jobId || cur.trip?.session?.jobId || null,
+    explicitJob: !!sh.jobId,
+    excludeSessionId
+  });
   const targetJobId = sh.jobId || cur.trip?.session?.jobId || shift?.jobId || data.jobs?.[0]?.id || null;
   const tpl = tripCommuteTemplate(data, {
     jobId: targetJobId,
-    excludeSessionId: cur.trip?.session?.id ?? null,
+    excludeSessionId,
     excludeJourneyId: cur.trip?.journey?.id ?? null
   });
 
@@ -232,9 +260,8 @@ export function tripPrefill(data, sh, now, mode = 'all') {
   let nextJobId = sh.jobId || null;
 
   if (mode === 'shift' || mode === 'all') {
-    if (!shift) {
-      return { ok: false, reason: 'no-shift' };
-    }
+    if (!shift) return { ok: false, reason: 'no-shift' };
+    if (recorded) return { ok: false, reason: 'shift-recorded' };
     if (!sh.jobId && !cur.exists && shift.jobId) nextJobId = shift.jobId;
     for (const [k, t] of [['clockIn', shift.start], ['clockOut', shift.end]]) {
       if (t == null || !canFill(k)) continue;
@@ -300,6 +327,9 @@ export function tripPrefill(data, sh, now, mode = 'all') {
       : `已自動調至 ${fmtDayMD(newAnchor)}`)
     : '';
 
+  const prefillTimes = { ...(sh.prefillTimes || {}) };
+  for (const k of STEPS) if (ts[k] != null) prefillTimes[k] = ts[k];
+
   return {
     ok: true,
     vals,
@@ -308,10 +338,66 @@ export function tripPrefill(data, sh, now, mode = 'all') {
     anchorShiftFrom: prevAnchor,
     anchorShiftNote,
     filledSteps,
+    prefillTimes,
     skippedFuture,
     jobId: nextJobId,
     hasHistory: tpl.hasHistory
   };
+}
+
+// 改咗其中一格之後，將後面仲係「預填、未改過」嘅格順移同一段真實時間（DST 安全）；改過嘅格唔郁。
+export function shiftTripPrefill(data, sh, now, editedStep, nextVals) {
+  const vals = { ...nextVals };
+  const prevPre = Array.isArray(sh.prefilled) ? sh.prefilled : [];
+  const nextPrefilled = prevPre.filter((k) => k !== editedStep);
+  const prefillTimes = { ...(sh.prefillTimes || {}) };
+
+  const curSt = tripState(data, sh, now);
+  const oldT = prefillTimes[editedStep] ?? curSt.times?.[editedStep] ?? null;
+
+  // 只用 editedStep 同佢之前嘅格去推 editedStep 新嘅真實時間，唔受後面舊預填影響。
+  const editedIdx = STEPS.indexOf(editedStep);
+  if (editedIdx < 0 || !vals[editedStep]) {
+    if (!vals[editedStep]) delete prefillTimes[editedStep];
+    return { vals, prefilled: nextPrefilled, prefillTimes, shiftedSteps: [] };
+  }
+
+  const probeVals = {};
+  STEPS.forEach((k, i) => { probeVals[k] = i <= editedIdx ? vals[k] : ''; });
+  const probeSt = tripState(data, { ...sh, vals: probeVals }, now);
+  const newT = probeSt.times?.[editedStep] ?? null;
+
+  if (oldT == null || newT == null) {
+    if (newT != null) prefillTimes[editedStep] = newT;
+    return { vals, prefilled: nextPrefilled, prefillTimes, shiftedSteps: [] };
+  }
+
+  const deltaMs = newT - oldT;
+  prefillTimes[editedStep] = newT;
+  if (deltaMs === 0 || !nextPrefilled.length) {
+    return { vals, prefilled: nextPrefilled, prefillTimes, shiftedSteps: [] };
+  }
+
+  const shiftedSteps = [];
+  for (let i = editedIdx + 1; i < STEPS.length; i++) {
+    const k = STEPS[i];
+    if (!nextPrefilled.includes(k)) continue;
+    const baseT = prefillTimes[k] ?? curSt.times?.[k] ?? null;
+    if (baseT == null) continue;
+    const shiftedT = baseT + deltaMs;
+    if (now != null && shiftedT > now) {
+      vals[k] = '';
+      const idx = nextPrefilled.indexOf(k);
+      if (idx >= 0) nextPrefilled.splice(idx, 1);
+      delete prefillTimes[k];
+    } else {
+      vals[k] = fmtTime(shiftedT);
+      prefillTimes[k] = shiftedT;
+      shiftedSteps.push(k);
+    }
+  }
+
+  return { vals, prefilled: nextPrefilled, prefillTimes, shiftedSteps };
 }
 
 // 「現在」掣：補舊日子完全唔出；只有今日進行緊嗰趟，喺下一格未填嘅位置保留一粒。

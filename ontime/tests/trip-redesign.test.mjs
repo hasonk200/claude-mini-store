@@ -7,7 +7,7 @@ import { emptyData, replaceAll, get } from '../js/store.js';
 import { at, HOUR, MIN, fmtTime } from '../js/time.js';
 import { STEPS, tripState, resolveTrip, checkTrip } from '../js/logic.js';
 import { saveTrip } from '../js/actions.js';
-import { tripPrefill, tripCommuteTemplate, tripNowStep, tripStepGaps } from '../js/planning.js';
+import { tripPrefill, shiftTripPrefill, tripCommuteTemplate, tripNowStep, tripStepGaps } from '../js/planning.js';
 import { sheetView, tripSummaryHTML } from '../js/views/sheet.js';
 
 const fresh = (d = {}) => replaceAll({ ...emptyData(), ...d }, { tombstone: false });
@@ -254,4 +254,75 @@ test('介面潔淨度與階層：保留雙日期頂部、無「未填／例如 1
   assert.match(delivHtml, /is-commute-collapsed/);
   assert.match(delivHtml, /data-action="trip-commute-show"/);
   for (const k of STEPS) assert.match(delivHtml, new RegExp(`name="t_${k}"`));
+});
+
+test('預填後改下班遲 15 分鐘（09:00 → 09:15）：唔報錯，後面未改過嘅回程上車同到家跟住遲 15 分鐘；已手動改過嘅格唔郁', () => {
+  fresh({
+    jobs: [jobW],
+    sessions: [ses('s0', at('2026-11-16', '21:00'), at('2026-11-17', '09:00'))],
+    journeys: [{
+      id: 'j0', sessionId: 's0',
+      out: at('2026-11-16', '20:14'), ride: at('2026-11-16', '20:23'), arrive: at('2026-11-16', '20:49'),
+      ride2: at('2026-11-17', '09:12'), home: at('2026-11-17', '09:54')
+    }],
+    shifts: [{ id: 'sh1', jobId: 'jw', start: at('2026-11-17', '21:00'), end: at('2026-11-18', '09:00') }]
+  });
+  const now = at('2026-11-18', '13:00');
+  const d = get();
+  const baseSh = { type: 'trip', wd: '2026-11-17', isNew: true };
+  const pre = tripPrefill(d, baseSh, now, 'all');
+  assert.equal(pre.ok, true);
+  let sh = { ...baseSh, vals: pre.vals, anchor: pre.anchor, prefilled: pre.filledSteps, prefillTimes: pre.prefillTimes };
+
+  // 改下班 09:00 → 09:15（遲 15 分鐘）
+  const s1 = shiftTripPrefill(d, sh, now, 'clockOut', { ...sh.vals, clockOut: '09:15' });
+  assert.deepEqual(s1.shiftedSteps, ['ride2', 'home']);
+  assert.equal(s1.vals.clockOut, '09:15');
+  assert.equal(s1.vals.ride2, '09:27'); // 09:12 + 15m
+  assert.equal(s1.vals.home, '10:09');  // 09:54 + 15m
+  assert.equal(s1.prefilled.includes('clockOut'), false);
+  assert.equal(s1.prefilled.includes('ride2'), true);
+  assert.equal(s1.prefilled.includes('home'), true);
+
+  sh = { ...sh, vals: s1.vals, prefilled: s1.prefilled, prefillTimes: s1.prefillTimes };
+  const st1 = tripState(d, sh, now);
+  assert.equal(st1.error, null);
+  assert.equal(st1.times.clockOut, at('2026-11-18', '09:15'));
+  assert.equal(st1.times.ride2, at('2026-11-18', '09:27'));
+  assert.equal(st1.times.home, at('2026-11-18', '10:09'));
+  assert.match(tripSummaryHTML(st1, { prefilled: sh.prefilled }), /7 格入面 6 格係預填/);
+
+  // 再手動改「到家」做 10:20（脫離預填），之後再改下班遲 10 分鐘（09:15 → 09:25）
+  const s2 = shiftTripPrefill(d, sh, now, 'home', { ...sh.vals, home: '10:20' });
+  sh = { ...sh, vals: s2.vals, prefilled: s2.prefilled, prefillTimes: s2.prefillTimes };
+  assert.equal(sh.prefilled.includes('home'), false);
+
+  const s3 = shiftTripPrefill(d, sh, now, 'clockOut', { ...sh.vals, clockOut: '09:25' });
+  assert.deepEqual(s3.shiftedSteps, ['ride2']); // 只移仲係預填嘅 ride2
+  assert.equal(s3.vals.ride2, '09:37'); // 09:27 + 10m
+  assert.equal(s3.vals.home, '10:20');  // 手動改過嘅到家保持 10:20 唔郁！
+  const st3 = tripState(d, { ...sh, vals: s3.vals, prefilled: s3.prefilled, prefillTimes: s3.prefillTimes }, now);
+  assert.equal(st3.error, null);
+});
+
+test('工作日嗰班已經有出勤紀錄時，「新一趟」預填掣變灰並寫「呢班已經記咗」，且不可再預填該班', () => {
+  fresh({
+    jobs: [jobW, jobD],
+    sessions: [ses('s1', at('2026-11-17', '20:58'), at('2026-11-18', '09:04'))],
+    shifts: [{ id: 'sh1', jobId: 'jw', start: at('2026-11-17', '21:00'), end: at('2026-11-18', '09:00') }]
+  });
+  const now = at('2026-11-18', '13:00');
+  const d = get();
+
+  // 開啟「新一趟」
+  const newSh = { type: 'trip', wd: '2026-11-17', isNew: true };
+  const res = tripPrefill(d, newSh, now, 'all');
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, 'shift-recorded');
+  assert.equal(tripPrefill(d, newSh, now, 'shift').reason, 'shift-recorded');
+
+  const html = sheetView({ data: d, now, ui: { sheet: newSh } });
+  assert.match(html, /data-trip-recorded disabled>呢班已經記咗/);
+  assert.doesNotMatch(html, /data-action="trip-prefill" data-mode="all"/);
+  assert.doesNotMatch(html, /data-action="trip-prefill" data-mode="shift"/);
 });

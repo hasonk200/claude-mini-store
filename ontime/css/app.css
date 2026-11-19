@@ -991,6 +991,7 @@ details.today-more[open] > summary::after { content: '收起'; }
 .trip-prefill-label { font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
 .trip-prefill-btns { display: flex; flex-wrap: wrap; gap: 6px; }
 .trip-pre-btn { min-height: 36px; padding: 0 12px; font-size: 12.5px; }
+.trip-pre-btn.is-recorded { background: var(--surface-2); border-color: var(--line); color: var(--muted); opacity: .72; }
 .trip-prefill-note { margin: 2px 0 0; color: var(--work-deep); font-weight: 600; }
 .trip-tip { margin: -4px 0 0; }
 

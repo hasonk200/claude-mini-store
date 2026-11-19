@@ -1,5 +1,5 @@
 import { tripPayMode, tripJobId } from '../actions.js';
-import { missingSleepDays, tripCommuteTemplate, tripNowStep, tripWorkBreakMs, tripStepGaps } from '../planning.js';
+import { missingSleepDays, tripCommuteTemplate, tripNowStep, tripWorkBreakMs, tripStepGaps, workdayShiftForTrip } from '../planning.js';
 import { planningSheet, incomeFields } from './planning.js';
 import { esc, icon, bubble, STEP_ICON, STEP_KIND, verifyToggle } from '../ui.js';
 import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN, fromInputs, normTime, fmtDurLong, fmtDur } from '../time.js';
@@ -459,8 +459,12 @@ function tripSheet(ctx) {
   const hasCommute = ['out', 'ride', 'arrive', 'ride2', 'home'].some((k) => !!st.vals[k]);
   const commuteCollapsed = payMode === 'perOrder' && !hasCommute && !sh.showCommute;
 
-  const shifts = shiftsOfWorkday(data, sh.wd);
-  const shift = (curJobId && shifts.find((x) => x.jobId === curJobId)) || shifts[0] || null;
+  const { shift, recorded: shiftRecorded } = workdayShiftForTrip(data, sh.wd, {
+    jobId: curJobId,
+    explicitJob: !!sh.jobId,
+    excludeSessionId: st.trip?.session?.id ?? null
+  });
+  const usableShift = shift && !shiftRecorded ? shift : null;
   const tpl = tripCommuteTemplate(data, {
     jobId: curJobId,
     excludeSessionId: st.trip?.session?.id ?? null,
@@ -472,14 +476,14 @@ function tripSheet(ctx) {
   const nowStep = tripNowStep(data, sh, st, now, { commuteCollapsed });
 
   const placeholderFor = (k) => {
-    if (k === 'clockIn' && shift) return fmtTime(shift.start);
-    if (k === 'clockOut' && shift) return fmtTime(shift.end);
+    if (k === 'clockIn' && usableShift) return fmtTime(usableShift.start);
+    if (k === 'clockOut' && usableShift) return fmtTime(usableShift.end);
     return '--:--';
   };
 
   const planHint = {
-    clockIn: shift ? `班表 ${fmtTime(shift.start)}` : '',
-    clockOut: shift ? `班表 ${fmtTime(shift.end)}` : ''
+    clockIn: usableShift ? `班表 ${fmtTime(usableShift.start)}` : '',
+    clockOut: usableShift ? `班表 ${fmtTime(usableShift.end)}` : ''
   };
   const rowHTML = (k) => {
     const r = st.rows.find((x) => x.step === k);
@@ -520,8 +524,9 @@ function tripSheet(ctx) {
     ? `<div class="trip-prefill" role="group" aria-label="快速預填">
         <span class="trip-prefill-label">快速預填</span>
         <div class="trip-prefill-btns">
-          ${shift ? `<button type="button" class="btn btn-soft btn-sm trip-pre-btn" data-action="trip-prefill" data-mode="all">照班表＋上次通勤</button>` : ''}
-          ${shift ? `<button type="button" class="btn btn-line btn-sm trip-pre-btn" data-action="trip-prefill" data-mode="shift">只填班表 ${fmtTime(shift.start)}–${fmtTime(shift.end)}</button>` : ''}
+          ${shift && shiftRecorded
+            ? `<button type="button" class="btn btn-line btn-sm trip-pre-btn is-recorded" data-trip-recorded disabled>呢班已經記咗（${fmtTime(shift.start)}–${fmtTime(shift.end)}）</button>`
+            : `${shift ? `<button type="button" class="btn btn-soft btn-sm trip-pre-btn" data-action="trip-prefill" data-mode="all">照班表＋上次通勤</button>` : ''}${shift ? `<button type="button" class="btn btn-line btn-sm trip-pre-btn" data-action="trip-prefill" data-mode="shift">只填班表 ${fmtTime(shift.start)}–${fmtTime(shift.end)}</button>` : ''}`}
           <button type="button" class="btn btn-line btn-sm trip-pre-btn" data-action="trip-prefill" data-mode="commute" data-trip-commute-btn${!hasWorkTimes ? ' disabled' : ''}>${tpl.hasHistory ? '通勤同上次一樣' : '用預設通勤時間'}</button>
         </div>
         ${sh.prefillNote ? `<p class="fine trip-prefill-note" role="status">${esc(sh.prefillNote)}</p>` : ''}
