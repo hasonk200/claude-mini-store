@@ -28,16 +28,27 @@ function matchingShift(d,t,wdHint) {
   if (!sh && wdHint) sh = shiftsOfWorkday(d, wdHint).find((x) => !d.sessions.some((s) => s.shiftId === x.id)) || null;
   return sh;
 }
-export function tripPayMode(d, trip, wd, t) {
+export function tripJobId(d, trip, wd, t, chosenJobId = null) {
+  if (chosenJobId && d.jobs.some((j) => j.id === chosenJobId)) return chosenJobId;
+  if (trip.session) return trip.session.jobId;
+  const shift = matchingShift(d, t, wd);
+  return (shift && d.jobs.find((j) => j.id === shift.jobId)?.id) ?? d.jobs[0]?.id ?? null;
+}
+export function tripPayMode(d, trip, wd, t, chosenJobId = null) {
+  if (chosenJobId) {
+    const picked = d.jobs.find((j) => j.id === chosenJobId);
+    if (picked) return picked.payMode;
+  }
   if (trip.session) return trip.session.payMode;
   const shift = matchingShift(d,t,wd);
   return (shift && d.jobs.find(j=>j.id===shift.jobId)?.payMode) ?? d.jobs[0]?.payMode ?? 'hourly';
 }
-function newSession(d, t, wdHint) {
+function newSession(d, t, wdHint, chosenJobId = null) {
   const sh = matchingShift(d,t,wdHint);
-  const job = (sh && d.jobs.find((j) => j.id === sh.jobId)) || ensureJob(d);
+  const picked = chosenJobId ? d.jobs.find((j) => j.id === chosenJobId) || null : null;
+  const job = picked || (sh && d.jobs.find((j) => j.id === sh.jobId)) || ensureJob(d);
   const s = {
-    id: uid('ses'), jobId: job.id, shiftId: sh?.id ?? null, start: t, end: null, breaks: [],
+    id: uid('ses'), jobId: job.id, shiftId: sh && sh.jobId === job.id ? sh.id : null, start: t, end: null, breaks: [],
     payMode: job.payMode, rate: job.rate ?? null, income: null, orders: null, note: ''
   };
   d.sessions.push(s);
@@ -94,14 +105,14 @@ export function toggleBreak(t = Date.now()) {
   });
 }
 
-// 獨立休息：不屬於任何班別，不影響工時。同一刻（或同分鐘內）再按視作誤按並取消該筆。
+// 獨立休息：不屬於任何班別，不影響工時。1 分鐘內再按結束視作誤按並取消該筆。
 export function toggleRest(t = Date.now()) {
   let opened = false;
   let canceled = false;
   update((d) => {
     const r = activeRest(d);
     if (r) {
-      if (t > r.start) r.end = t;
+      if (t - r.start >= MIN) r.end = t;
       else {
         d.rests = d.rests.filter((x) => x.id !== r.id);
         canceled = true;
@@ -722,24 +733,36 @@ export function deleteRef(ref, t, now = Date.now()) {
 // ---------- 整趟：七個時間一次過存 ----------
 // times = { out, ride, arrive, clockIn, clockOut, ride2, home }（null = 留空／清除）。
 // 一次過寫入，要麼全部存到，要麼完全唔郁。verified：true／false = 全部已填嘅時間一齊打勾／取消；undefined = 唔改。
-export function saveTrip({ sessionId = null, journeyId = null, wd, wdTo = null, times, verified, pay }, now = Date.now()) {
+export function saveTrip({ sessionId = null, journeyId = null, wd, wdTo = null, times, verified, pay, jobId = null }, now = Date.now()) {
   const bad = checkTrip(get(), { sessionId, times }, now);
   if (bad) return { ok: false, ...bad };
   let result;
-  update(d => { result = writeTrip(d, { sessionId, journeyId, wd, wdTo, times, verified, pay }, now); });
+  update(d => { result = writeTrip(d, { sessionId, journeyId, wd, wdTo, times, verified, pay, jobId }, now); });
   return result;
 }
 
 // Caller validates the complete trip before entering a single store transaction.
-export function writeTrip(d, { sessionId = null, journeyId = null, wd, wdTo, times, verified, pay }, now) {
+export function writeTrip(d, { sessionId = null, journeyId = null, wd, wdTo, times, verified, pay, jobId = null }, now) {
   const out = { ok: true, sessionId, journeyId };
   let s = sessionId ? d.sessions.find((x) => x.id === sessionId) || null : null;
   let j = s ? d.journeys.find((x) => x.sessionId === s.id) || null : journeyId ? d.journeys.find((x) => x.id === journeyId) || null : null;
   const day = wdTo || wd;
   if (!s && times.clockIn != null) {
-    s = newSession(d, times.clockIn, day);
+    s = newSession(d, times.clockIn, day, jobId);
     s.workdayDate = day;
     s.workdayManual = true;
+  } else if (s && jobId && jobId !== s.jobId) {
+    // 只有使用者明確改選另一份工作時才更新計薪快照，既有紀錄不改動時保持原本快照。
+    const nextJob = d.jobs.find((x) => x.id === jobId);
+    if (nextJob) {
+      s.jobId = nextJob.id;
+      s.payMode = nextJob.payMode;
+      s.rate = nextJob.rate ?? null;
+      if (s.shiftId) {
+        const linked = d.shifts.find((sh) => sh.id === s.shiftId);
+        if (!linked || linked.jobId !== nextJob.id) s.shiftId = null;
+      }
+    }
   }
   if (s) {
     s.start = times.clockIn;
@@ -774,6 +797,28 @@ export function writeTrip(d, { sessionId = null, journeyId = null, wd, wdTo, tim
   }
   if (s?.payMode === 'perOrder' && pay) Object.assign(s, pay);
   return out;
+}
+
+// 批次補記多日睡眠：先逐筆與彼此驗證（含不重疊、不超過 24 小時、不在未來），全過才單次寫入，方便一次復原。
+export function saveSleepBatch(items, now = Date.now()) {
+  if (!Array.isArray(items) || !items.length) return { ok: false, reason: 'empty' };
+  const base = get();
+  const sim = { ...base, sleeps: [...base.sleeps] };
+  for (let i = 0; i < items.length; i++) {
+    const { start, end } = items[i];
+    const bad = end == null ? 'bad-time' : checkSleepPair(sim, start, end, { now });
+    if (bad) return { ok: false, reason: bad, index: i };
+    sim.sleeps.push({ id: `_batch_${i}`, start, end, planStart: null, planEnd: null, note: '' });
+  }
+  const ids = [];
+  update((d) => {
+    for (const { start, end } of items) {
+      const id = uid('slp');
+      d.sleeps.push({ id, start, end, planStart: null, planEnd: null, note: '' });
+      ids.push(id);
+    }
+  });
+  return { ok: true, count: ids.length, ids };
 }
 
 // 刪除整趟：出勤連同佢嘅通勤一齊刪；獨立通勤就刪嗰段通勤。
