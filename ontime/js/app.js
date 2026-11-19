@@ -498,7 +498,7 @@ const handlers = {
     const working = !!activeSession(store.get());
     if (working) { act.toggleBreak(nowFn()); toastUndo('已更新休息'); return; }
     const r = act.toggleRest(nowFn());
-    toastUndo(r.opened ? '開始休息' : '結束休息');
+    toastUndo(r.opened ? '開始休息' : r.canceled ? '已取消剛剛的休息' : '結束休息');
   },
   'sleep-start': () => {
     const r = act.startSleep(nowFn());
@@ -675,7 +675,6 @@ const handlers = {
   'ride-place': (el) => { el.closest('form').from.value = el.dataset.v; },
   'rec-plan': (el) => { const t = Number(el.dataset.t); const f = $('#record-form'); f.date.value = dateKey(t); f.time.value = fmtTime(t); markDateManual(f); },
   'wd-shift': (el) => { const c = ctx(); ui.wd = addDays(c.wd, Number(el.dataset.dir)); render(); },
-  'wd-auto': () => { ui.wd = null; render(); },
   'tl-shift': (el) => {
     const c = ctx();
     if (ui.tlMode === 'workday') ui.wd = addDays(c.wd, Number(el.dataset.dir));
@@ -703,11 +702,9 @@ const handlers = {
   'cal-pick': (el) => {
     const k = el.dataset.key;
     if (ui.batch) ui.batchDays = ui.batchDays.includes(k) ? ui.batchDays.filter((x) => x !== k) : [...ui.batchDays, k];
-    else {
-      ui.calDay = k;
-      if (el.dataset.shift) {showSheet('shift-editor',{id:el.dataset.shift});return;}
-    }
+    else ui.calDay = k;
     render();
+    if (!ui.batch) $('.day-panel')?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'nearest' });
   },
   'batch-toggle': () => { ui.batch = !ui.batch; ui.batchDays = []; render(); },
   'batch-clear': () => { ui.batchDays = []; render(); },
@@ -785,14 +782,18 @@ const handlers = {
     toast(msg);
     render();
   },
-  // 「改返自動」：清除手動指定，歸屬交返自動推算（用餐、休息、獨立通勤共用）。
+  // 首頁「回到現在」或表單「改返自動」（用餐、休息、獨立通勤共用）。
   'wd-auto': (el) => {
-    const form = el.closest('form');
-    if (!form?.wdMode) return;
-    setWdMode(form, 'auto');
-    updateFormPreview(form);
-    captureDraft(form.closest('form[data-draft]'));
-    form.wd?.focus();
+    const form = el?.closest('form');
+    if (form?.wdMode) {
+      setWdMode(form, 'auto');
+      updateFormPreview(form);
+      captureDraft(form.closest('form[data-draft]'));
+      form.wd?.focus();
+      return;
+    }
+    ui.wd = null;
+    render();
   },
   // 防撳錯確認：用你揀的工作日／用自動計算。
   'wdconfirm-mine': () => finishPendingSave(true),
@@ -1553,7 +1554,7 @@ function bind() {
     }
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (ui.sheet || tag === 'BUTTON' || tag === 'A') {
+    if (ui.sheet || tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY') {
       if (!ui.sheet && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); asUser(() => openRecord()); }
       return;
     }
@@ -1569,7 +1570,7 @@ function bind() {
     }
     if (e.key === ' ' && ui.route === 'today') {
       if (e.repeat) return; // 長按 Space 只算一次
-      const main = document.querySelector('#view .status-card .main-act');
+      const main = document.querySelector('#view .main-act');
       if (main) { e.preventDefault(); main.click(); }
     }
   });

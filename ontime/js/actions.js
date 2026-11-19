@@ -94,18 +94,24 @@ export function toggleBreak(t = Date.now()) {
   });
 }
 
-// 獨立休息：不屬於任何班別，不影響工時。
+// 獨立休息：不屬於任何班別，不影響工時。同一刻（或同分鐘內）再按視作誤按並取消該筆。
 export function toggleRest(t = Date.now()) {
   let opened = false;
+  let canceled = false;
   update((d) => {
     const r = activeRest(d);
-    if (r) { if (t > r.start) r.end = t; }
-    else {
+    if (r) {
+      if (t > r.start) r.end = t;
+      else {
+        d.rests = d.rests.filter((x) => x.id !== r.id);
+        canceled = true;
+      }
+    } else {
       d.rests.push({ id: uid('rst'), start: t, end: null, note: '' });
       opened = true;
     }
   });
-  return { ok: true, opened };
+  return { ok: true, opened, canceled };
 }
 
 // ---------- 補登：只改一個欄位 ----------
