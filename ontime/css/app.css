@@ -1619,3 +1619,69 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
 }
 :root[data-theme="dark"] .demo-banner { background: #1B2B4B; color: #EEF1FB; border-bottom: 1px solid rgba(143, 176, 255, .24); }
 :root[data-theme="dark"] .demo-banner .btn-line { border-color: rgba(238, 241, 251, .32); color: #EEF1FB; }
+
+/* 2.40 PR B：掛住舊旅程提示、空時間帶說明、可點睡眠灰柱、批次追補睡眠、整趟工作選擇 */
+.stale-banner { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 14px; background: var(--hb-ghost, rgba(255, 255, 255, .08)); box-shadow: inset 0 0 0 1px var(--hb-ghost-line, rgba(255, 255, 255, .2)); }
+.stale-banner strong { font-size: 14px; font-weight: 700; color: var(--hb-fg, var(--card-fg)); }
+.stale-banner span { font-size: 12.5px; color: var(--hb-muted, var(--card-muted)); }
+.stale-banner .btn-pair { margin-top: 4px; }
+.band-empty { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--hb-muted, var(--muted)); pointer-events: none; }
+.bar-col-btn { border: 0; background: transparent; padding: 0; cursor: pointer; font: inherit; color: inherit; border-radius: 8px; }
+.bar-col-btn:hover .bar-slot i.is-unknown { opacity: .85; outline: 1.5px dashed var(--sleep); }
+.bar-col-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.trip-tabs .chip-btn { display: inline-flex; align-items: center; gap: 6px; }
+.cu-list { display: flex; flex-direction: column; gap: 10px; }
+.cu-row { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--r-ctl); background: var(--surface-2); border: 1px solid var(--line-soft); transition: opacity .15s ease; }
+.cu-row.is-off { opacity: .52; }
+.cu-row.is-off .cu-fields, .cu-row.is-off .cu-preview { display: none; }
+.cu-head { display: flex; align-items: center; gap: 10px; cursor: pointer; min-height: 36px; }
+.cu-head input[type="checkbox"] { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); flex-shrink: 0; }
+.cu-head strong { font-size: 14.5px; font-weight: 700; }
+.cu-head .muted { margin-left: auto; }
+.cu-fields { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.cu-fields .time-input .time-text { font-size: 15px; padding-left: 10px; padding-right: 34px; }
+.cu-fields .time-pick { width: 28px; right: 3px; }
+.cross-note.cu-preview { display: block; line-height: 1.6; font-size: 12px; padding: 8px 10px; }
+@media (max-width: 420px) {
+  .cu-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cu-fields > .field:first-child { grid-column: 1 / -1; }
+}
+
+/* 2.41 第三輪打磨（PR C/D/E）：手機 44px 觸控、iPhone 安全區、一週頁與月曆窄屏、側欄與細節 */
+.app { padding-top: env(safe-area-inset-top); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.demo-banner { padding-top: calc(6px + env(safe-area-inset-top)); }
+.demo-banner + .app { padding-top: 0; }
+.sidebar .sync-card a { white-space: nowrap; }
+.bars-sleep .goal-line b { left: 0; right: auto; }
+.sync-chip.has-label { width: auto; padding: 0 12px; gap: 6px; }
+.sync-chip.has-label .dot { position: static; border: 0; width: 8px; height: 8px; }
+.sync-chip-text { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.life-tile small { font-size: 12px; }
+.wk-note-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.wk-swipe-hint { font-size: 11.5px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.wk-scroll-wrap { position: relative; }
+.wk-track .seg-bar.k-meal.is-thin { top: auto; bottom: 2px; height: 5px; border-radius: 3px; z-index: 2; }
+.cal-sleep-short { display: none; }
+.set-radio { padding: 10px 14px; }
+@media (max-width: 1023px) {
+  .main { padding-bottom: calc(108px + env(safe-area-inset-bottom)); }
+  .btn-sm, .seg button, .chip-btn, .link-ink { min-height: 44px; }
+  .icon-btn, .avatar, .sync-chip { min-width: 44px; height: 44px; }
+  .today-head.is-compact .avatar { width: 44px; height: 44px; }
+  .dayhero .icon-btn { min-width: 44px; width: 44px; height: 44px; }
+  .trip-row .trip-clear, .link-inline { position: relative; }
+  .trip-row .trip-clear::before { content: ''; position: absolute; inset: -4px -8px; }
+  .link-inline::before { content: ''; position: absolute; inset: -12px -8px; }
+  .wk-scroll-wrap::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 24px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--surface)); }
+}
+@media (max-width: 600px) {
+  .cal-week, .cal-grid { gap: 4px; }
+  .cal-cell { padding: 4px 3px; gap: 3px; }
+  .cal-top { gap: 2px; }
+  .cal-num { min-width: 16px; height: 18px; font-size: 11.5px; }
+  .cal-cell.is-today .cal-num { min-width: 20px; }
+  .cal-chip-name, .cal-sleep-full { display: none; }
+  .cal-sleep { font-size: 9.5px; letter-spacing: -.02em; flex-shrink: 0; }
+  .cal-sleep-short { display: inline; font-family: var(--font-num); }
+  .cal-chip { text-align: center; padding: 1px 2px; font-size: 10.5px; }
+}

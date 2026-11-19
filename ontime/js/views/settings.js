@@ -66,11 +66,11 @@ function dataCard(data) {
     </div>
     <h3 class="set-group">還原</h3>
     <div class="set-list">
-      <label class="set-row">${setIcon('upload')}<span class="set-txt"><strong>匯入 JSON／完整 CSV 備份</strong><small>揀檔案之前，先喺下面揀合併定取代</small></span>${icon('right', 16, 2)}<input type="file" accept=".csv,.json,application/json,text/csv" data-action="import-json" hidden></label>
-      <fieldset class="radio-row set-radio"><legend>匯入時</legend>
+      <fieldset class="radio-row set-radio"><legend>先揀匯入方式</legend>
         <label><input type="radio" name="importMode" value="merge" checked> 合併：只加入新的紀錄</label>
         <label><input type="radio" name="importMode" value="replace"> 取代：用備份覆蓋目前資料</label>
       </fieldset>
+      <label class="set-row">${setIcon('upload')}<span class="set-txt"><strong>匯入 JSON／完整 CSV 備份</strong><small>會按上面揀選嘅方式還原檔案</small></span>${icon('right', 16, 2)}<input type="file" accept=".csv,.json,application/json,text/csv" data-action="import-json" hidden></label>
       ${setRow('temp-open', 'list', '從臨時版匯入', '將臨時版記低嘅紀錄搬入嚟')}
       ${setRow('recovery-download', 'cloud', '下載上次取代前的備份', '用「取代」之前自動留低嗰份')}
     </div>
@@ -92,8 +92,9 @@ function reminderCard(prefs = {}) {
     ['meal', '用餐提醒', '上一餐後 6 小時未記用餐'],
     ['income', '收入提醒', '按單班次收工後 48 小時內仍未填收入'],
   ];
-  return `<section class="card" aria-label="漏記提醒">
-    <h2 class="card-title">漏記提醒</h2>
+  const onCount = options.filter(([k]) => prefs?.[k] !== false).length;
+  return `<details class="card card-fold" aria-label="漏記提醒"><summary><div><h2 class="card-title">漏記提醒</h2><span class="muted small">已開啟 ${onCount} / ${options.length} 項 · 可匯出行事曆提醒</span></div></summary>
+    <div class="card-fold-body">
     <div class="reminder-list">${options.map(([key, label, detail]) => `
       <label class="reminder-row">
         <span><strong id="reminder-${key}">${label}</strong><small id="reminder-${key}-detail">${detail}</small></span>
@@ -102,23 +103,25 @@ function reminderCard(prefs = {}) {
       </label>`).join('')}</div>
     <button class="btn btn-line" data-action="export-ics">匯出行事曆提醒</button>
     <p class="fine">手機行事曆會在排班下班後 30 分鐘及計畫起身時間提示。更改計畫後可重新匯出。</p>
-  </section>`;
+    </div></details>`;
 }
 
 export function settingsView(ctx) {
   const { data, ui } = ctx;
   const st = data.settings;
+  const ver = ui.appVersion || '2.41.0';
+  const profileSub = `${st.name ? `${esc(st.name)} · ` : ''}去程 ${st.commuteOutMin ?? 45} 分／回程 ${st.commuteBackMin ?? 45} 分`;
   return `${pageHead('我的', '個人設定、工作與資料')}
     <div class="grid-2">
       <div class="stack">
-        <section class="card" aria-label="個人設定"><form class="form" data-form="settings">
-          <div class="card-head"><h2 class="card-title">個人設定</h2></div>
-          <label class="field"><span>稱呼（選填）</span><input name="name" value="${esc(st.name || '')}"></label>
-          <div class="field-pair"><label class="field"><span>預估去程（分鐘）</span><input type="number" name="commuteOutMin" min="0" max="300" value="${st.commuteOutMin ?? 45}"></label>
-          <label class="field"><span>預估回程（分鐘）</span><input type="number" name="commuteBackMin" min="0" max="300" value="${st.commuteBackMin ?? 45}"></label></div>
-          <p class="fine">只用來估算睡前未安排時間；實際通勤以你的打卡為準。</p>
-          <button class="btn btn-ink" type="submit">儲存</button>
-        </form></section>
+        <details class="card card-fold" aria-label="個人設定"><summary><div><h2 class="card-title">個人設定</h2><span class="muted small">${profileSub}</span></div></summary>
+          <div class="card-fold-body"><form class="form" data-form="settings">
+            <label class="field"><span>稱呼（選填）</span><input name="name" value="${esc(st.name || '')}"></label>
+            <div class="field-pair"><label class="field"><span>預估去程（分鐘）</span><input type="number" name="commuteOutMin" min="0" max="300" value="${st.commuteOutMin ?? 45}"></label>
+            <label class="field"><span>預估回程（分鐘）</span><input type="number" name="commuteBackMin" min="0" max="300" value="${st.commuteBackMin ?? 45}"></label></div>
+            <p class="fine">只用來估算睡前未安排時間；實際通勤以你的打卡為準。</p>
+            <button class="btn btn-ink" type="submit">儲存</button>
+          </form></div></details>
         <section class="card" aria-label="外觀"><div class="card-head"><h2 class="card-title">外觀</h2></div>
           ${seg('theme', '顏色模式', [['auto', '跟隨系統'], ['light', '淺色'], ['dark', '深色']], st.theme || 'auto')}
           <p class="fine">深色模式適合夜班和睡前使用。首頁時間帶同頁頂底色會跟時段（夜晚、清晨、日間、黃昏）轉色。</p>
@@ -130,14 +133,15 @@ export function settingsView(ctx) {
         ${reminderCard(st.reminders)}
         ${cloudCard()}
         ${dataCard(data)}
-        <section class="card" aria-label="安裝與示範"><div class="card-head"><h2 class="card-title">安裝與示範</h2></div>
+        <details class="card card-fold" aria-label="安裝與示範"><summary><div><h2 class="card-title">安裝與示範</h2><span class="muted small">版本 ${esc(ver)} · PWA 安裝、示範與重置</span></div></summary>
+          <div class="card-fold-body">
           <p class="fine">在手機瀏覽器選「加到主畫面」，就可以像 App 一樣開啟；首次開啟後可以離線使用。</p>
           <div class="btn-wrap">${ui.canInstall ? '<button type="button" class="btn btn-ink" data-action="install">安裝 App</button>' : ''}
-          <button type="button" class="btn btn-line" data-action="demo">載入示範資料</button>
+          <button type="button" class="btn btn-line" data-action="demo">${demoMode ? '重置示範資料' : '載入示範資料'}</button>
           <button type="button" class="btn btn-danger" data-action="clear-all">清除所有資料</button></div>
           <p class="fine">示範模式有獨立資料，清除個人紀錄前會自動保存完整備份。</p>
-          <p class="fine">目前版本：<strong>${esc(ui.appVersion || '讀取中…')}</strong></p>
-        </section>
+          <p class="fine">目前版本：<strong>${esc(ver)}</strong></p>
+          </div></details>
       </div>
     </div>`;
 }

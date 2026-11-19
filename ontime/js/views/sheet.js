@@ -1,4 +1,5 @@
-import { tripPayMode } from '../actions.js';
+import { tripPayMode, tripJobId } from '../actions.js';
+import { missingSleepDays } from '../planning.js';
 import { planningSheet, incomeFields } from './planning.js';
 import { esc, icon, bubble, STEP_ICON, STEP_KIND, verifyToggle } from '../ui.js';
 import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN, fromInputs, normTime, fmtDurLong, fmtDur } from '../time.js';
@@ -6,7 +7,7 @@ import { STEP_LABEL, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isFlag, ev
   quickWakeState, WAKE_AGO, QUICK_WAKE_ERROR, MAIN_SLEEP_MS, dayKeyOfWake, mealWorkday, lastClockBefore,
   TRIP_GROUPS, tripState, tripsOfWorkday, tripErrorText, shiftsOfWorkday, tripAllVerified, currentCycle } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
-import { sleepPairForm } from './sleep.js';
+import { sleepPairForm, sleepEndKey, sleepPairPreview } from './sleep.js';
 import { mealForm } from './meals.js';
 import { syncSummary, workdayField, workdayPreview } from './shared.js';
 
@@ -376,7 +377,19 @@ export function tripSummaryHTML(st) {
   const { go, work, back } = st.summary;
   const parts = [];
   if (go != null) parts.push(`去程 <strong>${fmtDur(go)}</strong>`);
-  if (work != null) parts.push(`上班 <strong>${fmtDur(work)}</strong>`);
+  if (work != null) {
+    // 已有班內休息時，顯示扣除休息後的淨上班時長，同時間線與統計一致（只改顯示，不改計數）。
+    const ci = st.times?.clockIn;
+    const co = st.times?.clockOut;
+    const brk = (st.trip?.session?.breaks || []).reduce((n, b) => {
+      if (b.start == null || b.end == null || ci == null || co == null) return n;
+      const a = Math.max(b.start, ci);
+      const e = Math.min(b.end, co);
+      return e > a ? n + (e - a) : n;
+    }, 0);
+    if (brk > 0) parts.push(`上班 <strong>${fmtDur(Math.max(0, work - brk))}</strong>（已扣 ${fmtDur(brk)} 休息）`);
+    else parts.push(`上班 <strong>${fmtDur(work)}</strong>`);
+  }
   if (back != null) parts.push(`回程 <strong>${fmtDur(back)}</strong>`);
   if (st.error && st.error.reason !== 'empty') return `<span class="c-danger">${esc(tripErrorText(st.error))}</span>`;
   if (!parts.length) return '<span class="muted">填了頭尾就會計出去程、上班、回程用了多久</span>';
@@ -417,15 +430,20 @@ function tripSheet(ctx) {
   const allVerified = tripAllVerified(st.trip);
   const verified = sh.verified !== undefined ? sh.verified : allVerified;
   const wdNote = st.workday !== sh.wd ? ` · 計入 ${wdOfKey(st.workday)} ${fmtMD(st.workday)}` : '';
+  const curJobId = tripJobId(data, st.trip, st.workday, st.times.clockIn, sh.jobId);
+  const jobPicker = data.jobs.length > 1
+    ? `<div class="trip-group" role="group" aria-label="這趟的工作"><span class="trip-group-name">工作</span><div class="trip-tabs">${data.jobs.map((j) => `<button type="button" class="chip-btn" data-action="trip-job" data-job="${esc(j.id)}" aria-pressed="${j.id === curJobId}"><i class="sw k-${j.color === 'deliv' ? 'deliv' : 'work'}"></i> ${esc(j.name)}${j.payMode === 'perOrder' ? ' · 按單' : ''}</button>`).join('')}</div></div>`
+    : '';
   return sheetWrap(st.exists ? '整趟修改' : '補一整趟', `<form class="form trip-form" data-form="trip">
       <div class="day-nav trip-nav"><button type="button" class="icon-btn" data-action="trip-day" data-dir="-1" aria-label="前一個工作日">${icon('left', 18, 2)}</button><div class="day-nav-text"><strong>${wdOfKey(sh.wd)}工作日 · ${fmtMD(sh.wd)}</strong><span>${st.exists ? '修改這一趟' : '新的一趟'}${wdNote}</span></div><button type="button" class="icon-btn" data-action="trip-day" data-dir="1" aria-label="下一個工作日">${icon('right', 18, 2)}</button></div>
       ${tabs}
       ${st.suggest ? `<div class="sheet-note trip-fix" role="status"><span>這一趟實際由 <strong>${wdOfKey(st.suggest)} ${fmtMD(st.suggest)}</strong> 開始，但現在計入 <strong>${wdOfKey(st.workday)} ${fmtMD(st.workday)}</strong> 工作日——多數是中間睡了覺沒有記。</span><button type="button" class="btn btn-ink btn-sm" data-action="trip-wdfix" data-wd="${st.suggest}">改為計入 ${wdOfKey(st.suggest)} ${fmtMD(st.suggest)}</button></div>` : ''}
       ${st.repaired.length ? `<div class="sheet-note trip-fix" role="status" data-trip-repair><span>原本記低的日期次序不對：${st.rows.filter((r) => r.repaired).map((r) => `「${TRIP_LABEL[r.step]}」記成 <strong>${wdOf(r.was)} ${fmtMD(dateKey(r.was))}</strong>，已按次序改成 <strong>${wdOf(r.t)} ${fmtMD(dateKey(r.t))}</strong>`).join('；')}。看看下面每格的日期，沒問題就按「儲存整趟」修正。</span></div>` : ''}
+      ${jobPicker}
       <label class="field trip-date"><span>實際日期（第一格那天）</span><input type="date" name="anchor" value="${st.anchor}" data-action="trip-anchor"></label>
       <p class="fine trip-tip">由上而下填；過了午夜的時間會自動算成隔天，每格下面會寫明是哪一天。</p>
       ${groups}
-      <fieldset data-trip-pay ${tripPayMode(data,st.trip,st.workday,st.times.clockIn)!=='perOrder'?'hidden':''}><legend>收入／單數</legend>${incomeFields(sh.pay || st.trip.session || {})}</fieldset>
+      <fieldset data-trip-pay ${tripPayMode(data,st.trip,st.workday,st.times.clockIn,sh.jobId)!=='perOrder'?'hidden':''}><legend>收入／單數</legend>${incomeFields(sh.pay || st.trip.session || {})}</fieldset>
       <label class="verify-toggle"><input type="checkbox" name="verified"${verified ? ' checked' : ''}><span class="verify-box" aria-hidden="true">${icon('check', 14, 3.2)}</span><span class="verify-text"><strong>已對照追蹤 App</strong><small>上面的日期和時間都一樣</small></span></label>
       <details class="more"${sh.wdTo ? ' open' : ''}><summary>進階：計入另一個工作日</summary>
         <label class="field"><span>這一趟算哪一個工作日</span><input type="date" name="wdTo" value="${st.workday}" data-action="trip-wdto"></label>
@@ -501,7 +519,7 @@ function quickWakeSheet(ctx) {
 }
 
 // 「食咗飯」之後的小面板：唔係啱啱食就揀幾耐之前；餐名相片想加先加。
-export const MEAL_AGO = [[0, '啱啱'], [15, '15 分鐘前'], [30, '半個鐘前'], [60, '1 個鐘前'], [120, '2 個鐘前']];
+export const MEAL_AGO = [[0, '啱啱'], [15, '15 分鐘前'], [30, '半個鐘前'], [60, '1 個鐘前'], [120, '2 個鐘前'], [180, '3 個鐘前']];
 export function mealMovePreview(hhmm, now) {
   const t = hhmm ? lastClockBefore(hhmm, now, { inclusive: true }) : null;
   return t == null ? '' : `會改成 <strong>${whenText(t)}</strong>`;
@@ -525,7 +543,11 @@ function mealQuickSheet(ctx) {
       <div class="cross-note" data-mm-preview aria-live="polite"></div>
       <button class="btn btn-line btn-block" type="submit">改做這個時間</button>
     </form>
-    <button type="button" class="btn btn-soft btn-block" data-action="meal-open" data-id="${esc(m.id)}">加餐名、地點、相片</button>
+    ${m.photo ? `<img class="photo-preview" src="${esc(m.photo)}" alt="這一餐的相片">` : ''}
+    <div class="btn-pair">
+      <label class="btn btn-soft file-btn">${icon('camera', 17, 2)}${m.photo ? '換張相片' : '順手加相片'}<input type="file" accept="image/*" data-action="meal-quick-photo" data-id="${esc(m.id)}" hidden></label>
+      <button type="button" class="btn btn-soft" data-action="meal-open" data-id="${esc(m.id)}">加餐名、地點</button>
+    </div>
     <button type="button" class="btn btn-text-danger btn-block" data-action="meal-delete" data-id="${esc(m.id)}">撳錯咗？刪除這一餐</button>
     <div class="sheet-foot"><button type="button" class="btn btn-ink btn-block btn-lg" data-action="close-sheet">得喇</button></div>`);
 }
@@ -570,12 +592,47 @@ function syncSheet(ctx) {
     <div class="stack-tight">${sum.actions.map((a) => btn[a]).join('')}</div>`);
 }
 
+// 一次過補返近幾日缺漏的睡眠（按工作日列出，起床早過入睡自動算隔天，單次寫入可整批復原）。
+function sleepCatchupSheet(ctx) {
+  const { data, now, ui } = ctx;
+  const sh = ui.sheet;
+  const rows = sh.rows || missingSleepDays(data, now, 7);
+  if (!rows.length) {
+    return sheetWrap('補返近幾日睡眠', '<p class="muted">近七個工作日都已經有睡眠紀錄。</p><div class="sheet-foot"><button type="button" class="btn btn-ink btn-block btn-lg" data-action="close-sheet">得喇</button></div>');
+  }
+  const focusWd = sh.focusWd || null;
+  const items = rows.map((r, i) => {
+    // 預設全部唔剔（除非係喺睡眠頁特登點某一日灰柱入嚟），避免唔小心一次過存晒估出嚟嘅時間。
+    const on = focusWd ? r.wd === focusWd : false;
+    const ed = sleepEndKey(r.sd, r.st, r.et);
+    const start = fromInputs(r.sd, normTime(r.st) || '');
+    const end = ed && r.et ? fromInputs(ed, normTime(r.et) || '') : null;
+    const prev = sleepPairPreview(data, start, end, { now });
+    return `<div class="cu-row${on ? '' : ' is-off'}" data-cu-row="${i}">
+      <label class="cu-head"><input type="checkbox" name="use_${i}"${on ? ' checked' : ''}><strong>${wdOfKey(r.wd)} ${fmtMD(r.wd)} 工作日</strong><span class="muted small">${on ? '核對或改鐘數' : '剔咗先會存低'}</span></label>
+      <div class="cu-fields">
+        <label class="field"><span>入睡那天</span><input type="date" name="sd_${i}" value="${esc(r.sd)}"></label>
+        <label class="field"><span>入睡</span><input type="time" name="st_${i}" value="${esc(r.st)}"></label>
+        <label class="field"><span>起床</span><input type="time" name="et_${i}" value="${esc(r.et)}"></label>
+      </div>
+      <div class="cross-note cu-preview" data-cu-preview="${i}" aria-live="polite">${prev}</div>
+    </div>`;
+  }).join('');
+  const checkedCount = focusWd ? rows.filter((r) => r.wd === focusWd).length : 0;
+  return sheetWrap('補返近幾日睡眠', `<form class="form cu-form" data-form="sleep-catchup" data-cu-count="${rows.length}">
+      <p class="fine">下面鐘數只係參考；記得邊日就逐日剔選再改時間，起床早過入睡會自動算隔天。存低後可以一鍵「復原」。</p>
+      <div class="cu-list">${items}</div>
+      <div class="sheet-foot"><button class="btn btn-ink btn-block btn-lg" type="submit" data-cu-submit${checkedCount ? '' : ' disabled'}>${checkedCount ? `一次存低 ${checkedCount} 筆睡眠` : '請先剔選要補的日子'}</button></div>
+    </form>`, false);
+}
+
 export function sheetView(ctx) {
   const sh = ctx.ui.sheet;
   if (!sh) return '';
   const extra = planningSheet(ctx,sheetWrap);
   if (extra) return extra;
   if (sh.type === 'rest-only') return sheetWrap('補記休息',restForm(ctx,sh.wd));
+  if (sh.type === 'sleep-catchup') return sleepCatchupSheet(ctx);
   if (sh.type === 'sync') return syncSheet(ctx);
   if (sh.type === 'trip') return tripSheet(ctx);
   if (sh.type === 'add-menu') return addMenuSheet(ctx);

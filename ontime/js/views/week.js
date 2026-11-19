@@ -80,7 +80,7 @@ function weekGrid(data, ws, mode, now) {
       <div class="wk-track${off && mode === 'workday' ? ' is-off' : ''}">${grid}${segs}${off && !segs ? '<span class="lane-empty">休假 · 不排班</span>' : ''}${nowLine}</div>
     </div>`;
   }).join('');
-  return `<div class="table-wrap"><div class="wk-grid"><div class="wk-row wk-head"><div class="wk-day"></div><div class="wk-track-head">${head}</div></div>${rows}</div></div>`;
+  return `<div class="wk-scroll-wrap"><div class="table-wrap"><div class="wk-grid"><div class="wk-row wk-head"><div class="wk-day"></div><div class="wk-track-head">${head}</div></div>${rows}</div></div></div>`;
 }
 
 function weekSummary(data, ws, now) {
@@ -150,11 +150,15 @@ function monthCalendar(data, ui, now) {
     const chips = shifts.map((sh) => {
       const job = jobOf(data, sh.jobId);
       const done = sessions.some((s) => s.shiftId === sh.id);
-      return `<span class="cal-chip k-${job?.color === 'deliv' ? 'deliv' : 'work'}${done ? '' : ' is-plan'}">${esc(job?.name ?? '')} ${fmtTime(sh.start)}</span>`;
-    }).join('') + sessions.filter((s) => !s.shiftId).map((s) => `<span class="cal-chip k-work">${esc(jobOf(data, s.jobId)?.name ?? '工作')} ${fmtTime(s.start)}</span>`).join('');
+      return `<span class="cal-chip k-${job?.color === 'deliv' ? 'deliv' : 'work'}${done ? '' : ' is-plan'}" title="${esc(job?.name ?? '')} ${fmtTime(sh.start)}"><span class="cal-chip-name">${esc(job?.name ?? '')} </span>${fmtTime(sh.start)}</span>`;
+    }).join('') + sessions.filter((s) => !s.shiftId).map((s) => {
+      const job = jobOf(data, s.jobId);
+      return `<span class="cal-chip k-${job?.color === 'deliv' ? 'deliv' : 'work'}" title="${esc(job?.name ?? '工作')} ${fmtTime(s.start)}"><span class="cal-chip-name">${esc(job?.name ?? '工作')} </span>${fmtTime(s.start)}</span>`;
+    }).join('');
     const sl = sleepBy[k];
+    const slShort = sl ? `${Math.round(sl / (30 * 60000)) / 2}h` : '';
     cells.push(`<button type="button" class="cal-cell${inMonth ? '' : ' is-out'}${k === dateKey(now) ? ' is-today' : ''}${sel.has(k) ? ' is-selected' : ''}" data-action="cal-pick" data-key="${k}" ${shifts.length===1 ? `data-shift="${esc(shifts[0].id)}"` : ''} aria-pressed="${sel.has(k)}" aria-label="${fmtMD(k)} ${wdOfKey(k)}">
-      <span class="cal-top"><span class="cal-num">${Number(k.slice(8))}</span>${sl ? `<span class="cal-sleep">睡 ${fmtDur(sl).replace(' ', '')}</span>` : ''}</span>
+      <span class="cal-top"><span class="cal-num">${Number(k.slice(8))}</span>${sl ? `<span class="cal-sleep"><span class="cal-sleep-full">睡 ${fmtDur(sl).replace(' ', '')}</span><span class="cal-sleep-short">${slShort}</span></span>` : ''}</span>
       ${chips}${off ? '<span class="cal-off">休假</span>' : ''}
     </button>`);
   }
@@ -200,7 +204,7 @@ export function weekView(ctx) {
   const tools = `${seg('weekMode', '排列方式', [['workday', '按工作日'], ['calendar', '按日曆日']], ui.weekMode)}
     <button type="button" class="btn btn-line" data-action="copy-week" data-week="${ws}">複製上一週的班表</button><div class="day-switch"><button type="button" class="icon-btn" data-action="week-shift" data-dir="-1" aria-label="上一週">${icon('left', 18, 2)}</button><button type="button" class="icon-btn" data-action="week-shift" data-dir="1" aria-label="下一週">${icon('right', 18, 2)}</button></div>`;
   return `${pageHead('一週作息與班表', `${fmtMD(ws)} – ${fmtMD(we)} · 實際、計畫、休假一起看`, tools)}
-    <section class="card"><p class="muted small">${ui.weekMode === 'workday' ? '每行是一個工作日；夜班和下班後的事不會被午夜切開。' : '每行是一個日曆日 00:00–24:00；夜班在午夜切開，標示「接續」。'}</p>${weekGrid(data, ws, ui.weekMode, now)}
+    <section class="card"><div class="wk-note-row"><p class="muted small">${ui.weekMode === 'workday' ? '每行是一個工作日；夜班和下班後的事不會被午夜切開。' : '每行是一個日曆日 00:00–24:00；夜班在午夜切開，標示「接續」。'}</p><span class="wk-swipe-hint mobile-only">左右滑動看整日 →</span></div>${weekGrid(data, ws, ui.weekMode, now)}
     <div class="legend">${(data.jobs.length ? data.jobs : [{ name: '工作', color: 'work' }]).map((j) => `<span><i class="sw k-${j.color === 'deliv' ? 'deliv' : 'work'}"></i>${esc(j.name)}</span>`).join('')}<span><i class="sw k-commute"></i>通勤</span><span><i class="sw k-sleep"></i>睡眠</span><span><i class="sw k-meal"></i>用餐</span><span><i class="sw is-plan-sw"></i>計畫</span></div></section>
     <div class="grid-1-2">${weekSummary(data, ws, now)}${templatesCard(data, ui)}</div>
     ${monthCalendar(data, ui, now)}`;

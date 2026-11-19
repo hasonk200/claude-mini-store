@@ -67,9 +67,31 @@ function segHTML(x, a, b) {
   return `<div class="seg-bar k-${x.kind}${x.plan ? ' is-plan' : ''}" style="left:${pct(s, a, b)};width:${w.toFixed(2)}%" title="${esc(KIND[x.kind]?.label || '')} ${fmtTime(x.a)}–${fmtTime(x.b)}${x.plan ? '（計畫）' : ''}">${label}</div>`;
 }
 
+// 畫面時間帶專用：在 intervalsAround 之外，也把尚未掛到出勤的獨立通勤畫出來（不影響任何工時與通勤統計計算）。
+export function bandItems(data, a, b, now) {
+  const out = intervalsAround(data, a, b, now);
+  const sessIds = new Set((data.sessions || []).map((s) => s.id));
+  const add = (x, y) => {
+    if (x == null || y == null || y <= x || y <= a || x >= b) return;
+    out.push({ kind: 'commute', a: x, b: y, plan: false, label: '通勤' });
+  };
+  for (const j of data.journeys || []) {
+    if (j.sessionId && sessIds.has(j.sessionId)) continue;
+    const goEnd = j.arrive ?? j.ride;
+    if (j.out != null && goEnd != null && goEnd > j.out) add(j.out, goEnd);
+    else {
+      const pt = j.arrive ?? j.ride ?? j.out;
+      if (pt != null) add(pt, Math.min(pt + 15 * 60000, b));
+    }
+    const backStart = j.leave ?? j.ride2;
+    if (backStart != null && j.home != null && j.home > backStart) add(backStart, j.home);
+  }
+  return out;
+}
+
 // 單一色條（手機）或分行色條（桌面）。
 export function ribbon(data, a, b, now, { lanes = false } = {}) {
-  const items = intervalsAround(data, a, b, now);
+  const items = bandItems(data, a, b, now);
   const ticks = ticksFor(a, b, lanes);
   const showNow = now > a && now < b;
   const nowMark = showNow ? `<div class="now-line" style="left:${pct(now, a, b)}"><span class="now-pill">現在 ${fmtTime(now)}</span></div>` : '';
@@ -158,10 +180,19 @@ export const phaseName = (t) => PHASE_NAME[phaseOf(t)];
 // 手機：一條橫向時間帶。上面係鐘數，中間係色條（睡眠、通勤、上班、食飯、計畫），下面係標籤，而家有一條指針。
 const TAG = { sleep: '瞓', work: '上班', deliv: '上班', commute: '通勤', meal: '食' };
 export function dayBand(data, a, b, now) {
-  const items = intervalsAround(data, a, b, now);
+  const items = bandItems(data, a, b, now);
   const ticks = ticksFor(a, b, true);
+  const nowIn = now > a && now < b;
+  const fNow = nowIn ? (now - a) / (b - a) : -1;
+  // 「而家 HH:MM」膠囊大約佔 22% 闊度：隱藏會俾佢遮住嘅鐘數，唔會切半個數字。
+  const nowLeft = fNow < 0 ? 1 : fNow < 0.12 ? fNow : fNow > 0.88 ? fNow - 0.24 : fNow - 0.12;
+  const nowRight = fNow < 0 ? -1 : fNow < 0.12 ? fNow + 0.24 : fNow > 0.88 ? fNow : fNow + 0.12;
   const grid = ticks.map((t) => `<i class="band-tick${t.mid ? ' is-mid' : ''}" style="left:${pct(t.t, a, b)}"></i>`).join('');
-  const hours = ticks.map((t) => {
+  const hours = ticks.filter((t) => {
+    if (!nowIn) return true;
+    const f = (t.t - a) / (b - a);
+    return f < nowLeft - 0.03 || f > nowRight + 0.03;
+  }).map((t) => {
     const f = (t.t - a) / (b - a);
     const anchor = f < 0.04 ? '0' : f > 0.96 ? '-100%' : '-50%';
     return `<span class="band-hour${t.mid ? ' is-mid' : ''}" style="left:${(f * 100).toFixed(2)}%;transform:translateX(${anchor})">${t.mid ? '00' : esc(fmtTime(t.t).slice(0, 2))}</span>`;
@@ -173,7 +204,7 @@ export function dayBand(data, a, b, now) {
     const w = ((e0 - s0) / (b - a)) * 100;
     return `<span class="band-seg k-${x.kind}${x.plan ? ' is-plan' : ''}" style="left:${pct(s0, a, b)};width:${Math.max(w, 0.6).toFixed(2)}%" title="${esc(KIND[x.kind]?.label || '')} ${fmtTime(x.a)}–${fmtTime(x.b)}${x.plan ? '（計畫）' : ''}"></span>`;
   }).join('');
-  // 標籤：只畫夠闊、唔會撞埋一齊嘅（實際紀錄優先，計畫其次）。
+  // 標籤：同類別（例如班內休息拆開嘅兩段上班）唔重複畫兩次「上班」，騰出空位俾食飯同通勤。
   const cand = items.filter((x) => TAG[x.kind]).map((x) => {
     const s0 = Math.max(x.a, a);
     const e0 = Math.min(x.b, b);
@@ -181,22 +212,25 @@ export function dayBand(data, a, b, now) {
     return { x, mid, w: ((e0 - s0) / (b - a)) * 100 };
   }).filter((c) => c.w >= 5 || c.x.kind === 'meal').sort((p, q) => (p.x.plan ? 1 : 0) - (q.x.plan ? 1 : 0) || q.w - p.w);
   const kept = [];
+  const seenLabels = new Set();
   for (const c of cand) {
+    const tagKey = `${TAG[c.x.kind]}:${c.x.plan ? 'p' : 'r'}`;
+    if (seenLabels.has(tagKey)) continue;
     const half = (TAG[c.x.kind].length * 3.4 + 2.4);
     if (kept.some((k) => Math.abs(k.mid - c.mid) < half + k.half)) continue;
+    seenLabels.add(tagKey);
     kept.push({ ...c, half });
   }
   const tags = kept.map((c) => {
     const anchor = c.mid < 5 ? '0' : c.mid > 95 ? '-100%' : '-50%';
     return `<span class="band-tag k-${c.x.kind}${c.x.plan ? ' is-plan' : ''}" style="left:${c.mid.toFixed(2)}%;transform:translateX(${anchor})">${TAG[c.x.kind]}</span>`;
   }).join('');
-  const nowIn = now > a && now < b;
-  const f = nowIn ? (now - a) / (b - a) : 0;
-  const needle = nowIn ? `<span class="band-now" style="left:${pct(now, a, b)}"><b style="transform:translateX(${f < 0.12 ? '0' : f > 0.88 ? '-100%' : '-50%'})">而家 ${fmtTime(now)}</b></span>` : '';
+  const needle = nowIn ? `<span class="band-now" style="left:${pct(now, a, b)}"><b style="transform:translateX(${fNow < 0.12 ? '0' : fNow > 0.88 ? '-100%' : '-50%'})">而家 ${fmtTime(now)}</b></span>` : '';
   const label = `由 ${wdOf(a)} ${fmtTime(a)} 到 ${wdOf(b)} ${fmtTime(b)}；${items.filter((x) => !x.plan).length} 段紀錄`;
+  const emptyMsg = items.length ? '' : '<span class="band-empty" aria-hidden="true">這段時間未有紀錄</span>';
   return `<div class="band" role="img" aria-label="${esc(label)}">
     <div class="band-hours" aria-hidden="true">${hours}</div>
-    <div class="band-track">${grid}${segs}${needle}</div>
+    <div class="band-track">${grid}${segs}${emptyMsg}${needle}</div>
     <div class="band-tags" aria-hidden="true">${tags}</div>
   </div>`;
 }

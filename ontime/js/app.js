@@ -1,4 +1,4 @@
-import { clockRange, restTarget, copyWeek, reminderCalendar } from './planning.js';
+import { clockRange, restTarget, copyWeek, reminderCalendar, missingSleepDays } from './planning.js';
 import { rangeText } from './views/planning.js';
 import { backupCSV } from './backup.js';
 import { readTemp, tempPreview, importTemp } from './temp-import.js';
@@ -6,7 +6,7 @@ import { workdayOfSession } from './logic.js';
 import * as store from './store.js';
 import * as act from './actions.js';
 import { icon, esc } from './ui.js';
-import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, wdOf, fmtMD, normTime, endOnOrAfter, fmtDur } from './time.js';
+import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, wdOf, fmtMD, fmtDayMD, normTime, endOnOrAfter, fmtDur } from './time.js';
 import { quickWakeState, QUICK_WAKE_ERROR, lastClockBefore, latestOpenSleep, STEPS, tripState, tripErrorText, tripAllVerified } from './logic.js';
 import { activeSession, shiftDateMismatch, mealWorkday, mealAutoWorkday, restWorkday, restAutoWorkday, journeyAutoWorkday, needsWorkdayConfirm, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
@@ -35,17 +35,19 @@ const ROUTES = {
 const SIDEBAR = ['today', 'timeline', 'week', 'sleep', 'meals', 'stats'];
 const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'], ['+', '', 'plus'], ['sleep', '睡眠', 'moon'], ['stats', '統計', 'chart']];
 
+const APP_VERSION = '2.41.0';
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
-  selRef: null, sheet: null, jobEdit: null, canInstall: false,
+  selRef: null, sheet: null, jobEdit: null, canInstall: false, appVersion: APP_VERSION,
   pendingRecord: null, pendingDelete: null, flash: null, sleepSaved: null,
   drafts: loadDrafts(), heroCollapsed: loadPref('ontime-scene') !== 'on',
   todayMore: loadPref('ontime-today-more') === 'open',
-  sleepFill: loadPref('ontime-sleep-fill') === 'open', sleepAttr: loadPref('ontime-sleep-attr') === 'open'
+  sleepFill: loadPref('ontime-sleep-fill') === 'open', sleepAttr: loadPref('ontime-sleep-attr') === 'open',
+  mealFill: loadPref('ontime-meal-fill') === 'open'
 };
 // 可以展開／收起、而且會記住的區塊。
-const PREF_KEYS = { todayMore: 'ontime-today-more', sleepFill: 'ontime-sleep-fill', sleepAttr: 'ontime-sleep-attr' };
+const PREF_KEYS = { todayMore: 'ontime-today-more', sleepFill: 'ontime-sleep-fill', sleepAttr: 'ontime-sleep-attr', mealFill: 'ontime-meal-fill' };
 
 // 只屬於這部裝置的小偏好（例如街景收起）；讀不到就用預設。
 function loadPref(key) { try { return localStorage.getItem(key); } catch { return null; } }
@@ -198,12 +200,17 @@ function scrollSheetToForm() {
 }
 let dirty = false;
 
-function applyTheme(theme) {
+const THEME_WASH = {
+  light: { night: '#DCE1F0', dawn: '#FBE8DC', day: '#D6E7FF', dusk: '#EDE3F3' },
+  dark: { night: '#111A31', dawn: '#21171A', day: '#111A28', dusk: '#1C1629' }
+};
+function applyTheme(theme, phase = 'day') {
   const root = document.documentElement;
   if (theme === 'light' || theme === 'dark') root.dataset.theme = theme; else delete root.dataset.theme;
   try { localStorage.setItem('ontime-theme', theme || 'auto'); } catch { /* 忽略 */ }
   const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0B1018' : '#EEF1F5');
+  const wash = THEME_WASH[dark ? 'dark' : 'light'][phase] || (dark ? '#0B1018' : '#EEF1F5');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', wash);
 }
 
 // 背景重畫（同步、定時更新、標示過期）遇到你正在欄位裡打字：先不換畫面，離開欄位後才更新。
@@ -219,9 +226,9 @@ function typingIn(sel) {
 
 function render() {
   const c = ctx();
-  applyTheme(c.data.settings.theme);
   // 頁頂底色跟時段（夜晚、清晨、日間、黃昏）；只按鐘數，唔會閃。
   const phase = phaseOf(c.now);
+  applyTheme(c.data.settings.theme, phase);
   if (document.documentElement.dataset.phase !== phase) document.documentElement.dataset.phase = phase;
   const r = ROUTES[ui.route] || ROUTES.today;
   document.title = `${r.title} · ONTIME`;
@@ -527,6 +534,35 @@ const handlers = {
     ui.sheet = el.dataset.new ? { type: 'trip', wd: sh.wd, isNew: true } : { type: 'trip', wd: sh.wd, sessionId: el.dataset.sid || null, journeyId: el.dataset.jid || null };
     render();
   },
+  'trip-job': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    const st = tripState(store.get(), sh, nowFn());
+    ui.sheet = { ...sh, focus: null, vals: st.vals, jobId: el.dataset.job };
+    render();
+  },
+  'stale-clear': (el) => {
+    if (!el.dataset.confirmed) staleJourneyToDelete = el.dataset.jid || null;
+    if (!staleJourneyToDelete) return;
+    if (confirmFirst(el, '清除這趟未上班紀錄？', '會先自動在本機保留一份安全備份，清除後亦可以即時「復原」。', '備份並清除')) {
+      const jid = staleJourneyToDelete;
+      staleJourneyToDelete = null;
+      afterRecovery(() => {
+        const r = act.deleteTrip({ journeyId: jid });
+        lastView = ''; lastSheet = null;
+        if (r.ok) toastUndo('已清除這趟未上班紀錄（已自動備份）'); else toast('找不到這一趟');
+        render();
+      });
+    }
+  },
+  'sleep-catchup': () => {
+    const rows = missingSleepDays(store.get(), nowFn(), 7);
+    showSheet('sleep-catchup', { rows });
+  },
+  'sleep-day-fill': (el) => {
+    const rows = missingSleepDays(store.get(), nowFn(), 7);
+    showSheet('sleep-catchup', { rows, focusWd: el.dataset.wd || null });
+  },
   'trip-day': (el) => {
     const sh = ui.sheet;
     if (sh?.type !== 'trip') return;
@@ -589,7 +625,7 @@ const handlers = {
       return;
     }
     flash(`meal:${r.id}`);
-    toast(`已記低食飯 ${wdOf(now)} ${fmtTime(now)}`, `${UNDO}<button type="button" class="btn btn-toast btn-sm" data-action="meal-quick-open" data-id="${esc(r.id)}">改時間</button>`, 7000);
+    toast(`已記低食飯 ${wdOf(now)} ${fmtTime(now)}`, `${UNDO}<button type="button" class="btn btn-toast btn-sm" data-action="meal-quick-open" data-id="${esc(r.id)}">改時間／加相</button>`, 7000);
   },
   'meal-quick-open': (el) => {
     const m = store.get().meals.find((x) => x.id === el.dataset.id);
@@ -864,6 +900,38 @@ function formAutoWorkday(form, t) {
   return null;
 }
 
+// 批次補睡眠即時預覽：更新每行時數／跨午夜／錯誤與底部總筆數。
+function updateCatchupPreview(f) {
+  const n = Number(f.dataset.cuCount) || 0;
+  const data = store.get();
+  const now = nowFn();
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    const on = !!f[`use_${i}`]?.checked;
+    if (on) count++;
+    const row = f.querySelector(`[data-cu-row="${i}"]`);
+    if (row) {
+      row.classList.toggle('is-off', !on);
+      const hint = row.querySelector('.cu-head .muted');
+      if (hint) hint.textContent = on ? '核對或改鐘數' : '剔咗先會存低';
+    }
+    const box = f.querySelector(`[data-cu-preview="${i}"]`);
+    if (!box) continue;
+    const sd = f[`sd_${i}`]?.value;
+    const st = normTime(f[`st_${i}`]?.value || '');
+    const et = normTime(f[`et_${i}`]?.value || '');
+    const ed = sleepEndKey(sd, st || '', et || '');
+    const start = st ? fromInputs(sd, st) : null;
+    const end = ed && et ? fromInputs(ed, et) : null;
+    box.innerHTML = start != null ? sleepPairPreview(data, start, end, { now }) : '<span class="c-danger">請填寫有效時間</span>';
+  }
+  const btn = f.querySelector('[data-cu-submit]');
+  if (btn) {
+    btn.disabled = count === 0;
+    btn.textContent = count ? `一次存低 ${count} 筆睡眠` : '請先剔選要補的日子';
+  }
+}
+
 // 一邊填一邊更新「會存成…、歸屬…」的預覽。
 function updateFormPreview(form) {
   const data = store.get();
@@ -874,10 +942,19 @@ function updateFormPreview(form) {
     let line=rangeText(r);
     if(form.restMode && r) {
       const {session,error}=restTarget(data,r,form.restMode.value,now);
-      line=error || line+' · '+(session?'班內休息 · 工作日 '+workdayOfSession(session,data):'獨立休息 · 工作日 '+(form.wd?.value || restAutoWorkday(r,data)));
+      const wdKey = session ? workdayOfSession(session, data) : (form.wd?.value || restAutoWorkday(r, data));
+      const wdLabel = wdKey ? fmtDayMD(wdKey) : '';
+      const note = form.querySelector('[data-wd-preview]');
+      if (note) {
+        note.innerHTML = error
+          ? `<span class="c-danger">${esc(error)}</span>`
+          : `${esc(line)} · ${session ? '班內休息' : '獨立休息'}${wdLabel ? ` · 歸屬 ${wdLabel} 工作日` : ''}`;
+        boxRange.textContent = '';
+        return;
+      }
+      line = error || `${line} · ${session ? '班內休息' : '獨立休息'}${wdLabel ? ` · 工作日 ${wdLabel}` : ''}`;
     }
     boxRange.textContent=line;
-    if(form.restMode && r) { const note=form.querySelector('[data-wd-preview]');if(note)note.textContent='';return; }
   }
   if (form.dataset.wdKind) {
     const box = form.querySelector('[data-wd-preview]');
@@ -935,6 +1012,7 @@ function quickWakeTyped(f, name) {
 
 // 整趟面板打字：即時更新每格下面的日期、去程／上班／回程和錯誤提示，不重畫面板。
 let tripToDelete = null;
+let staleJourneyToDelete = null;
 function tripSync(f) {
   const sh = ui.sheet;
   if (sh?.type !== 'trip') return null;
@@ -952,7 +1030,7 @@ function tripTyped(f) {
   const st = tripSync(f);
   if (!st) return;
   const pay=f.querySelector('[data-trip-pay]');
-  if(pay) pay.hidden = act.tripPayMode(store.get(),st.trip,st.workday,st.times.clockIn)!=='perOrder';
+  if(pay) pay.hidden = act.tripPayMode(store.get(),st.trip,st.workday,st.times.clockIn,ui.sheet?.jobId)!=='perOrder';
   for (const r of st.rows) {
     const row = f.querySelector(`.trip-row[data-step="${r.step}"]`);
     if (!row) continue;
@@ -1243,12 +1321,37 @@ const forms = {
     const r = act.saveTrip({
       sessionId: st.trip.session?.id ?? null,
       journeyId: st.trip.session ? null : st.trip.journey?.id ?? null,
-      wd: sh.wd, wdTo: sh.wdTo && sh.wdTo !== st.wd0 ? sh.wdTo : null, times: st.times, verified, pay:f.income && !f.querySelector('[data-trip-pay]').hidden ? payFrom(f) : undefined
+      wd: sh.wd, wdTo: sh.wdTo && sh.wdTo !== st.wd0 ? sh.wdTo : null, times: st.times, verified,
+      pay:f.income && !f.querySelector('[data-trip-pay]').hidden ? payFrom(f) : undefined,
+      jobId: sh.jobId || null
     }, now);
     if (!r.ok) { toast(tripErrorText(r)); return; }
     ui.sheet = null;
     lastView = ''; lastSheet = null;
     toastUndo(`已儲存整趟${st.summary.work != null ? ` · 上班 ${fmtDur(st.summary.work)}` : ''}`);
+    render();
+  },
+  'sleep-catchup': (f) => {
+    const n = Number(f.dataset.cuCount) || 0;
+    const now = nowFn();
+    const items = [];
+    for (let i = 0; i < n; i++) {
+      if (!f[`use_${i}`]?.checked) continue;
+      const sd = f[`sd_${i}`]?.value;
+      const st = normTime(f[`st_${i}`]?.value || '');
+      const et = normTime(f[`et_${i}`]?.value || '');
+      const ed = sleepEndKey(sd, st || '', et || '');
+      const start = st ? fromInputs(sd, st) : null;
+      const end = ed && et ? fromInputs(ed, et) : null;
+      if (start == null || end == null) { toast('有勾選的日子時間未填妥'); return; }
+      items.push({ start, end });
+    }
+    if (!items.length) { toast('請最少剔選一日再儲存'); return; }
+    const r = act.saveSleepBatch(items, now);
+    if (!r.ok) { toast(`第 ${(r.index ?? 0) + 1} 筆：${SLEEP_PAIR_ERROR[r.reason] || '這段睡眠存不到'}`); return; }
+    ui.sheet = null;
+    lastView = ''; lastSheet = null;
+    toastUndo(`已一次補記 ${r.count} 筆睡眠`);
     render();
   },
   'quick-wake': (f) => {
@@ -1436,6 +1539,8 @@ function bind() {
       const box = mm.querySelector('[data-mm-preview]');
       if (box) box.innerHTML = mealMovePreview(normTime(e.target.value), nowFn());
     }
+    const cu = e.target.closest?.('form[data-form="sleep-catchup"]');
+    if (cu) updateCatchupPreview(cu);
   });
   // 「詳細」展開或收起：記住你的選擇（toggle 事件不會冒泡，用捕獲階段）。
   document.addEventListener('toggle', (e) => {
@@ -1448,6 +1553,7 @@ function bind() {
   }, true);
   document.addEventListener('change', (e) => {
     const any = e.target.closest('form');
+    if (any?.dataset.form === 'sleep-catchup') updateCatchupPreview(any);
     if (any && e.target.name === 'wd' && any.wdMode && any.wdMode.value !== 'sheet') { setWdMode(any, 'manual'); updateFormPreview(any); }
     const form = e.target.closest('form[data-draft]');
     if (form && e.target.type !== 'file') { captureDraft(form); updateFormPreview(form); }
@@ -1499,6 +1605,21 @@ function bind() {
       const cat = ui.sheet.cat;
       ui.sheet = { ...(cat ? { type: 'record', wd: el.value, cat, step: defaultStepIn(store.get(), el.value, cat) } : openRecordSheet(store.get(), el.value, null)), wdTouched: true };
       asUser(render);
+    }
+    if (el.dataset.action === 'meal-quick-photo' && el.files?.[0]) {
+      const m = store.get().meals.find((x) => x.id === el.dataset.id);
+      if (!m) { el.value = ''; return; }
+      try {
+        const photo = await compressPhoto(el.files[0]);
+        act.saveMeal({ ...m, photo, hasPhoto: true }, nowFn());
+        lastView = ''; lastSheet = null;
+        toast('已加入相片');
+        render();
+      } catch {
+        toast('這張相片太大或無法讀取，請換一張');
+      }
+      el.value = '';
+      return;
     }
     if (el.dataset.action === 'meal-photo' && el.files?.[0]) {
       // 先存好已填的文字，再處理相片；處理完重畫時欄位不會被清空。

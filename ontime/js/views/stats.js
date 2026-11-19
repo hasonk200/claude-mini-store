@@ -65,25 +65,34 @@ export function statsView(ctx) {
 
   const jobs = [...new Set(st.sessions.map((s) => s.jobId))];
   const filters = jobs.length > 1 ? `<div class="btn-wrap">${[['all', '全部'], ...jobs.map((id) => [id, jobOf(data, id)?.name ?? '工作'])].map(([id, n]) => `<button type="button" class="btn btn-sm ${jobFilter === id ? 'btn-ink' : 'btn-line'}" data-action="stats-job" data-id="${id}" aria-pressed="${jobFilter === id}">${esc(n)}</button>`).join('')}</div>` : '';
-  const rows = st.sessions.filter((s) => jobFilter === 'all' || s.jobId === jobFilter).sort((a, b) => a.start - b.start).map((s) => {
+  const rows = st.sessions.filter((s) => jobFilter === 'all' || s.jobId === jobFilter).sort((a, b) => b.start - a.start).map((s) => {
     const split = Object.entries(splitWorkByDay(s, now));
     const job = jobOf(data, s.jobId);
+    const wd = workdayOfSession(s, data);
     return `<tr><td><b>${wdOf(s.start)} ${fmtMD(dateKey(s.start))}</b></td><td><span class="dot-label"><i class="sw k-${job?.color === 'deliv' ? 'deliv' : 'work'}"></i>${esc(job?.name ?? '工作')}</span></td>
       <td>${fmtTime(s.start)} → ${s.end ? `${dateKey(s.end) !== dateKey(s.start) ? wdOf(s.end) + ' ' : ''}${fmtTime(s.end)}` : '<span class="chip chip-real">進行中</span>'}</td>
       <td><b>${fmtDur(sessionWorkMs(s, now))}</b>${split.length > 1 ? `<br><span class="muted small">${split.map(([k, v]) => `${wdShort(k)} ${fmtDur(v)}`).join(' · ')}</span>` : ''}</td>
       <td class="muted">${{ hourly: '時薪', perOrder: '按單 · 整次實收', none: '不計薪' }[s.payMode] || ''}</td>
-      <td class="t-right">${incomeCell(s, now)}</td></tr>`;
+      <td class="t-right">${incomeCell(s, now)}</td>
+      <td class="t-right"><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}" data-sid="${esc(s.id)}">修改</button></td></tr>`;
   }).join('');
 
   const cards = st.sessions.filter((s) => jobFilter === 'all' || s.jobId === jobFilter).sort((a, b) => b.start - a.start).map((s) => tripCard(data, s, now)).join('');
 
+  const hasHourly = st.sessions.some((s) => s.payMode === 'hourly');
+  const totalPay = (hasHourly ? st.hourlyPay : 0) + (st.perOrderCount ? st.income : 0);
+  const missingOrders = st.perOrderCount - st.incomeKnown;
+  const totalLine = (hasHourly || st.perOrderCount)
+    ? `合計收入 <b>${money(totalPay)}</b>${missingOrders ? `（另有 ${missingOrders} 班按單未填）` : ''}`
+    : '';
+
   return `${pageHead('統計與收入', `${title} · 收入按開始上班日期歸屬，跨日只算一次`, tools)}
     <section class="kpis">
-      <div class="card card-ink kpi"><span>實際工時（按開班日）</span><strong>${fmtDur(st.workMs)}</strong><small class="c-lime">${st.sessions.length} 次出勤 · 跨期間的班算在開班那段</small></div>
-      ${st.sessions.some((s) => s.payMode === 'hourly')
+      <div class="card card-ink kpi"><span>實際工時（按開班日）</span><strong>${fmtDur(st.workMs)}</strong><small class="c-lime">${st.sessions.length} 次出勤${totalLine ? ` · ${totalLine}` : ' · 跨期間的班算在開班那段'}</small></div>
+      ${hasHourly
         ? `<div class="card kpi k-work-soft"><span>計薪 · 時薪</span><strong>${money(st.hourlyPay)}</strong><small>${st.hourlyKnown ? '用每班的計薪快照' : '部分班次未設時薪'}</small></div>`
         : `<div class="card kpi"><span>平均每班工時</span><strong>${st.sessions.length ? fmtDur(st.workMs / st.sessions.length) : '—'}</strong><small>${st.sessions.length} 班</small></div>`}
-      <div class="card kpi k-deliv-soft"><span>按單實收</span><strong>${st.perOrderCount ? money(st.income) : '—'}</strong><small>${st.perOrderCount ? `${st.orders} 單 · ${st.perOrderCount - st.incomeKnown} 班未填` : '沒有按單班次'}</small></div>
+      <div class="card kpi k-deliv-soft"><span>按單實收</span><strong>${st.perOrderCount ? money(st.income) : '—'}</strong><small>${st.perOrderCount ? `${st.orders} 單 · ${missingOrders} 班未填` : '沒有按單班次'}</small></div>
       <div class="card kpi k-commute-soft"><span>通勤</span><strong>${fmtDur(st.commuteMs)}</strong><small>只計完整路程</small></div>
       <div class="card kpi k-sleep-soft"><span>平均睡眠</span><strong>${sleep.avg == null ? '—' : fmtDur(sleep.avg)}</strong><small>${sleep.count} 天有完整紀錄</small></div>
     </section>
@@ -91,6 +100,6 @@ export function statsView(ctx) {
       <div class="bars ${ui.statsPeriod === 'month' ? 'bars-dense' : ''}">${bars}</div>
       <p class="fine">這裡按實際發生的日曆日計，包括上一段期間開始、跨午夜進來的夜班，所以加起來可能跟上面「按開班日」的實際工時不一樣。</p></section>
     <section class="card card-flush"><div class="card-head"><h2 class="card-title">出勤明細</h2>${filters}</div>
-      ${!isDesktop && rows ? `<ul class="trip-cards">${cards}</ul>` : rows ? `<div class="table-wrap"><table class="table"><thead><tr><th scope="col">上班日</th><th scope="col">工作</th><th scope="col">實際時段</th><th scope="col">工時（分日）</th><th scope="col">計算方式</th><th scope="col" class="t-right">收入</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted pad">這段期間沒有出勤紀錄。</p>'}
+      ${!isDesktop && rows ? `<ul class="trip-cards">${cards}</ul>` : rows ? `<div class="table-wrap"><table class="table"><thead><tr><th scope="col">上班日</th><th scope="col">工作</th><th scope="col">實際時段</th><th scope="col">工時（分日）</th><th scope="col">計算方式</th><th scope="col" class="t-right">收入</th><th scope="col" class="t-right">操作</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted pad">這段期間沒有出勤紀錄。</p>'}
     </section>`;
 }
