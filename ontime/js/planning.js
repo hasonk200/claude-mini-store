@@ -345,7 +345,12 @@ export function tripPrefill(data, sh, now, mode = 'all') {
   };
 }
 
-// 改咗其中一格之後，將後面仲係「預填、未改過」嘅格順移同一段真實時間（DST 安全）；改過嘅格唔郁。
+// 改咗其中一格之後，將後面仲係「預填、未改過」嘅格順移同一段真實時間（DST 安全）：
+// 1. 去到下一個用戶改過嘅格就停，唔越過；
+// 2. 上班、下班只跟班表或者用戶自己改（改去程三格唔會郁上班、下班，改上班亦唔會郁下班）。
+const WORK_STEPS = new Set(['clockIn', 'clockOut']);
+const GO_STEPS = new Set(['out', 'ride', 'arrive']);
+
 export function shiftTripPrefill(data, sh, now, editedStep, nextVals) {
   const vals = { ...nextVals };
   const prevPre = Array.isArray(sh.prefilled) ? sh.prefilled : [];
@@ -374,13 +379,18 @@ export function shiftTripPrefill(data, sh, now, editedStep, nextVals) {
 
   const deltaMs = newT - oldT;
   prefillTimes[editedStep] = newT;
-  if (deltaMs === 0 || !nextPrefilled.length) {
+  if (deltaMs === 0 || !nextPrefilled.length || editedStep === 'clockIn') {
     return { vals, prefilled: nextPrefilled, prefillTimes, shiftedSteps: [] };
   }
 
   const shiftedSteps = [];
   for (let i = editedIdx + 1; i < STEPS.length; i++) {
     const k = STEPS[i];
+    // 改去程唔越過去上班／下班；上班／下班一律唔自動順移。
+    if (GO_STEPS.has(editedStep) && !GO_STEPS.has(k)) break;
+    if (WORK_STEPS.has(k)) break;
+    // 遇到已填且係用戶改過嘅格就停，唔越過佢去郁更後面嘅格。
+    if (vals[k] && !nextPrefilled.includes(k)) break;
     if (!nextPrefilled.includes(k)) continue;
     const baseT = prefillTimes[k] ?? curSt.times?.[k] ?? null;
     if (baseT == null) continue;

@@ -326,3 +326,77 @@ test('工作日嗰班已經有出勤紀錄時，「新一趟」預填掣變灰�
   assert.doesNotMatch(html, /data-action="trip-prefill" data-mode="all"/);
   assert.doesNotMatch(html, /data-action="trip-prefill" data-mode="shift"/);
 });
+
+test('預填 → 改下班（09:30）→ 改出門（20:00）：上班仍然 21:00、回程上車仍然 09:42 唔早過下班、可以存', () => {
+  fresh({
+    jobs: [jobW],
+    sessions: [ses('s0', at('2026-11-16', '21:00'), at('2026-11-17', '09:00'))],
+    journeys: [{
+      id: 'j0', sessionId: 's0',
+      out: at('2026-11-16', '20:14'), ride: at('2026-11-16', '20:23'), arrive: at('2026-11-16', '20:49'),
+      ride2: at('2026-11-17', '09:12'), home: at('2026-11-17', '09:54')
+    }],
+    shifts: [{ id: 'sh1', jobId: 'jw', start: at('2026-11-17', '21:00'), end: at('2026-11-18', '09:00') }]
+  });
+  const now = at('2026-11-18', '13:00');
+  const d = get();
+  const baseSh = { type: 'trip', wd: '2026-11-17', isNew: true };
+  const pre = tripPrefill(d, baseSh, now, 'all');
+  let sh = { ...baseSh, vals: pre.vals, anchor: pre.anchor, prefilled: pre.filledSteps, prefillTimes: pre.prefillTimes };
+
+  // 1) 下班改 09:30（+30m）→ 回程上車變 09:42、到家變 10:24
+  const s1 = shiftTripPrefill(d, sh, now, 'clockOut', { ...sh.vals, clockOut: '09:30' });
+  sh = { ...sh, vals: s1.vals, prefilled: s1.prefilled, prefillTimes: s1.prefillTimes };
+  assert.equal(sh.vals.ride2, '09:42');
+  assert.equal(sh.vals.home, '10:24');
+
+  // 2) 出門由 20:14 改 20:00（-14m）→ 只順移去程上車/抵達，絕對唔郁上班、下班同回程
+  const s2 = shiftTripPrefill(d, sh, now, 'out', { ...sh.vals, out: '20:00' });
+  assert.deepEqual(s2.shiftedSteps, ['ride', 'arrive']);
+  assert.equal(s2.vals.out, '20:00');
+  assert.equal(s2.vals.ride, '20:09');
+  assert.equal(s2.vals.arrive, '20:35');
+  assert.equal(s2.vals.clockIn, '21:00');  // 上班仍然 21:00
+  assert.equal(s2.vals.clockOut, '09:30'); // 下班仍然 09:30
+  assert.equal(s2.vals.ride2, '09:42');    // 回程上車仍然 09:42（唔早過下班）
+  assert.equal(s2.vals.home, '10:24');
+
+  const st = tripState(d, { ...sh, vals: s2.vals, prefilled: s2.prefilled, prefillTimes: s2.prefillTimes }, now);
+  assert.equal(st.error, null);
+  assert.ok(st.times.ride2 > st.times.clockOut);
+  assert.equal(saveTrip({ wd: '2026-11-17', times: st.times }, now).ok, true);
+});
+
+test('順移遇到用戶改過嘅格即停唔越過；改上班亦唔郁下班', () => {
+  fresh({
+    jobs: [jobW],
+    sessions: [ses('s0', at('2026-11-16', '21:00'), at('2026-11-17', '09:00'))],
+    journeys: [{
+      id: 'j0', sessionId: 's0',
+      out: at('2026-11-16', '20:14'), ride: at('2026-11-16', '20:23'), arrive: at('2026-11-16', '20:49'),
+      ride2: at('2026-11-17', '09:12'), home: at('2026-11-17', '09:54')
+    }],
+    shifts: [{ id: 'sh1', jobId: 'jw', start: at('2026-11-17', '21:00'), end: at('2026-11-18', '09:00') }]
+  });
+  const now = at('2026-11-18', '13:00');
+  const d = get();
+  const baseSh = { type: 'trip', wd: '2026-11-17', isNew: true };
+  const pre = tripPrefill(d, baseSh, now, 'all');
+  let sh = { ...baseSh, vals: pre.vals, anchor: pre.anchor, prefilled: pre.filledSteps, prefillTimes: pre.prefillTimes };
+
+  // 先手動改回程上車做 09:20（用戶改過嘅格）
+  const e1 = shiftTripPrefill(d, sh, now, 'ride2', { ...sh.vals, ride2: '09:20' });
+  sh = { ...sh, vals: e1.vals, prefilled: e1.prefilled, prefillTimes: e1.prefillTimes };
+  assert.equal(sh.vals.home, '10:02'); // home 仲係預填，跟 ride2 +8m 移到 10:02
+
+  // 再改下班 09:00 → 09:10：遇到用戶改過嘅 ride2（09:20）即停，唔越過佢郁 home！
+  const e2 = shiftTripPrefill(d, sh, now, 'clockOut', { ...sh.vals, clockOut: '09:10' });
+  assert.deepEqual(e2.shiftedSteps, []);
+  assert.equal(e2.vals.ride2, '09:20');
+  assert.equal(e2.vals.home, '10:02'); // 冇被越過改動！
+
+  // 改上班 21:00 → 21:10：唔郁下班
+  const e3 = shiftTripPrefill(d, { ...sh, vals: e2.vals, prefilled: e2.prefilled, prefillTimes: e2.prefillTimes }, now, 'clockIn', { ...e2.vals, clockIn: '21:10' });
+  assert.deepEqual(e3.shiftedSteps, []);
+  assert.equal(e3.vals.clockOut, '09:10');
+});
