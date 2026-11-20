@@ -1,4 +1,4 @@
-import { clockRange, restTarget, copyWeek, reminderCalendar, missingSleepDays } from './planning.js';
+import { clockRange, restTarget, copyWeek, reminderCalendar, missingSleepDays, tripPrefill, shiftTripPrefill, tripStepGaps } from './planning.js';
 import { rangeText } from './views/planning.js';
 import { backupCSV } from './backup.js';
 import { readTemp, tempPreview, importTemp } from './temp-import.js';
@@ -17,7 +17,7 @@ import { sleepView } from './views/sleep.js';
 import { mealsView } from './views/meals.js';
 import { statsView } from './views/stats.js';
 import { settingsView } from './views/settings.js';
-import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText, quickWakePreview, quickWakeChips, mealMovePreview, openTripSheet, tripHint, tripSummaryHTML } from './views/sheet.js';
+import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText, quickWakePreview, quickWakeChips, mealMovePreview, openTripSheet, tripHint, tripSummaryHTML, tripGroupDurText, tripGapHTML } from './views/sheet.js';
 import { sleepPairPreview, SLEEP_PAIR_ERROR, sleepEndKey } from './views/sleep.js';
 import { mealPreview } from './views/meals.js';
 import { initSync, onSync, syncState, signIn, signOut, retrySync } from './sync.js';
@@ -35,7 +35,7 @@ const ROUTES = {
 const SIDEBAR = ['today', 'timeline', 'week', 'sleep', 'meals', 'stats'];
 const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'], ['+', '', 'plus'], ['sleep', '睡眠', 'moon'], ['stats', '統計', 'chart']];
 
-const APP_VERSION = '2.41.0';
+const APP_VERSION = '2.42.0';
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
@@ -573,13 +573,59 @@ const handlers = {
     const sh = ui.sheet;
     if (sh?.type !== 'trip') return;
     const now = nowFn();
-    const st = tripState(store.get(), sh, now);
+    const data = store.get();
+    const st = tripState(data, sh, now);
     const k = el.dataset.step;
     const above = STEPS.slice(0, STEPS.indexOf(k)).some((x) => st.vals[x]);
     const below = STEPS.slice(STEPS.indexOf(k) + 1).some((x) => st.vals[x]);
     // 第一格撳「現在」：實際日期一齊跟返今日，唔使自己改。
     const anchor = !above && !below ? dateKey(now) : sh.anchor;
-    ui.sheet = { ...sh, focus: null, anchor, vals: { ...st.vals, [k]: fmtTime(now) } };
+    const nextVals = { ...st.vals, [k]: fmtTime(now) };
+    const shifted = sh.prefilled?.length
+      ? shiftTripPrefill(data, { ...sh, anchor }, now, k, nextVals)
+      : { vals: nextVals, prefilled: [], prefillTimes: sh.prefillTimes };
+    ui.sheet = { ...sh, focus: null, anchor, prefilled: shifted.prefilled, prefillTimes: shifted.prefillTimes, vals: shifted.vals };
+    render();
+  },
+  'trip-prefill': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    const mode = el.dataset.mode || 'all';
+    const res = tripPrefill(store.get(), sh, nowFn(), mode);
+    if (!res.ok) {
+      const msg = res.reason === 'no-shift' ? '這天未排班'
+        : res.reason === 'shift-recorded' ? '呢班已經記咗'
+        : res.reason === 'need-work-time' ? '先填上班或下班時間，再補上次通勤'
+        : res.reason === 'all-future' ? '班表時間仲未到，暫未有可預填嘅格'
+        : '相關格子已經有時間，可以直接改';
+      toast(msg);
+      return;
+    }
+    const labels = { out: '出門', ride: '上車', arrive: '抵達', clockIn: '上班', clockOut: '下班', ride2: '上車', home: '到家' };
+    const prefillNote = res.skippedFuture.length
+      ? `${res.skippedFuture.map((k) => labels[k]).join('、')}未到時間，已留空`
+      : '';
+    const prefilled = [...new Set([...(sh.prefilled || []), ...res.filledSteps])];
+    const hasCom = res.filledSteps.some((k) => ['out', 'ride', 'arrive', 'ride2', 'home'].includes(k));
+    ui.sheet = {
+      ...sh,
+      focus: null,
+      vals: res.vals,
+      prefilled,
+      prefillTimes: res.prefillTimes,
+      prefillNote,
+      ...(res.jobId ? { jobId: res.jobId } : {}),
+      ...(hasCom ? { showCommute: true } : {}),
+      ...(res.anchorShifted
+        ? { anchor: res.anchor, anchorShifted: true, anchorShiftNote: res.anchorShiftNote }
+        : { anchorShifted: false, anchorShiftNote: '' })
+    };
+    render();
+  },
+  'trip-commute-show': () => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    ui.sheet = { ...sh, showCommute: true };
     render();
   },
   'trip-wdfix': (el) => {
@@ -593,7 +639,11 @@ const handlers = {
     const sh = ui.sheet;
     if (sh?.type !== 'trip') return;
     const st = tripState(store.get(), sh, nowFn());
-    ui.sheet = { ...sh, focus: null, vals: { ...st.vals, [el.dataset.step]: '' } };
+    const k = el.dataset.step;
+    const prefilled = (sh.prefilled || []).filter((x) => x !== k);
+    const prefillTimes = { ...(sh.prefillTimes || {}) };
+    delete prefillTimes[k];
+    ui.sheet = { ...sh, focus: null, prefilled, prefillTimes, vals: { ...st.vals, [k]: '' } };
     render();
   },
   'trip-delete': (el) => {
@@ -1026,24 +1076,68 @@ function tripSync(f) {
   sh.vals = vals;
   return tripState(store.get(), sh, nowFn());
 }
-function tripTyped(f) {
+function tripTyped(f, editedStep = null, { forceShift = false } = {}) {
+  const sh = ui.sheet;
+  if (sh?.type !== 'trip') return;
+  const data = store.get();
+  const now = nowFn();
+  if (editedStep && sh.prefilled?.length) {
+    const raw = (f[`t_${editedStep}`]?.value ?? '').trim();
+    const norm = raw === '' ? '' : normTime(raw);
+    const complete = forceShift || /^\d{1,2}[:：.．]\d{2}$/.test(raw) || /^\d{4}$/.test(raw);
+    if (raw === '') {
+      sh.prefilled = sh.prefilled.filter((x) => x !== editedStep);
+      if (sh.prefillTimes) delete sh.prefillTimes[editedStep];
+    } else if (complete && norm) {
+      const curVals = {};
+      for (const k of STEPS) {
+        const rv = (f[`t_${k}`]?.value ?? '').trim();
+        curVals[k] = rv === '' ? '' : normTime(rv);
+      }
+      const shifted = shiftTripPrefill(data, sh, now, editedStep, curVals);
+      sh.prefilled = shifted.prefilled;
+      sh.prefillTimes = shifted.prefillTimes;
+      for (const k of STEPS) {
+        if (k === editedStep) continue;
+        const inp = f[`t_${k}`];
+        if (inp && inp.value !== (shifted.vals[k] || '')) inp.value = shifted.vals[k] || '';
+      }
+    }
+  }
   const st = tripSync(f);
   if (!st) return;
+  const preSet = new Set(ui.sheet?.prefilled || []);
   const pay=f.querySelector('[data-trip-pay]');
-  if(pay) pay.hidden = act.tripPayMode(store.get(),st.trip,st.workday,st.times.clockIn,ui.sheet?.jobId)!=='perOrder';
+  if(pay) pay.hidden = act.tripPayMode(data,st.trip,st.workday,st.times.clockIn,ui.sheet?.jobId)!=='perOrder';
   for (const r of st.rows) {
     const row = f.querySelector(`.trip-row[data-step="${r.step}"]`);
     if (!row) continue;
     const hint = row.querySelector('[data-trip-hint]');
     if (hint) { hint.textContent = tripHint(r); hint.classList.toggle('is-next', r.off > 0); }
     const filled = !!st.vals[r.step] || st.vals[r.step] === null;
+    const isPre = filled && preSet.has(r.step);
     row.classList.toggle('is-filled', filled);
+    row.classList.toggle('is-prefill', isPre);
     row.classList.toggle('is-bad', st.error?.step === r.step);
+    const preTag = row.querySelector('.trip-pre-tag');
+    if (preTag) preTag.hidden = !isPre;
     const clr = row.querySelector('.trip-clear');
     if (clr) clr.hidden = !filled;
   }
+  const gaps = tripStepGaps(st);
+  f.querySelectorAll('[data-trip-gap]').forEach((el) => {
+    const k = el.dataset.tripGap;
+    el.innerHTML = tripGapHTML(k, gaps, st);
+    el.classList.toggle('is-on', !!gaps[k]);
+  });
+  for (const g of ['go', 'work', 'back']) {
+    const durEl = f.querySelector(`[data-trip-group-dur="${g}"]`);
+    if (durEl) durEl.textContent = tripGroupDurText(g, st);
+  }
+  const comBtn = f.querySelector('[data-trip-commute-btn]');
+  if (comBtn) comBtn.disabled = st.times.clockIn == null && st.times.clockOut == null;
   const sum = f.querySelector('[data-trip-sum]');
-  if (sum) sum.innerHTML = tripSummaryHTML(st);
+  if (sum) sum.innerHTML = tripSummaryHTML(st, { prefilled: ui.sheet?.prefilled });
   // 實際日期未手動揀過：跟住第一格自動變（凌晨 4 點前 = 工作日隔天）。
   if (st.anchorAuto && f.anchor && f.anchor.value !== st.anchor) f.anchor.value = st.anchor;
 }
@@ -1496,7 +1590,11 @@ function bindTimeInputs() {
   document.addEventListener('change', sync, true);
   // 打完字離開時就整理格式（1830 → 18:30）。
   document.addEventListener('focusout', (e) => {
-    if (e.target.classList?.contains('time-text')) fixTimeText(e.target);
+    if (e.target.classList?.contains('time-text')) {
+      fixTimeText(e.target);
+      const tf = e.target.closest?.('form[data-form="trip"]');
+      if (tf && e.target.name?.startsWith('t_')) tripTyped(tf, e.target.name.slice(2), { forceShift: true });
+    }
   });
   document.addEventListener('input', (e) => {
     if (e.target.classList?.contains('time-text')) {
@@ -1530,7 +1628,7 @@ function bind() {
   });
   document.addEventListener('input', (e) => {
     const tf = e.target.closest?.('form[data-form="trip"]');
-    if (tf && e.target.name?.startsWith('t_')) tripTyped(tf);
+    if (tf && e.target.name?.startsWith('t_')) tripTyped(tf, e.target.name.slice(2));
     if (tf?.income && ['income','orders'].includes(e.target.name)) ui.sheet.pay=payFrom(tf);
     const qw = e.target.closest?.('form[data-form="quick-wake"]');
     if (qw && (e.target.name === 'wakeTime' || e.target.name === 'startTime')) quickWakeTyped(qw, e.target.name);
@@ -1589,7 +1687,7 @@ function bind() {
       const st = tripState(store.get(), ui.sheet, nowFn());
       // 新的一趟：工作日預設跟實際日期走（同臨時版一樣）；已有的一趟只改日期，不動歸屬。
       const follow = !st.exists && !ui.sheet.wdTo;
-      ui.sheet = { ...ui.sheet, focus: null, vals: st.vals, anchor: el.value, ...(follow ? { wd: el.value } : {}) };
+      ui.sheet = { ...ui.sheet, focus: null, vals: st.vals, anchor: el.value, anchorShifted: false, anchorShiftNote: '', ...(follow ? { wd: el.value } : {}) };
       asUser(render);
       return;
     }

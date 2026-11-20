@@ -192,7 +192,7 @@ test('整趟面板：七格都喺度，每格下面寫明邊一日；「＋」�
   for (const k of STEPS) assert.match(html, new RegExp(`name="t_${k}"`));
   assert.match(html, /name="t_out" value="20:12"/);
   assert.match(html, /data-trip-hint="clockOut" class="is-next">週六 11\/14 隔天</);
-  assert.match(html, /data-trip-hint="ride">未填</);
+  assert.match(html, /data-trip-hint="ride"></);
   assert.match(html, /去程 <strong>0h 46m<\/strong> · 上班 <strong>12h 06m<\/strong> · 回程 <strong>0h 46m<\/strong>/);
   assert.match(html, /data-action="trip-delete">刪除這一趟/);
   // 冇紀錄嘅日子：開一張新嘅，實際日期預設就係嗰個工作日。
