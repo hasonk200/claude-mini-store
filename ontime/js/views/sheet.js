@@ -141,7 +141,7 @@ function recordSheet(ctx) {
   let n = 0;
   const title = (text) => `<div class="sheet-step-title"><span class="step-no">${++n}</span>${text}</div>`;
   // 揀好類別之後縮成一行，少捲動；頂部固定顯示「正在補：…」。
-  const cats = `${title('要補什麼？')}<div class="step-chips cat-chips${cat ? ' is-compact' : ''}">${CATS.map(([k, label, ic, kind]) => `<button type="button" class="step-chip cat-chip${k === cat ? ' is-on' : ''}" data-action="rec-cat" data-cat="${k}" aria-pressed="${k === cat}">${bubble(ic, kind, { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${label}</strong>${cat ? '' : `<small>${k === 'work' || k === 'commute' ? '先選班次' : '直接填'}</small>`}</span></button>`).join('')}</div>`;
+  const cats = `${title('要補什麼？')}<div class="step-chips cat-chips${cat ? ' is-compact' : ''}">${CATS.map(([k, label, ic, kind]) => `<button type="button" class="step-chip cat-chip k-${kind}${k === cat ? ' is-on' : ''}" data-action="rec-cat" data-cat="${k}" aria-pressed="${k === cat}">${bubble(ic, kind, { size: 'sm', iconSize: 14 })}<span class="step-chip-text"><strong>${label}</strong>${cat ? '' : `<small>${k === 'work' || k === 'commute' ? '先選班次' : '直接填'}</small>`}</span></button>`).join('')}</div>`;
   const catLabel = CATS.find(([k]) => k === cat)?.[1];
   const crumb = cat ? `<div class="sheet-crumb" aria-live="polite">正在補：<strong>${catLabel}${step && cat !== 'meal' && cat !== 'rest' ? ` › ${LABEL[step]}` : ''}</strong> · ${wdOfKey(wd)} ${fmtMD(wd)} 工作日</div>` : '';
   let body = '';
@@ -237,13 +237,16 @@ function recordForm(ctx, { wd, step, sid, sess, title }) {
   const replaceable = step === 'sleepStart' && tg.sleep && tg.sleep.start != null && tg.sleep.end != null;
   const rideFields = isRide ? rideFieldsHtml(data, jr?.[`${step}Mode`], jr?.[`${step}From`]) : '';
   const anchored = bound && !!sess;
+  const quickBtns = `<div class="btn-wrap rec-quick"><button type="button" class="btn btn-soft btn-sm" data-action="rec-now">現在</button><button type="button" class="btn btn-soft btn-sm" data-action="rec-minus">−15 分</button>${plan[step] ? `<button type="button" class="btn btn-line btn-sm" data-action="rec-plan" data-t="${plan[step]}">用預計 ${fmtTime(plan[step])}</button>` : ''}</div>`;
   const timeBlock = anchored
     ? `<label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label>
+      ${quickBtns}
       <div class="cross-note" id="rec-preview" aria-live="polite">${previewText(t, sess)}</div>
       <details class="more"><summary>日期不對？手動改日期</summary>
         <label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label></details>`
     : `<div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
       <label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
+      ${quickBtns}
       <div class="cross-note" id="rec-preview" data-wd="${wd}" aria-live="polite">${freePreviewText(t, wd)}</div>`;
   return `<form class="form" data-form="record" id="record-form" ${anchored ? `data-anchored="1" data-s-start="${sess.start}" data-s-end="${sess.end ?? ''}"` : ''}><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="step" value="${step}"><input type="hidden" name="sid" value="${anchored ? esc(sess.id) : ''}">
       ${title(`「${LABEL[step]}」在什麼時候？`)}
@@ -252,7 +255,6 @@ function recordForm(ctx, { wd, step, sid, sess, title }) {
       ${verifyToggle(stepFlag(tg, step, t, 'verified'))}
       ${rideFields}
       ${replaceable ? `<label class="fine"><input type="checkbox" name="replace"> 取代這天最後一筆的入睡時間（不勾就新增一筆）</label>` : ''}
-      <div class="btn-wrap"><button type="button" class="btn btn-soft btn-sm" data-action="rec-now">現在</button><button type="button" class="btn btn-soft btn-sm" data-action="rec-minus">−15 分</button>${plan[step] ? `<button type="button" class="btn btn-line btn-sm" data-action="rec-plan" data-t="${plan[step]}">用預計 ${fmtTime(plan[step])}</button>` : ''}</div>
       <p class="fine">只會修改「${LABEL[step]}」這一個時間；其他打卡、收入、休息、備註都保持不變。</p>
       <div class="sheet-foot btn-pair"><button class="btn btn-line btn-lg" type="submit" name="after" value="stay">儲存並繼續</button><button class="btn btn-ink btn-lg" type="submit" name="after" value="close">儲存並關閉</button></div>
       <p class="fine">「儲存並繼續」會留在這裡，接著補下一項。</p>
@@ -537,7 +539,7 @@ function tripSheet(ctx) {
   const verified = sh.verified !== undefined ? sh.verified : allVerified;
   const wdNote = st.workday !== sh.wd ? ` · 計入 ${wdOfKey(st.workday)} ${fmtMD(st.workday)}` : '';
   const jobPicker = data.jobs.length > 1
-    ? `<div class="trip-job-row" role="group" aria-label="這趟的工作"><span class="trip-group-name">工作</span><div class="trip-tabs">${data.jobs.map((j) => `<button type="button" class="chip-btn" data-action="trip-job" data-job="${esc(j.id)}" aria-pressed="${j.id === curJobId}"><i class="sw k-${j.color === 'deliv' ? 'deliv' : 'work'}"></i> ${esc(j.name)}${j.payMode === 'perOrder' ? ' · 按單' : ''}</button>`).join('')}</div></div>`
+    ? `<div class="trip-job-row" role="group" aria-label="這趟的工作"><span class="trip-group-name">工作</span><div class="trip-tabs">${data.jobs.map((j) => `<button type="button" class="chip-btn job-chip k-${j.color === 'deliv' ? 'deliv' : 'work'}" data-action="trip-job" data-job="${esc(j.id)}" aria-pressed="${j.id === curJobId}"><i class="sw k-${j.color === 'deliv' ? 'deliv' : 'work'}"></i> ${esc(j.name)}${j.payMode === 'perOrder' ? ' · 按單' : ''}</button>`).join('')}</div></div>`
     : '';
 
   return sheetWrap(st.exists ? '整趟修改' : '補一整趟', `<form class="form trip-form" data-form="trip">

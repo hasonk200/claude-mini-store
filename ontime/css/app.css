@@ -1795,3 +1795,56 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
   .cal-sleep-short { display: inline; font-family: var(--font-num); }
   .cal-chip { text-align: center; padding: 1px 2px; font-size: 10.5px; }
 }
+
+/* =========================================================================
+   2.43 面板統一（Claude 設計）
+   - 「揀咗」唔再係實心墨黑：淡藍底＋藍邊，輕啲、現代啲，同主色一致。
+   - 有類別嘅選項（補登類別、工作）揀咗就用返類別色。
+   - 步驟編號由黑色實心圓改成淡灰小圓，唔再搶眼。
+   - 確認框用中性淡藍，唔再借用睡眠紫。
+   - 整趟面板：上班卡唔用左邊粗色條；預填格唔用虛線框，只係時間用藍色字加「預填」標籤。
+   ========================================================================= */
+:root { --sel-bg: #EAF0FF; --sel-line: #2563FF; --sel-fg: #0F2A6B; --sel-sub: #2F55C8; --note-bg: #F1F5FF; --note-line: #DCE6FF; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --sel-bg: rgba(91, 141, 255, .16); --sel-line: #7FA6FF; --sel-fg: #EEF3FF; --sel-sub: #A9C1FF; --note-bg: rgba(91, 141, 255, .09); --note-line: rgba(127, 166, 255, .22); }
+}
+:root[data-theme="dark"] { --sel-bg: rgba(91, 141, 255, .16); --sel-line: #7FA6FF; --sel-fg: #EEF3FF; --sel-sub: #A9C1FF; --note-bg: rgba(91, 141, 255, .09); --note-line: rgba(127, 166, 255, .22); }
+
+/* 揀咗 */
+.step-chip.is-on, .qw-chip[aria-pressed="true"], .chip-btn[aria-pressed="true"], .ride-fields .btn[aria-pressed="true"], .shift-add.is-on {
+  background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg); box-shadow: inset 0 0 0 .5px var(--sel-line);
+}
+.step-chip.is-on small, .qw-chip[aria-pressed="true"] small { color: var(--sel-sub); }
+.step-chip.is-on .step-chip-text small { color: var(--sel-sub); }
+.qw-chip, .chip-btn, .step-chip { transition: background-color .12s ease-out, border-color .12s ease-out; }
+
+/* 有類別嘅選項：揀咗用類別色 */
+.cat-chip.is-on, .job-chip[aria-pressed="true"] { background: var(--t); border-color: var(--c); color: var(--d); box-shadow: inset 0 0 0 .5px var(--c); }
+.cat-chip.is-on .bubble { background: var(--c); color: #FFFFFF; }
+.job-chip { display: inline-flex; align-items: center; gap: 6px; }
+
+/* 班次卡（補登第 2 步） */
+.step-chip.shift-chip.is-on { background: var(--work-tint); border-color: var(--work); color: var(--work-deep); box-shadow: inset 0 0 0 .5px var(--work); }
+.step-chip.shift-chip.is-on small { color: var(--work-deep); }
+.step-chip.is-on.is-missing small, .step-chip.is-missing small { color: var(--wake-deep); }
+
+/* 步驟標題 */
+.sheet-step-title { font-size: 15px; font-weight: 650; gap: 10px; margin-top: 4px; }
+.step-no { width: 22px; height: 22px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 700; box-shadow: inset 0 0 0 1px var(--line-soft); }
+
+/* 確認框：中性淡藍 */
+.cross-note { background: var(--note-bg); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--note-line); border-radius: 10px; }
+.cross-note strong { color: var(--ink); }
+.cross-note .c-danger { color: var(--danger); }
+
+/* 補登：快捷時間掣貼住時間格 */
+.rec-quick { margin-top: -6px; }
+.rec-quick .btn { min-height: 36px; }
+
+/* 整趟面板 */
+.trip-group.is-work-group { border-left-width: 1.5px; border-radius: 14px; }
+.trip-group.is-work-group.is-deliv { border-left-color: color-mix(in srgb, var(--deliv) 36%, transparent); }
+.trip-row.is-prefill { border-style: solid; border-color: transparent; background: var(--surface-2); }
+.trip-row.is-work.is-prefill { background: var(--surface); border-color: color-mix(in srgb, var(--work) 24%, transparent); }
+.trip-row.is-prefill input { color: var(--sel-sub); }
+.trip-row.is-bad { border-color: var(--danger); }

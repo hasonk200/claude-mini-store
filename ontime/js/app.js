@@ -35,7 +35,7 @@ const ROUTES = {
 const SIDEBAR = ['today', 'timeline', 'week', 'sleep', 'meals', 'stats'];
 const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'], ['+', '', 'plus'], ['sleep', '睡眠', 'moon'], ['stats', '統計', 'chart']];
 
-const APP_VERSION = '2.42.0';
+const APP_VERSION = '2.43.0';
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
