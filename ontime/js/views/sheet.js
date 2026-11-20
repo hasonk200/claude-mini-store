@@ -622,11 +622,11 @@ function quickWakeSheet(ctx) {
       ${guess.length ? `<div class="qw-chips">${guess.map((c) => chip('qw-start', c)).join('')}</div>` : ''}
       <span class="chip-group-name">或者揀瞓咗幾耐</span>
       <div class="qw-chips qw-durs">${durs.map((c) => chip('qw-start', c)).join('')}</div>
-      <label class="field"><span>或者自己打入睡時間（日期自動計）</span><input type="time" name="startTime" value="${esc(sh.startSel === 'custom' ? sh.startTime || '' : '')}"></label>`;
+      <label class="field"><span>或者自己打入睡時間（日期自動計）</span><input type="time" name="startTime" placeholder="--:--" value="${esc(sh.startSel === 'custom' ? sh.startTime || '' : '')}"></label>`;
   return sheetWrap('我瞓醒喇', `<form class="form" data-form="quick-wake">
       <div class="sheet-step-title"><span class="step-no">1</span>幾時起身？</div>
       <div class="qw-chips qw-wakes">${chips.wake.map((c) => chip('qw-wake', c)).join('')}</div>
-      <label class="field"><span>或者自己打起身時間（日期自動計）</span><input type="time" name="wakeTime" value="${esc(st.wakeSel === 'custom' ? sh.wakeTime || '' : '')}"></label>
+      <label class="field"><span>或者自己打起身時間（日期自動計）</span><input type="time" name="wakeTime" placeholder="--:--" value="${esc(st.wakeSel === 'custom' ? sh.wakeTime || '' : '')}"></label>
       ${startBlock}
       ${st.open ? '' : '<button type="button" class="btn btn-text btn-block" data-action="open-record" data-step="sleepPair">要補更早嘅睡眠？用完整表格</button>'}
       <div class="sheet-foot qw-foot"><div class="cross-note qw-preview" data-qw-preview aria-live="polite">${quickWakePreview(data, st)}</div><button class="btn btn-ink btn-block btn-lg" type="submit">存低</button></div>
