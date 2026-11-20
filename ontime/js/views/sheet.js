@@ -660,9 +660,9 @@ function mealQuickSheet(ctx) {
     </form>
     ${m.photo ? `<img class="photo-preview" src="${esc(m.photo)}" alt="這一餐的相片">` : ''}
     <div class="btn-pair">
-      <label class="btn btn-soft file-btn">${icon('camera', 17, 2)}${m.photo ? '換張相片' : '順手加相片'}<input type="file" accept="image/*" data-action="meal-quick-photo" data-id="${esc(m.id)}" hidden></label>
-      <button type="button" class="btn btn-soft" data-action="meal-open" data-id="${esc(m.id)}">加餐名、地點</button>
+      <label class="btn btn-soft file-btn">${icon('camera', 17, 2)}${m.photo ? '重新影過' : '影相'}<input type="file" accept="image/*" capture="environment" data-action="meal-quick-photo" data-id="${esc(m.id)}" hidden></label><label class="btn btn-line file-btn">${icon('upload', 17, 2)}揀相<input type="file" accept="image/*" data-action="meal-quick-photo" data-id="${esc(m.id)}" hidden></label>
     </div>
+    <button type="button" class="btn btn-soft btn-block" data-action="meal-open" data-id="${esc(m.id)}">加餐名、地點</button>
     <button type="button" class="btn btn-text-danger btn-block" data-action="meal-delete" data-id="${esc(m.id)}">撳錯咗？刪除這一餐</button>
     <div class="sheet-foot"><button type="button" class="btn btn-ink btn-block btn-lg" data-action="close-sheet">得喇</button></div>`);
 }

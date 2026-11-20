@@ -1848,3 +1848,55 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
 .trip-row.is-work.is-prefill { background: var(--surface); border-color: color-mix(in srgb, var(--work) 24%, transparent); }
 .trip-row.is-prefill input { color: var(--sel-sub); }
 .trip-row.is-bad { border-color: var(--danger); }
+
+/* =========================================================================
+   2.44 出勤明細（統計頁）
+   - 收埋時一張卡大約 112px：實際日期＋工作、大字（收入或者工時）、按比例色條、通勤小計。
+   - 撳卡原地展開七格同「整趟修改」；過咗午夜先寫「隔天」。
+   - 上班、下班格同色條跟返工作色（倉庫橙、外送綠）。
+   ========================================================================= */
+.trip-cards { gap: 10px; }
+.att-card { border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; }
+.att-card > summary { list-style: none; cursor: pointer; padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 6px; }
+.att-card > summary::-webkit-details-marker { display: none; }
+.att-card > summary:hover { background: var(--hover); }
+.att-card > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 16px; }
+.att-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.att-date { font-size: 14px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.att-top .dot-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--muted); }
+.att-chev { margin-left: auto; display: grid; place-items: center; color: var(--faint); transition: transform .15s ease-out; }
+.att-card[open] .att-chev { transform: rotate(90deg); }
+.att-mid { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.att-lead { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.att-big { font-family: var(--font-num, inherit); font-size: 24px; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--ink); }
+.att-range { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.att-next { font-size: 11px; font-weight: 600; color: var(--sel-sub, var(--accent)); }
+.att-sub { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.att-missing { min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px dashed color-mix(in srgb, var(--deliv) 55%, transparent); background: var(--deliv-tint); color: var(--deliv-deep); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; position: relative; }
+.att-missing::before { content: ""; position: absolute; inset: -6px -4px; }
+.att-bar { display: flex; gap: 2px; height: 8px; margin: 2px 0; }
+.att-bar i { display: block; min-width: 6px; border-radius: 4px; background: var(--c); }
+.att-bar i.k-commute { background: var(--commute); }
+.att-bar i.k-work { background: var(--work); }
+.att-bar i.k-deliv { background: var(--deliv); }
+.att-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.att-wd { padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.att-more { padding: 2px 14px 14px; border-top: 1px solid var(--line-soft); }
+.att-more .trip-cells { margin-top: 12px; }
+.att-more .trip-cell small { color: var(--sel-sub, var(--accent)); font-weight: 600; }
+.trip-cell.is-work.k-work { background: var(--work-tint); }
+.trip-cell.is-work.k-deliv { background: var(--deliv-tint); }
+.trip-cell.is-work.k-deliv span { color: var(--deliv-deep); }
+.trip-cell.is-work.k-work span { color: var(--work-deep); }
+.trip-cell.is-empty b { color: var(--faint); }
+.att-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+@media (prefers-reduced-motion: reduce) { .att-chev { transition: none; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .att-bar i { opacity: .9; } }
+:root[data-theme="dark"] .att-bar i { opacity: .9; }
+/* 電腦版表格：時段下面加細色條 */
+.table .att-bar { width: 180px; height: 6px; margin-top: 6px; }
+.att-foot { flex-wrap: wrap; row-gap: 4px; }
+.att-foot > span:first-child { white-space: nowrap; }
+@media (hover: none) { .att-card > summary:hover { background: none; } }
+/* 篩選掣「揀咗」用返 2.43 嘅淡藍 */
+[data-action="stats-job"][aria-pressed="true"] { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-line); box-shadow: inset 0 0 0 .5px var(--sel-line); }

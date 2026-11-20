@@ -57,7 +57,7 @@ export function mealForm({ data, now, ui, meal = null, key, defaultStart, inShee
         <label class="field"><span>備註</span><textarea name="note" rows="2">${esc(note)}</textarea></label>
         <div class="photo-field">
           ${photo ? `<img class="photo-preview" src="${esc(photo)}" alt="這一餐的相片">` : `<span class="photo-empty">${icon('camera', 22)}</span>`}
-          <div class="btn-wrap"><label class="btn btn-line btn-sm file-btn">${photo ? '更換相片' : '加入相片'}<input type="file" accept="image/*" data-action="meal-photo" hidden></label>${photo ? '<button type="button" class="btn btn-line btn-sm" data-action="meal-photo-remove">移除</button>' : ''}</div>
+          <div class="btn-wrap"><label class="btn btn-line btn-sm file-btn">${icon('camera', 16, 2)}影相<input type="file" accept="image/*" capture="environment" data-action="meal-photo" hidden></label><label class="btn btn-line btn-sm file-btn">${icon('upload', 16, 2)}${photo ? '換張相' : '揀相'}<input type="file" accept="image/*" data-action="meal-photo" hidden></label>${photo ? '<button type="button" class="btn btn-line btn-sm" data-action="meal-photo-remove">移除</button>' : ''}</div>
           <span class="fine">相片會先在裝置上縮小，跟這一餐一起保存。</span>
         </div>
       </details>
