@@ -35,11 +35,11 @@ const ROUTES = {
 const SIDEBAR = ['today', 'timeline', 'week', 'sleep', 'meals', 'stats'];
 const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'], ['+', '', 'plus'], ['sleep', '睡眠', 'moon'], ['stats', '統計', 'chart']];
 
-const APP_VERSION = '2.43.0';
+const APP_VERSION = '2.44.0';
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
-  selRef: null, sheet: null, jobEdit: null, canInstall: false, appVersion: APP_VERSION,
+  selRef: null, attOpen: new Set(), sheet: null, jobEdit: null, canInstall: false, appVersion: APP_VERSION,
   pendingRecord: null, pendingDelete: null, flash: null, sleepSaved: null,
   drafts: loadDrafts(), heroCollapsed: loadPref('ontime-scene') !== 'on',
   todayMore: loadPref('ontime-today-more') === 'open',
@@ -1643,6 +1643,11 @@ function bind() {
   // 「詳細」展開或收起：記住你的選擇（toggle 事件不會冒泡，用捕獲階段）。
   document.addEventListener('toggle', (e) => {
     const d = e.target;
+    // 統計頁出勤卡：記住邊張展開咗，每 30 秒重畫都唔會收返埋。
+    if (d.matches?.('details.att-card[data-sid]')) {
+      if (d.open) ui.attOpen.add(d.dataset.sid); else ui.attOpen.delete(d.dataset.sid);
+      return;
+    }
     const key = d.matches?.('details[data-pref]') ? d.dataset.pref : null;
     if (!key || !(key in PREF_KEYS) || ui[key] === d.open) return;
     ui[key] = d.open;

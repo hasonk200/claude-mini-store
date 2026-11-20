@@ -1,4 +1,3 @@
-import { inlineIncome } from './planning.js';
 import { esc, icon, seg, money } from '../ui.js';
 import { dateKey, fmtTime, wdOf, fmtMD, wdShort, fmtDur, addDays, weekStartKey, monthStartKey, monthEndKey, fromKey, HOUR, daysBetween, wdOfKey } from '../time.js';
 import { periodStats, sessionWorkMs, splitWorkByDay, jobOf, sessionPay, sleepAverage, STEPS, tripTimes, tripSummary, journeyOfSession, workdayOfSession } from '../logic.js';
@@ -15,27 +14,57 @@ export function periodRange(ui, now) {
   return [ws, addDays(ws, 7)];
 }
 
+// 收入：時薪顯示金額；按單已填就顯示金額同單數，未填就一粒「未填收入」掣開收入面板；不計薪唔顯示。
+function payOf(s, now) {
+  if (s.payMode === 'hourly') return s.rate == null ? { label: '未設時薪', missing: true } : { amount: money(sessionPay(s, now)) };
+  if (s.payMode === 'perOrder') return s.income == null ? { missing: true } : { amount: money(s.income), sub: s.orders != null ? `${s.orders} 單` : '' };
+  return null;
+}
+function payButton(s) { return `<button type="button" class="att-missing" data-action="income-open" data-id="${esc(s.id)}">未填收入</button>`; }
 function incomeCell(s, now) {
-  if (s.payMode === 'hourly') return s.rate == null ? '<span class="chip chip-plan">未設時薪</span>' : `<b>${money(sessionPay(s, now))}</b>`;
-  if (s.payMode === 'perOrder') {
-    return inlineIncome(s);
-  }
-  return '<span class="muted">不計薪</span>';
+  const p = payOf(s, now);
+  if (!p) return '<span class="muted">—</span>';
+  if (p.missing) return p.label ? `<span class="chip chip-plan">${p.label}</span>` : payButton(s);
+  return `<b>${p.amount}</b>${p.sub ? `<br><span class="muted small">${p.sub}</span>` : ''}`;
 }
 
-// 手機：每一趟一張卡——七個時間、去程／上班／回程，點「修改」就開整趟面板（同臨時版的清單一樣）。
+// 按比例嘅細色條：去程（通勤青）、上班（工作色）、回程（通勤青）；每段最少 6px，冇紀錄嘅段唔畫。
+function attBar(sum, workMs, kind) {
+  const parts = [[sum.go, 'commute', '去程'], [workMs, kind, '上班'], [sum.back, 'commute', '回程']].filter(([ms]) => ms > 0);
+  const total = parts.reduce((a, [ms]) => a + ms, 0) || 1;
+  return `<div class="att-bar" aria-hidden="true">${parts.map(([ms, k]) => `<i class="k-${k}" style="flex-grow:${(ms / total).toFixed(4)}"></i>`).join('')}</div>`;
+}
+
+// 手機：每一趟一張卡。收埋時只顯示重點（實際日期、做咗幾耐、收入、色條、時間）；撳卡原地展開睇七格同「整趟修改」。
 const CELL_LABEL = { out: '出門', ride: '上車', arrive: '抵達', clockIn: '上班', clockOut: '下班', ride2: '上車', home: '到家' };
-export function tripCard(data, s, now) {
+export function tripCard(data, s, now, open = false) {
   const job = jobOf(data, s.jobId);
+  const kind = job?.color === 'deliv' ? 'deliv' : 'work';
   const wd = workdayOfSession(s, data);
   const times = tripTimes({ session: s, journey: journeyOfSession(data, s) });
   const sum = tripSummary(times);
-  const facts = [sum.go != null ? `去程 <b>${fmtDur(sum.go)}</b>` : '', `上班 <b>${fmtDur(sessionWorkMs(s, now))}</b>${s.end == null ? '（進行中）' : ''}`, sum.back != null ? `回程 <b>${fmtDur(sum.back)}</b>` : ''].filter(Boolean).join(' · ');
-  const cells = STEPS.map((k) => `<div class="trip-cell${k === 'clockIn' || k === 'clockOut' ? ' is-work' : ''}${times[k] == null ? ' is-empty' : ''}"><span>${CELL_LABEL[k]}</span><b>${times[k] != null ? fmtTime(times[k]) : '—'}</b><small>${times[k] != null ? wdOf(times[k]) : ''}</small></div>`).join('');
-  const pay = { hourly: '時薪', perOrder: '按單', none: '不計薪' }[s.payMode] || '';
-  return `<li class="trip-card"><div class="trip-card-head"><div><strong>${wdOfKey(wd)} ${fmtMD(wd)} 工作日</strong><span class="dot-label"><i class="sw k-${job?.color === 'deliv' ? 'deliv' : 'work'}"></i>${esc(job?.name ?? '工作')} · ${pay}</span></div><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}" data-sid="${esc(s.id)}">修改</button></div>
-    <div class="trip-cells">${cells}</div>
-    <div class="trip-card-foot"><span>${facts}</span><span class="trip-card-pay">${incomeCell(s, now)}</span></div></li>`;
+  const workMs = sessionWorkMs(s, now);
+  const startKey = dateKey(s.start);
+  const nextDay = (t) => t != null && dateKey(t) !== startKey;
+  const range = `${fmtTime(s.start)} → ${s.end ? `${nextDay(s.end) ? '<span class="att-next">隔天</span> ' : ''}${fmtTime(s.end)}` : '進行中'}`;
+  const pay = payOf(s, now);
+  const big = pay && !pay.missing ? `<strong class="att-big">${pay.amount}</strong>` : `<strong class="att-big">${fmtDur(workMs)}</strong>`;
+  const right = pay?.missing
+    ? (pay.label ? `<span class="chip chip-plan">${pay.label}</span>` : payButton(s))
+    : pay ? `<span class="att-sub">${fmtDur(workMs)}${pay.sub ? ` · ${pay.sub}` : ''}</span>` : '';
+  const facts = [sum.go != null ? `去程 ${fmtDur(sum.go)}` : '', sum.back != null ? `回程 ${fmtDur(sum.back)}` : ''].filter(Boolean).join(' · ');
+  const otherWd = wd !== startKey ? `<span class="att-wd">計入 ${wdOfKey(wd)} ${fmtMD(wd)} 工作日</span>` : '';
+  const cells = STEPS.map((k) => `<div class="trip-cell${k === 'clockIn' || k === 'clockOut' ? ` is-work k-${kind}` : ''}${times[k] == null ? ' is-empty' : ''}"><span>${CELL_LABEL[k]}</span><b>${times[k] != null ? fmtTime(times[k]) : '—'}</b><small>${nextDay(times[k]) ? '隔天' : ''}</small></div>`).join('');
+  return `<li><details class="att-card" data-sid="${esc(s.id)}"${open ? ' open' : ''}>
+    <summary>
+      <div class="att-top"><span class="att-date">${wdOf(s.start)} ${fmtMD(startKey)}</span><span class="dot-label"><i class="sw k-${kind}"></i>${esc(job?.name ?? '工作')}</span><span class="att-chev" aria-hidden="true">${icon('right', 16, 2)}</span></div>
+      <div class="att-mid"><div class="att-lead">${big}<span class="att-range">${range}</span></div>${right}</div>
+      ${attBar(sum, workMs, kind)}
+      <div class="att-foot"><span>${facts || '冇記通勤'}</span>${otherWd}</div>
+    </summary>
+    <div class="att-more"><div class="trip-cells">${cells}</div>
+      <div class="att-actions"><span class="muted small">上班 ${fmtDur(workMs)}${s.end == null ? '（進行中）' : ''}</span><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}" data-sid="${esc(s.id)}">整趟修改</button></div></div>
+  </details></li>`;
 }
 
 export function statsView(ctx) {
@@ -69,15 +98,15 @@ export function statsView(ctx) {
     const split = Object.entries(splitWorkByDay(s, now));
     const job = jobOf(data, s.jobId);
     const wd = workdayOfSession(s, data);
-    return `<tr><td><b>${wdOf(s.start)} ${fmtMD(dateKey(s.start))}</b></td><td><span class="dot-label"><i class="sw k-${job?.color === 'deliv' ? 'deliv' : 'work'}"></i>${esc(job?.name ?? '工作')}</span></td>
-      <td>${fmtTime(s.start)} → ${s.end ? `${dateKey(s.end) !== dateKey(s.start) ? wdOf(s.end) + ' ' : ''}${fmtTime(s.end)}` : '<span class="chip chip-real">進行中</span>'}</td>
+    return `<tr><td><b>${wdOf(s.start)} ${fmtMD(dateKey(s.start))}</b>${wd !== dateKey(s.start) ? `<br><span class="muted small">計入 ${wdOfKey(wd)} ${fmtMD(wd)} 工作日</span>` : ''}</td><td><span class="dot-label"><i class="sw k-${job?.color === 'deliv' ? 'deliv' : 'work'}"></i>${esc(job?.name ?? '工作')}</span></td>
+      <td>${fmtTime(s.start)} → ${s.end ? `${dateKey(s.end) !== dateKey(s.start) ? wdOf(s.end) + ' ' : ''}${fmtTime(s.end)}` : '<span class="chip chip-real">進行中</span>'}${attBar(tripSummary(tripTimes({ session: s, journey: journeyOfSession(data, s) })), sessionWorkMs(s, now), job?.color === 'deliv' ? 'deliv' : 'work')}</td>
       <td><b>${fmtDur(sessionWorkMs(s, now))}</b>${split.length > 1 ? `<br><span class="muted small">${split.map(([k, v]) => `${wdShort(k)} ${fmtDur(v)}`).join(' · ')}</span>` : ''}</td>
       <td class="muted">${{ hourly: '時薪', perOrder: '按單 · 整次實收', none: '不計薪' }[s.payMode] || ''}</td>
       <td class="t-right">${incomeCell(s, now)}</td>
-      <td class="t-right"><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}" data-sid="${esc(s.id)}">修改</button></td></tr>`;
+      <td class="t-right"><button type="button" class="btn btn-line btn-sm" data-action="open-trip" data-wd="${wd}" data-sid="${esc(s.id)}">修改</button></td></tr>`;
   }).join('');
 
-  const cards = st.sessions.filter((s) => jobFilter === 'all' || s.jobId === jobFilter).sort((a, b) => b.start - a.start).map((s) => tripCard(data, s, now)).join('');
+  const cards = st.sessions.filter((s) => jobFilter === 'all' || s.jobId === jobFilter).sort((a, b) => b.start - a.start).map((s) => tripCard(data, s, now, ui.attOpen?.has(s.id))).join('');
 
   const hasHourly = st.sessions.some((s) => s.payMode === 'hourly');
   const totalPay = (hasHourly ? st.hourlyPay : 0) + (st.perOrderCount ? st.income : 0);
@@ -100,6 +129,6 @@ export function statsView(ctx) {
       <div class="bars ${ui.statsPeriod === 'month' ? 'bars-dense' : ''}">${bars}</div>
       <p class="fine">這裡按實際發生的日曆日計，包括上一段期間開始、跨午夜進來的夜班，所以加起來可能跟上面「按開班日」的實際工時不一樣。</p></section>
     <section class="card card-flush"><div class="card-head"><h2 class="card-title">出勤明細</h2>${filters}</div>
-      ${!isDesktop && rows ? `<ul class="trip-cards">${cards}</ul>` : rows ? `<div class="table-wrap"><table class="table"><thead><tr><th scope="col">上班日</th><th scope="col">工作</th><th scope="col">實際時段</th><th scope="col">工時（分日）</th><th scope="col">計算方式</th><th scope="col" class="t-right">收入</th><th scope="col" class="t-right">操作</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted pad">這段期間沒有出勤紀錄。</p>'}
+      ${!isDesktop && rows ? `<ul class="trip-cards">${cards}</ul>` : rows ? `<div class="table-wrap"><table class="table"><thead><tr><th scope="col">實際開工日</th><th scope="col">工作</th><th scope="col">實際時段</th><th scope="col">工時（分日）</th><th scope="col">計算方式</th><th scope="col" class="t-right">收入</th><th scope="col" class="t-right">操作</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted pad">這段期間沒有出勤紀錄。</p>'}
     </section>`;
 }
