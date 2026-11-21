@@ -125,8 +125,7 @@ export function timelineView(ctx) {
   const { data, now, ui } = ctx;
   const mode = ui.tlMode;
   const key = mode === 'workday' ? ctx.wd : (ui.calKey || dateKey(now));
-  const tools = `<a class="btn btn-line btn-sm" href="#/week">${icon('calendar', 16, 2)}班表與月曆</a>`;
-  return `${pageHead('時間線', mode === 'workday' ? '把同一班的通勤、工作與睡眠接在一起' : '按日曆日查看 00:00–24:00', tools)}
+  return `${pageHead('時間線', mode === 'workday' ? '把同一班的通勤、工作與睡眠接在一起' : '按日曆日查看 00:00–24:00')}
     ${seg('tlMode', '查看方式', [['workday', '工作日'], ['calendar', '日曆日']], mode)}
     ${weekStrip(data, key, now)}
     ${mode === 'workday'
