@@ -451,7 +451,7 @@ function tripSheet(ctx) {
   const trips = tripsOfWorkday(data, sh.wd);
   const isSel = (t) => !sh.isNew && ((t.session && t.session.id === st.trip.session?.id) || (!t.session && t.journey && t.journey.id === st.trip.journey?.id));
   const tabs = trips.length
-    ? `<div class="trip-tabs" role="group" aria-label="這個工作日的每一趟">${trips.map((t) => `<button type="button" class="chip-btn" data-action="trip-pick" data-sid="${esc(t.session?.id ?? '')}" data-jid="${esc(t.session ? '' : t.journey?.id ?? '')}" aria-pressed="${isSel(t)}">${tripName(data, t)}</button>`).join('')}<button type="button" class="chip-btn" data-action="trip-pick" data-new="1" aria-pressed="${!!sh.isNew}">＋ 新一趟</button></div>`
+    ? `<div class="trip-tab-row"><span class="trip-group-name">趟次</span><div class="trip-tabs" role="group" aria-label="這個工作日的每一趟">${trips.map((t) => `<button type="button" class="chip-btn" data-action="trip-pick" data-sid="${esc(t.session?.id ?? '')}" data-jid="${esc(t.session ? '' : t.journey?.id ?? '')}" aria-pressed="${isSel(t)}">${tripName(data, t)}</button>`).join('')}<button type="button" class="chip-btn" data-action="trip-pick" data-new="1" aria-pressed="${!!sh.isNew}">＋ 新一趟</button></div></div>`
     : '';
 
   const curJobId = tripJobId(data, st.trip, st.workday, st.times.clockIn, sh.jobId);
@@ -547,10 +547,10 @@ function tripSheet(ctx) {
         <div class="day-nav trip-nav"><button type="button" class="icon-btn" data-action="trip-day" data-dir="-1" aria-label="前一個工作日">${icon('left', 18, 2)}</button><div class="day-nav-text"><strong>${wdOfKey(sh.wd)}工作日 · ${fmtMD(sh.wd)}</strong><span>${st.exists ? '修改這一趟' : '新的一趟'}${wdNote}</span></div><button type="button" class="icon-btn" data-action="trip-day" data-dir="1" aria-label="下一個工作日">${icon('right', 18, 2)}</button></div>
         <label class="field trip-date${sh.anchorShifted ? ' is-shifted' : ''}" data-trip-anchor-wrap><span>實際日期（第一格那天）</span><input type="date" name="anchor" value="${st.anchor}" data-action="trip-anchor">${sh.anchorShifted && sh.anchorShiftNote ? `<small class="trip-shift-note" role="status">${esc(sh.anchorShiftNote)}</small>` : ''}</label>
       </div>
-      ${tabs}
       ${st.suggest ? `<div class="sheet-note trip-fix" role="status"><span>這一趟實際由 <strong>${wdOfKey(st.suggest)} ${fmtMD(st.suggest)}</strong> 開始，但現在計入 <strong>${wdOfKey(st.workday)} ${fmtMD(st.workday)}</strong> 工作日——多數是中間睡了覺沒有記。</span><button type="button" class="btn btn-ink btn-sm" data-action="trip-wdfix" data-wd="${st.suggest}">改為計入 ${wdOfKey(st.suggest)} ${fmtMD(st.suggest)}</button></div>` : ''}
       ${st.repaired.length ? `<div class="sheet-note trip-fix" role="status" data-trip-repair><span>原本記低的日期次序不對：${st.rows.filter((r) => r.repaired).map((r) => `「${TRIP_LABEL[r.step]}」記成 <strong>${wdOf(r.was)} ${fmtMD(dateKey(r.was))}</strong>，已按次序改成 <strong>${wdOf(r.t)} ${fmtMD(dateKey(r.t))}</strong>`).join('；')}。看看下面每格的日期，沒問題就按「儲存整趟」修正。</span></div>` : ''}
       <div class="trip-bar">
+        ${tabs}
         ${jobPicker}
         ${prefillBar}
       </div>

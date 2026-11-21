@@ -19,15 +19,15 @@ function loadSW(keys) {
   return { listeners, deleted, version: src.match(/const VERSION = '([^']+)'/)[1] };
 }
 
-test('版本號是 2.45.1', () => {
-  assert.equal(loadSW([]).version, '2.45.1');
+test('版本號是 2.47.0', () => {
+  assert.equal(loadSW([]).version, '2.47.0');
 });
 
 test('activate：刪 ontime 舊版快取，保留目前版本、字體和其他 App 的快取', async () => {
-  const keys = ['ontime-2.24.0', 'ontime-2.25.0', 'ontime-2.26.0', 'ontime-2.27.0', 'ontime-2.28.0', 'ontime-2.29.0', 'ontime-2.30.0', 'ontime-2.31.0', 'ontime-2.32.0', 'ontime-2.33.0', 'ontime-2.34.0', 'ontime-2.35.0', 'ontime-2.36.0', 'ontime-2.37.0', 'ontime-2.37.1', 'ontime-2.38.0', 'ontime-2.39.0', 'ontime-2.40.0', 'ontime-2.41.0', 'ontime-2.42.0', 'ontime-2.43.0', 'ontime-2.44.0', 'ontime-2.45.0', 'ontime-2.45.1', 'ontime-fonts', 'commute-log-temp', 'heartland-journal-v3'];
+  const keys = ['ontime-2.24.0', 'ontime-2.25.0', 'ontime-2.26.0', 'ontime-2.27.0', 'ontime-2.28.0', 'ontime-2.29.0', 'ontime-2.30.0', 'ontime-2.31.0', 'ontime-2.32.0', 'ontime-2.33.0', 'ontime-2.34.0', 'ontime-2.35.0', 'ontime-2.36.0', 'ontime-2.37.0', 'ontime-2.37.1', 'ontime-2.38.0', 'ontime-2.39.0', 'ontime-2.40.0', 'ontime-2.41.0', 'ontime-2.42.0', 'ontime-2.43.0', 'ontime-2.44.0', 'ontime-2.45.0', 'ontime-2.45.1', 'ontime-2.46.0', 'ontime-2.47.0', 'ontime-fonts', 'commute-log-temp', 'heartland-journal-v3'];
   const sw = loadSW(keys);
   let done;
   sw.listeners.activate({ waitUntil: (p) => { done = p; } });
   await done;
-  assert.deepEqual(sw.deleted.sort(), ['ontime-2.24.0', 'ontime-2.25.0', 'ontime-2.26.0', 'ontime-2.27.0', 'ontime-2.28.0', 'ontime-2.29.0', 'ontime-2.30.0', 'ontime-2.31.0', 'ontime-2.32.0', 'ontime-2.33.0', 'ontime-2.34.0', 'ontime-2.35.0', 'ontime-2.36.0', 'ontime-2.37.0', 'ontime-2.37.1', 'ontime-2.38.0', 'ontime-2.39.0', 'ontime-2.40.0', 'ontime-2.41.0', 'ontime-2.42.0', 'ontime-2.43.0', 'ontime-2.44.0', 'ontime-2.45.0']);
+  assert.deepEqual(sw.deleted.sort(), ['ontime-2.24.0', 'ontime-2.25.0', 'ontime-2.26.0', 'ontime-2.27.0', 'ontime-2.28.0', 'ontime-2.29.0', 'ontime-2.30.0', 'ontime-2.31.0', 'ontime-2.32.0', 'ontime-2.33.0', 'ontime-2.34.0', 'ontime-2.35.0', 'ontime-2.36.0', 'ontime-2.37.0', 'ontime-2.37.1', 'ontime-2.38.0', 'ontime-2.39.0', 'ontime-2.40.0', 'ontime-2.41.0', 'ontime-2.42.0', 'ontime-2.43.0', 'ontime-2.44.0', 'ontime-2.45.0', 'ontime-2.45.1', 'ontime-2.46.0']);
 });
