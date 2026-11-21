@@ -1915,3 +1915,10 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
   .tab svg { width: 20px; height: 20px; }
   .tab-plus { width: 44px; margin: 0 2px; }
 }
+
+/* 2.46 整趟面板頂部「工作日」：做成有顏色嘅卡，工作日一眼見到 */
+.day-nav.trip-nav { padding: 10px; border-radius: 16px; background: radial-gradient(90% 120% at 100% 0%, color-mix(in srgb, var(--work) 22%, transparent) 0%, transparent 60%), linear-gradient(160deg, var(--work-tint) 0%, color-mix(in srgb, var(--work-tint) 70%, var(--sleep-tint)) 100%); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 22%, transparent); }
+.day-nav.trip-nav .day-nav-text strong { font-size: 18px; color: var(--work-deep); letter-spacing: -.01em; }
+.day-nav.trip-nav .day-nav-text span { color: color-mix(in srgb, var(--work-deep) 80%, var(--muted)); font-weight: 600; }
+.day-nav.trip-nav .icon-btn { background: color-mix(in srgb, var(--surface) 85%, transparent); border-color: color-mix(in srgb, var(--work) 20%, transparent); color: var(--work-deep); }
+.day-nav.trip-nav .icon-btn:hover { background: var(--surface); }
