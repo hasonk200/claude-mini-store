@@ -1915,3 +1915,205 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
   .tab svg { width: 20px; height: 20px; }
   .tab-plus { width: 44px; margin: 0 2px; }
 }
+
+/* =========================================================================
+   2.46 整趟面板 Pro 升級 ——「瑞士時刻表／專業工作台」
+   - 頂部深藍指令列（與側欄、統計主角卡統一品牌感）：整合標題、工作日切換、實際日期與即時比例色帶。
+   - 取消三層套框：工具列用極細分隔線取代灰框；七格時間輸入與卡片融為一體，無內框雜訊，大字窄體鐘數。
+   - 底部工具列對齊成統一膠囊列；底欄大字時長＋起止日期與工作日確認。
+   ========================================================================= */
+.sheet.sheet-trip { overflow: hidden; padding: 0; border-radius: 20px 20px 0 0; }
+.sheet.sheet-trip .trip-form { display: flex; flex-direction: column; gap: 0; max-height: 92vh; }
+
+/* 頂部深藍指令列 */
+.trip-hero { background: linear-gradient(155deg, #15223B 0%, #0D1526 100%); color: #FFFFFF; padding: 8px 18px 0; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+.trip-hero .sheet-handle { background: rgba(255, 255, 255, .24); margin: 0 auto 2px; }
+.trip-hero-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.trip-hero-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.trip-hero-title h2 { font-size: 19px; font-weight: 700; letter-spacing: -.015em; color: #FFFFFF; }
+.trip-hero-badge { font-size: 11.5px; font-weight: 600; color: #C5D3EA; background: rgba(255, 255, 255, .1); padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.trip-hero .trip-close { background: rgba(255, 255, 255, .1); color: #FFFFFF; border: 1px solid rgba(255, 255, 255, .14); box-shadow: none; }
+.trip-hero .trip-close:hover { background: rgba(255, 255, 255, .2); }
+
+.trip-hero .trip-dates { display: flex; flex-direction: column; gap: 8px; }
+.trip-hero .day-nav.trip-nav { padding: 5px 6px; border-radius: 13px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .13); box-shadow: none; }
+.trip-hero .trip-nav .day-nav-text strong { font-size: 16.5px; font-weight: 700; color: #FFFFFF; letter-spacing: -.01em; }
+.trip-hero .trip-nav .icon-btn { width: 38px; height: 38px; min-width: 38px; background: rgba(255, 255, 255, .1); color: #FFFFFF; border: 0; box-shadow: none; }
+.trip-hero .trip-nav .icon-btn:hover { background: rgba(255, 255, 255, .2); }
+
+.trip-hero .trip-date { display: flex; flex-direction: column; gap: 2px; padding: 7px 12px; border-radius: 13px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .13); color-scheme: dark; }
+.trip-hero .trip-date > span { font-size: 11px; font-weight: 600; color: #9FB1CE; letter-spacing: .02em; }
+.trip-hero .trip-date input[type="date"] { background: transparent; border: 0; box-shadow: none; padding: 0; min-height: 28px; font-family: var(--font-num); font-size: 16px; font-weight: 700; color: #FFFFFF; }
+.trip-hero .trip-date input[type="date"]:focus { outline: none; }
+.trip-hero .trip-date:focus-within { border-color: #7FA6FF; background: rgba(91, 141, 255, .16); }
+.trip-hero .trip-date.is-shifted { background: rgba(91, 141, 255, .22); border-color: #8FB0FF; }
+.trip-hero .trip-shift-note { color: #C2D6FF; font-size: 11.5px; font-weight: 600; }
+
+/* 頂部底緣即時比例色帶（與首頁時間帶、統計出勤卡統一） */
+.trip-ribbon { display: flex; gap: 2px; height: 5px; margin: 4px -18px 0; background: rgba(255, 255, 255, .06); }
+.trip-ribbon i { display: block; min-width: 10px; height: 100%; transition: flex-grow .2s ease; }
+.trip-ribbon i.k-commute { background: var(--commute); }
+.trip-ribbon i.k-work { background: var(--work); }
+.trip-ribbon i.k-deliv { background: var(--deliv); }
+.trip-ribbon i.is-idle { flex: 1; background: rgba(255, 255, 255, .08); }
+
+/* 中間可捲動工作區 */
+.trip-body { padding: 14px 18px 16px; gap: 12px; flex: 1 1 auto; overflow-y: auto; }
+
+/* 漏記睡眠／日期修正提示：精簡單行暖色條 */
+.sheet-note.trip-fix { background: color-mix(in srgb, var(--work-tint) 60%, var(--surface)); border: 1px solid color-mix(in srgb, var(--work) 28%, transparent); color: var(--ink); border-radius: 12px; padding: 10px 14px; font-size: 13px; }
+
+/* 工具列（趟次｜工作｜快速預填）：取消灰框，用乾淨分隔線 */
+.trip-bar { display: flex; flex-direction: column; gap: 10px; padding: 0 0 12px; border-bottom: 1px solid var(--line-soft); background: transparent; border-radius: 0; box-shadow: none; }
+.trip-tab-row, .trip-job-row { display: flex; flex-direction: column; gap: 5px; }
+.trip-bar-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+.trip-bar .trip-prefill { padding: 0; background: transparent; border: 0; gap: 5px; }
+.trip-bar .chip-btn, .trip-bar .trip-pre-btn { min-height: 36px; border-radius: 999px; font-size: 12.5px; }
+.trip-tip { margin: -4px 0 0; font-size: 12px; color: var(--muted); }
+
+/* 三段時間容器：去程／回程走冷靜中性質感，上班・下班為溫潤主角卡 */
+.trip-group { border-radius: 16px; padding: 10px; }
+.trip-group.is-go-group, .trip-group.is-back-group { background: var(--surface-2); border: 1px solid var(--line-soft); box-shadow: none; }
+.trip-group.is-work-group { padding: 12px; background: color-mix(in srgb, var(--work-tint) 58%, var(--surface)); border: 1.5px solid color-mix(in srgb, var(--work) 36%, transparent); box-shadow: 0 4px 16px color-mix(in srgb, var(--work) 10%, transparent); }
+.trip-group.is-work-group.is-deliv { background: color-mix(in srgb, var(--deliv-tint) 58%, var(--surface)); border-color: color-mix(in srgb, var(--deliv) 36%, transparent); box-shadow: 0 4px 16px color-mix(in srgb, var(--deliv) 10%, transparent); }
+
+.trip-group-head { margin: 0 2px 8px; padding: 0; display: flex; align-items: center; justify-content: space-between; }
+.trip-group-title { display: inline-flex; align-items: center; gap: 6px; }
+.trip-group-title .dot { width: 7px; height: 7px; }
+.trip-group-name { font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--ink-2); }
+.trip-group.is-work-group .trip-group-name { color: var(--work-deep); }
+.trip-group.is-work-group.is-deliv .trip-group-name { color: var(--deliv-deep); }
+.trip-group-dur { font-family: var(--font-num); font-size: 12.5px; font-weight: 700; color: var(--commute-deep); }
+.trip-group.is-work-group .trip-group-dur { color: var(--work-deep); }
+.trip-group.is-work-group.is-deliv .trip-group-dur { color: var(--deliv-deep); }
+
+/* 精準無內框時鐘磚（取消雙層灰框，輸入框與白磚合而為一） */
+.trip-row { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 12px; padding: 7px 8px 7px 12px; box-shadow: 0 1px 2px rgba(16, 24, 40, .04); transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+.trip-row:hover { border-color: var(--line); }
+.trip-row:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring); }
+.trip-row.is-work { background: var(--surface); border-color: color-mix(in srgb, var(--work) 26%, var(--line-soft)); }
+.is-deliv .trip-row.is-work { border-color: color-mix(in srgb, var(--deliv) 26%, var(--line-soft)); }
+.trip-row.is-prefill { background: var(--surface); border-color: color-mix(in srgb, var(--sel-line) 35%, var(--line-soft)); }
+.trip-row.is-bad { border-color: var(--danger) !important; box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 22%, transparent) !important; }
+
+.trip-step-ic { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: var(--t, var(--commute-tint)); color: var(--d, var(--commute-deep)); flex-shrink: 0; }
+.trip-lab-head { gap: 6px; }
+.trip-lab-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 15px; }
+.trip-lab-sub:empty { display: none; }
+.trip-lab small.is-next { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px; background: var(--sel-bg); color: var(--sel-sub); font-size: 10.5px; font-weight: 700; }
+.trip-plan-hint { color: var(--faint); font-size: 10.5px; }
+
+/* 無邊框融合輸入格＋大字時刻表鐘數＋44px 淡色時鐘 */
+.trip-row .time-input .time-text,
+.trip-row input[type="time"] { border: 0 !important; background: transparent !important; box-shadow: none !important; outline: none !important; font-family: var(--font-num); font-size: 22px; font-weight: 700; letter-spacing: -.01em; min-height: 44px; padding: 0 42px 0 4px; color: var(--ink); }
+.trip-row.is-work .time-input .time-text,
+.trip-row.is-work input[type="time"] { font-size: 25px; min-height: 46px; }
+.trip-row.is-prefill .time-input .time-text { color: var(--sel-sub); }
+.trip-row .time-input .time-text::placeholder { color: var(--faint); font-weight: 500; opacity: .75; }
+.trip-row .time-pick { right: -2px; width: 44px; height: 44px; min-width: 44px; min-height: 44px; background: transparent; color: var(--muted); opacity: .52; }
+.trip-row:focus-within .time-pick, .trip-row .time-pick:hover { opacity: 1; color: var(--ink); }
+.trip-row .trip-clear { opacity: .45; transition: opacity .12s ease, color .12s ease; }
+.trip-row:hover .trip-clear, .trip-row:focus-within .trip-clear { opacity: 1; }
+.trip-row .trip-clear:hover { color: var(--danger); }
+
+/* 底部工具列：整齊統一三項 */
+.trip-extras { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.trip-extras .verify-toggle { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line-soft); background: var(--surface-2); }
+.trip-extras details.trip-adv { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface-2); padding: 0 14px; margin: 0; }
+.trip-extras details.trip-adv > summary { min-height: 44px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer; list-style: none; }
+.trip-extras details.trip-adv > summary::-webkit-details-marker { display: none; }
+.trip-extras details.trip-adv[open] { padding-bottom: 12px; }
+.trip-extras .trip-del-btn { min-height: 42px; padding: 0 14px; border-radius: 10px; font-size: 13.5px; }
+.trip-extras .trip-del-btn:hover { background: var(--danger-tint); }
+
+/* 固定底部簽收確認欄 */
+.trip-foot { position: static; flex-shrink: 0; padding: 12px 18px calc(14px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line-soft); gap: 10px; }
+.trip-foot .cross-note.trip-sum { background: transparent; box-shadow: none; padding: 0; gap: 3px; }
+.trip-sum-dur { font-size: 13.5px; color: var(--muted); }
+.trip-sum-dur strong { font-family: var(--font-num); font-size: 19px; font-weight: 700; color: var(--ink); margin: 0 2px; }
+.trip-sum-meta { font-size: 12.5px; color: var(--muted); }
+.trip-sum-meta strong { color: var(--ink-2); }
+.trip-sum-pre { display: inline-flex; align-items: center; margin-top: 2px; padding: 2px 9px; border-radius: 999px; background: var(--sel-bg); color: var(--sel-sub); font-size: 11.5px; font-weight: 700; }
+.trip-foot .trip-submit { min-height: 50px; border-radius: 14px; font-size: 15.5px; font-weight: 700; }
+
+/* 深色模式精修 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .trip-hero { background: linear-gradient(155deg, #1B2842 0%, #111A2B 100%); }
+  :root:not([data-theme="light"]) .trip-row { box-shadow: none; }
+  :root:not([data-theme="light"]) .trip-group.is-work-group { box-shadow: none; }
+}
+:root[data-theme="dark"] .trip-hero { background: linear-gradient(155deg, #1B2842 0%, #111A2B 100%); }
+:root[data-theme="dark"] .trip-row { box-shadow: none; }
+:root[data-theme="dark"] .trip-group.is-work-group { box-shadow: none; }
+
+@media (max-width: 1023px) {
+  .trip-hero .trip-nav .icon-btn,
+  .trip-hero .trip-close { width: 44px; height: 44px; min-width: 44px; }
+  .trip-row { grid-template-columns: 98px minmax(0, 1fr); }
+  .trip-row .trip-time .time-text { padding-left: 8px; }
+}
+@media (max-width: 380px) {
+  .trip-row { grid-template-columns: 84px minmax(0, 1fr); padding-left: 10px; }
+  .trip-row .time-input .time-text { font-size: 20px; }
+  .trip-row.is-work .time-input .time-text { font-size: 23px; }
+}
+
+@media (min-width: 720px) {
+  .sheet.sheet-trip { border-radius: 20px; }
+  .trip-hero .sheet-handle { display: none; }
+  .trip-hero { padding: 16px 24px 0; gap: 12px; }
+  .trip-ribbon { margin: 4px -24px 0; }
+  .trip-body { padding: 16px 24px 18px; gap: 14px; }
+  .trip-foot { padding: 14px 24px 16px; }
+}
+
+@media (min-width: 960px) {
+  .sheet.sheet-trip { width: min(1220px, 95vw); max-height: 92vh; }
+  .trip-hero .trip-dates { display: grid; grid-template-columns: minmax(320px, 1.45fr) minmax(240px, 1fr); align-items: stretch; gap: 12px; }
+  .trip-hero .day-nav.trip-nav { height: 100%; padding: 8px 10px; }
+  .trip-hero .trip-nav .day-nav-text strong { font-size: 18px; }
+  .trip-hero .trip-date { justify-content: center; padding: 8px 14px; }
+
+  .sheet-note.trip-fix { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; }
+  .sheet-note.trip-fix .btn { flex-shrink: 0; }
+
+  .trip-bar { flex-direction: row; align-items: flex-end; justify-content: flex-start; gap: 0; flex-wrap: wrap; row-gap: 10px; padding: 0 0 14px; }
+  .trip-bar > * { padding: 0 18px; }
+  .trip-bar > *:first-child { padding-left: 0; }
+  .trip-bar > *:last-child { padding-right: 0; }
+  .trip-bar > * + * { border-left: 1px solid var(--line-soft); }
+  .trip-bar .trip-prefill { flex-direction: column; align-items: flex-start; gap: 5px; margin-left: auto; border-left: 1px solid var(--line-soft); padding-left: 18px; }
+  .trip-bar .trip-prefill:first-child { margin-left: 0; border-left: 0; padding-left: 0; }
+
+  .trip-group.is-go-group { flex: 3.15 1 0; padding: 10px; }
+  .trip-group.is-work-group { flex: 2.55 1 0; padding: 10px 12px; }
+  .trip-group.is-back-group { flex: 2.15 1 0; padding: 10px; }
+
+  .trip-row { padding: 10px 9px 8px; gap: 4px; }
+  .trip-row.is-work { padding: 10px 11px 8px; }
+  .trip-lab { padding-right: 20px; gap: 3px; }
+  .trip-lab-sub { min-height: 18px; }
+  .trip-row .time-input .time-text,
+  .trip-row input[type="time"] { font-size: 21px; min-height: 44px; padding: 0 36px 0 2px; }
+  .trip-row.is-work .time-input .time-text,
+  .trip-row.is-work input[type="time"] { font-size: 25px; min-height: 46px; padding: 0 38px 0 2px; }
+  .trip-row .time-pick { right: -4px; width: 44px; height: 44px; justify-content: flex-end; padding-right: 8px; }
+  .trip-row .trip-clear { top: 6px; right: 5px; }
+
+  .trip-extras { flex-direction: row; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .trip-extras .verify-toggle { flex: 0 0 auto; padding: 8px 14px 8px 10px; }
+  .trip-extras details.trip-adv { flex: 0 1 300px; }
+  .trip-extras .trip-del-btn { margin-left: auto; width: auto; }
+
+  .trip-foot { flex-direction: row; align-items: center; justify-content: space-between; gap: 20px; }
+  .trip-foot .trip-submit { min-width: 210px; min-height: 52px; }
+}
+
+/* 中等電腦闊度（960–1199px）：去程＋上班排第一行、回程排第二行，零擠壓零切字 */
+@media (min-width: 960px) and (max-width: 1199px) {
+  .trip-track { flex-wrap: wrap; row-gap: 10px; }
+  .trip-group.is-go-group { flex: 1 1 54%; }
+  .trip-group.is-work-group { flex: 1 1 38%; }
+  .trip-group.is-back-group { flex: 1 1 100%; }
+  .trip-gap.is-bridge[data-trip-gap="ride2"] { display: none; }
+}
