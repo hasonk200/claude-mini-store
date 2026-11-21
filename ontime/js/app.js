@@ -17,7 +17,7 @@ import { sleepView } from './views/sleep.js';
 import { mealsView } from './views/meals.js';
 import { statsView } from './views/stats.js';
 import { settingsView } from './views/settings.js';
-import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText, quickWakePreview, quickWakeChips, mealMovePreview, openTripSheet, tripHint, tripSummaryHTML, tripGroupDurText, tripGapHTML } from './views/sheet.js';
+import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText, quickWakePreview, quickWakeChips, mealMovePreview, openTripSheet, tripHint, tripSummaryHTML, tripGroupDurText, tripGapHTML, tripRibbonHTML } from './views/sheet.js';
 import { sleepPairPreview, SLEEP_PAIR_ERROR, sleepEndKey } from './views/sleep.js';
 import { mealPreview } from './views/meals.js';
 import { initSync, onSync, syncState, signIn, signOut, retrySync } from './sync.js';
@@ -36,7 +36,7 @@ const SIDEBAR = ['today', 'timeline', 'week', 'sleep', 'meals', 'stats'];
 // 手機底欄：左邊係返工（今天、時間線、班表），右邊係生活（用餐、睡眠）同統計；「＋」保持喺正中。
 const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'], ['week', '班表', 'calendar'], ['+', '', 'plus'], ['meals', '用餐', 'meal'], ['sleep', '睡眠', 'moon'], ['stats', '統計', 'chart']];
 
-const APP_VERSION = '2.47.0';
+const APP_VERSION = '2.48.0';
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
@@ -1139,6 +1139,8 @@ function tripTyped(f, editedStep = null, { forceShift = false } = {}) {
   if (comBtn) comBtn.disabled = st.times.clockIn == null && st.times.clockOut == null;
   const sum = f.querySelector('[data-trip-sum]');
   if (sum) sum.innerHTML = tripSummaryHTML(st, { prefilled: ui.sheet?.prefilled });
+  const rib = f.querySelector('[data-trip-ribbon]');
+  if (rib) rib.innerHTML = tripRibbonHTML(st, rib.dataset.workKind || 'work');
   // 實際日期未手動揀過：跟住第一格自動變（凌晨 4 點前 = 工作日隔天）。
   if (st.anchorAuto && f.anchor && f.anchor.value !== st.anchor) f.anchor.value = st.anchor;
 }
