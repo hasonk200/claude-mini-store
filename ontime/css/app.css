@@ -1950,13 +1950,21 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
 .trip-hero .trip-nav .icon-btn { width: 38px; height: 38px; min-width: 38px; background: rgba(255, 255, 255, .1); color: #FFFFFF; border: 0; box-shadow: none; }
 .trip-hero .trip-nav .icon-btn:hover { background: rgba(255, 255, 255, .2); }
 
-.trip-hero .trip-date { display: flex; flex-direction: column; gap: 2px; padding: 7px 12px; border-radius: 13px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .13); color-scheme: dark; }
-.trip-hero .trip-date > span { font-size: 11px; font-weight: 600; color: #9FB1CE; letter-spacing: .02em; }
-.trip-hero .trip-date input[type="date"] { background: transparent; border: 0; box-shadow: none; padding: 0; min-height: 28px; font-family: var(--font-num); font-size: 16px; font-weight: 700; color: #FFFFFF; }
+.trip-hero .trip-date { display: flex; flex-direction: column; gap: 4px; padding: 7px 12px; border-radius: 13px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .13); color-scheme: dark; }
+.trip-hero .trip-date > span, .trip-date-head > span { font-size: 11px; font-weight: 600; color: #9FB1CE; letter-spacing: .02em; }
+.trip-date-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.trip-day-pills { display: inline-flex; align-items: center; gap: 4px; background: rgba(13, 21, 38, .42); padding: 2px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .1); }
+.trip-day-pill { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: #C5D3EA; font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background-color .15s ease, color .15s ease; }
+.trip-day-pill:hover { color: #FFFFFF; background: rgba(255, 255, 255, .08); }
+.trip-day-pill[aria-pressed="true"] { background: rgba(255, 255, 255, .2); color: #FFFFFF; }
+.trip-day-pill.is-night[aria-pressed="true"] { background: #4F6EDB; color: #FFFFFF; }
+.trip-hero .trip-date input[type="date"] { background: transparent; border: 0; box-shadow: none; padding: 0; min-height: 28px; font-family: var(--font-num); font-size: 16px; font-weight: 700; color: #FFFFFF; width: 100%; }
 .trip-hero .trip-date input[type="date"]:focus { outline: none; }
 .trip-hero .trip-date:focus-within { border-color: #7FA6FF; background: rgba(91, 141, 255, .16); }
 .trip-hero .trip-date.is-shifted { background: rgba(91, 141, 255, .22); border-color: #8FB0FF; }
 .trip-hero .trip-shift-note { color: #C2D6FF; font-size: 11.5px; font-weight: 600; }
+.rec-day-pills .btn { gap: 4px; }
+.rec-day-pills .btn[aria-pressed="true"] { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-sub); box-shadow: inset 0 0 0 .5px var(--sel-line); }
 
 /* 頂部底緣即時比例色帶（與首頁時間帶、統計出勤卡統一） */
 .trip-ribbon { display: flex; gap: 2px; height: 5px; margin: 4px -18px 0; background: rgba(255, 255, 255, .06); }
