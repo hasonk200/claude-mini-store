@@ -1833,8 +1833,11 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
 .job-chip { display: inline-flex; align-items: center; gap: 6px; }
 
 /* 班次卡（補登第 2 步） */
-.step-chip.shift-chip.is-on { background: var(--work-tint); border-color: var(--work); color: var(--work-deep); box-shadow: inset 0 0 0 .5px var(--work); }
-.step-chip.shift-chip.is-on small { color: var(--work-deep); }
+.step-chip.shift-chip.is-on { background: var(--t, var(--work-tint)); border-color: var(--c, var(--work)); color: var(--d, var(--work-deep)); box-shadow: inset 0 0 0 .5px var(--c, var(--work)); }
+.step-chip.shift-chip.is-on small { color: var(--d, var(--work-deep)); }
+.step-chip.shift-chip.shift-add.is-on { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg); box-shadow: inset 0 0 0 .5px var(--sel-line); }
+.step-chip.shift-chip.shift-add.is-on small { color: var(--sel-sub); }
+.step-chip.shift-chip .sw { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 .step-chip.is-on.is-missing small, .step-chip.is-missing small { color: var(--wake-deep); }
 
 /* 步驟標題 */
@@ -1934,21 +1937,50 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
 .sheet.sheet-trip { overflow: hidden; padding: 0; border-radius: 20px 20px 0 0; }
 .sheet.sheet-trip .trip-form { display: flex; flex-direction: column; gap: 0; max-height: 92vh; }
 
-/* 頂部深藍指令列 */
-.trip-hero { background: linear-gradient(155deg, #15223B 0%, #0D1526 100%); color: #FFFFFF; padding: 8px 18px 0; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
-.trip-hero .sheet-handle { background: rgba(255, 255, 255, .24); margin: 0 auto 2px; }
+/* 頂部深藍指令列（整趟面板 & 補登面板共用視覺語言） */
+.trip-hero, .rec-hero { background: linear-gradient(155deg, #15223B 0%, #0D1526 100%); color: #FFFFFF; padding: 8px 18px 0; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+.rec-hero { padding: 6px 16px 10px; gap: 8px; }
+.trip-hero .sheet-handle, .rec-hero .sheet-handle { background: rgba(255, 255, 255, .24); margin: 0 auto 2px; }
 .trip-hero-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .trip-hero-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .trip-hero-title h2 { font-size: 19px; font-weight: 700; letter-spacing: -.015em; color: #FFFFFF; }
 .trip-hero-badge { font-size: 11.5px; font-weight: 600; color: #C5D3EA; background: rgba(255, 255, 255, .1); padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
-.trip-hero .trip-close { background: rgba(255, 255, 255, .1); color: #FFFFFF; border: 1px solid rgba(255, 255, 255, .14); box-shadow: none; }
-.trip-hero .trip-close:hover { background: rgba(255, 255, 255, .2); }
+.trip-hero .trip-close, .rec-hero .trip-close { background: rgba(255, 255, 255, .1); color: #FFFFFF; border: 1px solid rgba(255, 255, 255, .14); box-shadow: none; }
+.trip-hero .trip-close:hover, .rec-hero .trip-close:hover { background: rgba(255, 255, 255, .2); }
 
 .trip-hero .trip-dates { display: flex; flex-direction: column; gap: 8px; }
-.trip-hero .day-nav.trip-nav { padding: 5px 6px; border-radius: 13px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .13); box-shadow: none; }
-.trip-hero .trip-nav .day-nav-text strong { font-size: 16.5px; font-weight: 700; color: #FFFFFF; letter-spacing: -.01em; }
-.trip-hero .trip-nav .icon-btn { width: 38px; height: 38px; min-width: 38px; background: rgba(255, 255, 255, .1); color: #FFFFFF; border: 0; box-shadow: none; }
-.trip-hero .trip-nav .icon-btn:hover { background: rgba(255, 255, 255, .2); }
+.trip-hero .day-nav.trip-nav, .rec-hero .day-nav.trip-nav { padding: 5px 6px; border-radius: 13px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .13); box-shadow: none; }
+.trip-hero .trip-nav .day-nav-text strong, .rec-hero .trip-nav .day-nav-text strong { font-size: 15.5px; font-weight: 700; color: #FFFFFF; letter-spacing: -.01em; }
+.trip-hero .trip-nav .icon-btn, .rec-hero .trip-nav .icon-btn { width: 38px; height: 38px; min-width: 38px; background: rgba(255, 255, 255, .1); color: #FFFFFF; border: 0; box-shadow: none; }
+.trip-hero .trip-nav .icon-btn:hover, .rec-hero .trip-nav .icon-btn:hover { background: rgba(255, 255, 255, .2); }
+
+/* 補登面板 Pro 頂欄、換日列與雙向互跳橋樑 */
+.sheet.sheet-record { overflow: hidden; padding: 0; border-radius: 20px 20px 0 0; }
+.sheet.sheet-record .sheet-body { flex: 1 1 auto; overflow-y: auto; }
+.rec-hero-wd { display: grid; grid-template-columns: minmax(0, 1fr) 48px; align-items: stretch; gap: 8px; }
+.rec-wd-pick { position: relative; display: grid; place-items: center; border-radius: 13px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .13); color: #FFFFFF; color-scheme: dark; cursor: pointer; overflow: hidden; }
+.rec-wd-pick:hover { background: rgba(255, 255, 255, .16); }
+.rec-wd-pick input[type="date"] { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.rec-wd-pick:focus-within { border-color: #7FA6FF; background: rgba(91, 141, 255, .16); }
+
+.rec-bridge { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); }
+.rec-bridge .btn { flex-shrink: 0; gap: 4px; }
+
+.trip-ride-meta { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px; background: var(--commute-tint); color: var(--commute-deep); font-size: 10.5px; font-weight: 600; }
+.trip-detail-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.trip-detail-chip { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-soft); background: var(--surface-2); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color .14s ease, background-color .14s ease; min-width: 0; }
+.trip-detail-chip:hover { border-color: var(--line); background: var(--surface); }
+.trip-detail-chip span { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.trip-detail-chip strong { font-size: 13px; font-weight: 700; }
+.trip-detail-chip small { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trip-detail-chip svg:first-child { color: var(--commute-deep); flex-shrink: 0; }
+.trip-detail-chip svg:last-child { color: var(--faint); flex-shrink: 0; }
+
+@media (max-width: 520px) {
+  .step-chips.is-commute { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .step-chips.is-commute .step-chip-text strong { white-space: nowrap; }
+  .trip-detail-links { grid-template-columns: minmax(0, 1fr); }
+}
 
 .trip-hero .trip-date { display: flex; flex-direction: column; gap: 4px; padding: 7px 12px; border-radius: 13px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .13); color-scheme: dark; }
 .trip-hero .trip-date > span, .trip-date-head > span { font-size: 11px; font-weight: 600; color: #9FB1CE; letter-spacing: .02em; }
@@ -2055,17 +2087,21 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
 
 /* 深色模式精修 */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .trip-hero { background: linear-gradient(155deg, #1B2842 0%, #111A2B 100%); }
+  :root:not([data-theme="light"]) .trip-hero,
+  :root:not([data-theme="light"]) .rec-hero { background: linear-gradient(155deg, #1B2842 0%, #111A2B 100%); }
   :root:not([data-theme="light"]) .trip-row { box-shadow: none; }
   :root:not([data-theme="light"]) .trip-group.is-work-group { box-shadow: none; }
 }
-:root[data-theme="dark"] .trip-hero { background: linear-gradient(155deg, #1B2842 0%, #111A2B 100%); }
+:root[data-theme="dark"] .trip-hero,
+:root[data-theme="dark"] .rec-hero { background: linear-gradient(155deg, #1B2842 0%, #111A2B 100%); }
 :root[data-theme="dark"] .trip-row { box-shadow: none; }
 :root[data-theme="dark"] .trip-group.is-work-group { box-shadow: none; }
 
 @media (max-width: 1023px) {
   .trip-hero .trip-nav .icon-btn,
-  .trip-hero .trip-close { width: 44px; height: 44px; min-width: 44px; }
+  .trip-hero .trip-close,
+  .rec-hero .trip-nav .icon-btn,
+  .rec-hero .trip-close { width: 44px; height: 44px; min-width: 44px; }
   .trip-row { grid-template-columns: 98px minmax(0, 1fr); }
   .trip-row .trip-time .time-text { padding-left: 8px; }
 }
@@ -2076,9 +2112,10 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
 }
 
 @media (min-width: 720px) {
-  .sheet.sheet-trip { border-radius: 20px; }
-  .trip-hero .sheet-handle { display: none; }
+  .sheet.sheet-trip, .sheet.sheet-record { border-radius: 20px; }
+  .trip-hero .sheet-handle, .rec-hero .sheet-handle { display: none; }
   .trip-hero { padding: 16px 24px 0; gap: 12px; }
+  .rec-hero { padding: 16px 20px 14px; gap: 12px; }
   .trip-ribbon { margin: 4px -24px 0; }
   .trip-body { padding: 16px 24px 18px; gap: 14px; }
   .trip-foot { padding: 14px 24px 16px; }
