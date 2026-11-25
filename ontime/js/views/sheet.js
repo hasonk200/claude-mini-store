@@ -5,7 +5,7 @@ import { esc, icon, bubble, STEP_ICON, STEP_KIND, verifyToggle } from '../ui.js'
 import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN, fromInputs, normTime, fmtDurLong, fmtDur, addDays } from '../time.js';
 import { STEP_LABEL, STEPS, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isFlag, eventVerified, journeyOfSession, sessionsOfWorkday, defaultStepTime, SHIFT_BOUND_STEPS, recentShiftRanges, jobOf, timeOnWorkday, restAutoWorkday, journeyAutoWorkday,
   quickWakeState, WAKE_AGO, QUICK_WAKE_ERROR, MAIN_SLEEP_MS, dayKeyOfWake, mealWorkday, lastClockBefore,
-  tripState, tripsOfWorkday, tripErrorText, shiftsOfWorkday, tripAllVerified, currentCycle } from '../logic.js';
+  tripState, tripsOfWorkday, tripErrorText, shiftsOfWorkday, tripAllVerified, currentCycle, rideDetail, workdayOfSession, journeyWorkday } from '../logic.js';
 import { findWorkdayTargets } from '../actions.js';
 import { sleepPairForm, sleepEndKey, sleepPairPreview } from './sleep.js';
 import { mealForm } from './meals.js';
@@ -84,11 +84,11 @@ export function nextRecordStep(data, wd, cat, currentStep, sid) {
 }
 
 // 一般「＋」打開：這天有班次就預先揀好最需要補的類別；空白日（例如休息日）先問要補什麼。
-export function openRecordSheet(data, wd, step) {
-  if (step) return { type: 'record', wd, cat: catOf(step), step };
+export function openRecordSheet(data, wd, step, sid = null) {
+  if (step && step !== 'auto') return { type: 'record', wd, cat: catOf(step), step, ...(sid ? { sid } : {}) };
   if (!sessionsOfWorkday(data, wd).length) return { type: 'record', wd, cat: null, step: null };
   const st = defaultStep(data, wd);
-  return { type: 'record', wd, cat: catOf(st), step: st };
+  return { type: 'record', wd, cat: catOf(st), step: st, ...(sid ? { sid } : {}) };
 }
 
 // 搭車的交通工具與上車地點，補登和時間線修改共用。
@@ -121,8 +121,9 @@ function shiftChips(data, sessions, sid, newShift) {
   const chips = sessions.map((x) => {
     const on = !newShift && x.id === sid;
     const job = jobOf(data, x.jobId);
-    return `<button type="button" class="step-chip shift-chip${on ? ' is-on' : ''}" data-action="rec-shift" data-sid="${esc(x.id)}" aria-pressed="${on}">
-      <span class="step-chip-text"><strong>${shiftRange(x)}</strong><small>${esc(job?.name ?? '工作')} · ${wdOf(x.start)} ${fmtMD(dateKey(x.start))}${dateKey(x.end ?? x.start) !== dateKey(x.start) ? ` → ${wdOf(x.end)} ${fmtMD(dateKey(x.end))}` : ''}</small></span></button>`;
+    const kind = job?.color === 'deliv' ? 'deliv' : 'work';
+    return `<button type="button" class="step-chip shift-chip k-${kind}${on ? ' is-on' : ''}" data-action="rec-shift" data-sid="${esc(x.id)}" aria-pressed="${on}">
+      <span class="step-chip-text"><strong>${shiftRange(x)}</strong><small><i class="sw k-${kind}"></i>${esc(job?.name ?? '工作')} · ${wdOf(x.start)} ${fmtMD(dateKey(x.start))}${dateKey(x.end ?? x.start) !== dateKey(x.start) ? ` → ${wdOf(x.end)} ${fmtMD(dateKey(x.end))}` : ''}</small></span></button>`;
   }).join('');
   const add = `<button type="button" class="step-chip shift-chip shift-add${newShift ? ' is-on' : ''}" data-action="rec-newshift" aria-pressed="${newShift}"><span class="step-chip-text"><strong>＋ 新增班次</strong><small>填開工和收工時間</small></span></button>`;
   return `<div class="step-chips shift-chips">${chips}${add}</div>`;
@@ -185,28 +186,47 @@ function recordSheet(ctx) {
     body = `${title('選班次')}${shiftChips(data, sessions, sid, newShift)}`;
     if (newShift) body += newShiftForm(data, wd, ++n);
     else {
-      body += `${title(cat === 'work' ? '補哪一個出勤時間？' : '補哪一段通勤？')}${stepChips(data, wd, sid, CAT_STEPS[cat], step, sess)}`;
+      body += `<div class="rec-bridge"><span>一次過補齊或核對 7 格時間？</span><button type="button" class="btn btn-soft btn-sm" data-action="open-trip" data-wd="${wd}"${sid ? ` data-sid="${esc(sid)}"` : ''}>改用整趟面板 ${icon('right', 14, 2.2)}</button></div>`;
+      body += `${title(cat === 'work' ? '補哪一個出勤時間？' : '補哪一段通勤？')}${stepChips(data, wd, sid, CAT_STEPS[cat], step, sess, cat === 'commute' ? 'is-commute' : '')}`;
       body += !sess
         ? `<div class="sheet-note">「${LABEL[step]}」要先有班次才能補。<button type="button" class="btn btn-ink" data-action="rec-newshift">＋ 新增班次</button></div>`
         : recordForm(ctx, { wd, step, sid, sess, title });
     }
   }
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>
-  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-    <div class="sheet-handle"></div>
-    <div class="sheet-head"><h2 id="sheet-title">補登</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button></div>
+  <section class="sheet sheet-record" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <header class="rec-hero">
+      <div class="sheet-handle"></div>
+      <div class="trip-hero-top">
+        <div class="trip-hero-title">
+          <h2 id="sheet-title">補登</h2>
+          <span class="trip-hero-badge">逐項・細節與生活</span>
+        </div>
+        <button type="button" class="icon-btn trip-close" data-action="close-sheet" aria-label="關閉">${icon('close', 18, 2.2)}</button>
+      </div>
+      <div class="rec-hero-wd">
+        <div class="day-nav trip-nav">
+          <button type="button" class="icon-btn" data-action="rec-day-shift" data-dir="-1" aria-label="前一個工作日">${icon('left', 18, 2.2)}</button>
+          <div class="day-nav-text"><strong>${wdOfKey(wd)}工作日 · ${fmtMD(wd)}</strong></div>
+          <button type="button" class="icon-btn" data-action="rec-day-shift" data-dir="1" aria-label="下一個工作日">${icon('right', 18, 2.2)}</button>
+        </div>
+        <label class="rec-wd-pick" aria-label="選擇工作日日期" title="用日曆揀工作日">
+          ${icon('calendar', 18, 2)}
+          <input type="date" value="${wd}" data-action="rec-wd" aria-label="工作日">
+        </label>
+      </div>
+    </header>
     <div class="sheet-body">
       ${crumb}
-      <label class="field wd-field"><span>工作日</span><input type="date" value="${wd}" data-action="rec-wd"></label>
       ${cats}
       ${body}
     </div>
   </section>`;
 }
 
-function stepChips(data, wd, sid, steps, step, sess) {
+function stepChips(data, wd, sid, steps, step, sess, extraCls = '') {
   const { val } = valuesFor(data, wd, sid);
-  return `<div class="step-chips">${steps.map((k) => {
+  return `<div class="step-chips${extraCls ? ` ${extraCls}` : ''}">${steps.map((k) => {
     const v = val[k];
     const on = k === step;
     const needShift = SHIFT_BOUND_STEPS.has(k) && !sess;
@@ -316,6 +336,14 @@ function refSheet(ctx) {
   // 休息、冇班次的行程：可以改歸屬工作日（有班次的行程跟班次走）。
   const rest = ref.type === 'rest' ? (data.rests || []).find((x) => x.id === ref.id) : null;
   const sj = ref.type === 'journey' ? data.journeys.find((x) => x.id === ref.id && !x.sessionId) : null;
+  const refJourney = ref.type === 'journey' ? (jr || data.journeys.find((x) => x.id === ref.id) || null) : null;
+  const refSession = ref.type === 'session'
+    ? data.sessions.find((x) => x.id === ref.id) || null
+    : refJourney?.sessionId ? data.sessions.find((x) => x.id === refJourney.sessionId) || null : null;
+  const tripWd = refSession ? workdayOfSession(refSession, data) : refJourney ? journeyWorkday(refJourney, data) : null;
+  const tripBridge = tripWd
+    ? `<button type="button" class="btn btn-soft btn-block" data-action="open-trip" data-wd="${tripWd}"${refSession ? ` data-sid="${esc(refSession.id)}"` : ''}${!refSession && refJourney ? ` data-jid="${esc(refJourney.id)}"` : ''}>改用整趟面板查看這一趟</button>`
+    : '';
   let wdBlock = '';
   if (rest || sj) {
     const autoNow = rest ? restAutoWorkday({ ...rest, [ref.field]: shown }, data) : journeyAutoWorkday({ ...sj, [ref.field]: shown }, data);
@@ -338,6 +366,7 @@ function refSheet(ctx) {
       ${mainSleepBox}
       <p class="fine">${sleep ? '會改這個時間和「工作日分界」設定' : `只會改這一個時間${rideRef ? '和交通工具、上車地點' : ''}`}；其他紀錄保持不變。</p>
       <button class="btn btn-ink btn-block btn-lg" type="submit">儲存</button>
+      ${tripBridge}
       ${canDelete ? `<button type="button" class="btn btn-danger btn-block" data-action="delete-ref">刪除此紀錄</button>` : ''}
     </form></div>
   </section>`;
@@ -532,10 +561,11 @@ function tripSheet(ctx) {
     const showNow = nowStep === k;
     const stepIc = STEP_ICON[k] || 'clock';
     const icKind = work ? workKind : (k === 'home' ? 'home' : 'commute');
+    const rideMeta = (k === 'ride' || k === 'ride2') ? rideDetail(st.trip.journey, k) : '';
     return `<div class="trip-row${work ? ' is-work' : ''}${v ? ' is-filled' : ''}${isPre ? ' is-prefill' : ''}${st.error?.step === k ? ' is-bad' : ''}${showNow ? ' has-now' : ''}" data-step="${k}">
       <div class="trip-lab">
         <div class="trip-lab-head"><span class="trip-step-ic k-${icKind}" aria-hidden="true">${icon(stepIc, 13, 2.2)}</span><strong>${TRIP_LABEL[k]}</strong></div>
-        <div class="trip-lab-sub"><small data-trip-hint="${k}"${r.off > 0 ? ' class="is-next"' : ''}>${tripHint(r)}</small><span class="trip-pre-tag"${isPre ? '' : ' hidden'}>預填</span>${planHint[k] ? `<small class="trip-plan-hint">${esc(planHint[k])}</small>` : ''}</div>
+        <div class="trip-lab-sub"><small data-trip-hint="${k}"${r.off > 0 ? ' class="is-next"' : ''}>${tripHint(r)}</small><span class="trip-pre-tag"${isPre ? '' : ' hidden'}>預填</span>${planHint[k] ? `<small class="trip-plan-hint">${esc(planHint[k])}</small>` : ''}${rideMeta ? `<small class="trip-ride-meta">${esc(rideMeta)}</small>` : ''}</div>
       </div>
       <div class="trip-ctrl">
         <label class="field trip-time"><input type="time" name="t_${k}" value="${esc(v)}" placeholder="${esc(placeholderFor(k))}" aria-label="${TRIP_LABEL[k]}時間"${sh.focus === k ? ' data-autofocus' : ''}></label>
@@ -583,6 +613,19 @@ function tripSheet(ctx) {
     : '';
   const hasBarContent = !!(tabs || jobPicker || prefillBar);
 
+  const detailLinks = st.trip.session ? (() => {
+    const sid = esc(st.trip.session.id);
+    const j = st.trip.journey;
+    const rideSummary = [rideDetail(j, 'ride'), rideDetail(j, 'ride2')].filter(Boolean).join(' ／ ');
+    const rideStep = st.times.ride2 != null && st.times.ride == null ? 'ride2' : 'ride';
+    const brkCount = (st.trip.session.breaks || []).length;
+    const brkMs = tripWorkBreakMs(st);
+    return `<div class="trip-detail-links">
+      <button type="button" class="trip-detail-chip" data-action="open-record" data-wd="${st.workday}" data-sid="${sid}" data-step="${rideStep}">${icon('bus', 15, 2)}<span><strong>交通與上車地點</strong><small>${esc(rideSummary || '補記巴士、地鐵或車站')}</small></span>${icon('right', 14, 2)}</button>
+      <button type="button" class="trip-detail-chip" data-action="open-record" data-wd="${st.workday}" data-sid="${sid}" data-step="break">${icon('cup', 15, 2)}<span><strong>班內休息</strong><small>${brkCount ? `已記 ${brkCount} 段 · ${fmtDur(brkMs)}` : '補記這班的休息時間'}</small></span>${icon('right', 14, 2)}</button>
+    </div>`;
+  })() : '';
+
   return `<div class="sheet-backdrop" data-action="close-sheet"></div>
   <section class="sheet sheet-trip" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <form class="form trip-form" data-form="trip">
@@ -617,6 +660,7 @@ function tripSheet(ctx) {
         <p class="fine trip-tip">直打 4 位數（如 2100）或點時鐘選時間；過了午夜會自動算隔天。</p>
         ${track}
         <fieldset data-trip-pay ${payMode !== 'perOrder' ? 'hidden' : ''}><legend>收入／單數</legend>${incomeFields(sh.pay || st.trip.session || {})}</fieldset>
+        ${detailLinks}
         <div class="trip-extras">
           <label class="verify-toggle"><input type="checkbox" name="verified"${verified ? ' checked' : ''}><span class="verify-box" aria-hidden="true">${icon('check', 14, 3.2)}</span><span class="verify-text"><strong>已對照追蹤 App</strong><small>上面的日期和時間都一樣</small></span></label>
           <details class="more trip-adv"${sh.wdTo ? ' open' : ''}><summary>進階：計入另一個工作日</summary>
@@ -644,7 +688,7 @@ function addMenuSheet(ctx) {
     <h3 class="add-sub-title">其他補記方式</h3>
     <div class="add-sub">
       <button type="button" class="add-sub-row" data-action="open-record" data-wd="${wd}" data-step="meal">${icon('calendar', 18, 2)}<span>補舊的一餐，或者安排之後的一餐</span>${icon('right', 16, 2)}</button>
-      <button type="button" class="add-sub-row" data-action="open-record" data-wd="${wd}" data-step="clockIn">${icon('edit', 18, 2)}<span>逐項補登：交通、上車地點、個別時間</span>${icon('right', 16, 2)}</button>
+      <button type="button" class="add-sub-row" data-action="open-record" data-wd="${wd}" data-step="auto">${icon('edit', 18, 2)}<span>逐項補登：交通地點、班內休息、單一時間</span>${icon('right', 16, 2)}</button>
     </div>`);
 }
 

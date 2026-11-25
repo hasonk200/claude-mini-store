@@ -36,7 +36,7 @@ const SIDEBAR = ['today', 'timeline', 'week', 'sleep', 'meals', 'stats'];
 // 手機底欄：左邊係返工（今天、時間線、班表），右邊係生活（用餐、睡眠）同統計；「＋」保持喺正中。
 const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'], ['week', '班表', 'calendar'], ['+', '', 'plus'], ['meals', '用餐', 'meal'], ['sleep', '睡眠', 'moon'], ['stats', '統計', 'chart']];
 
-const APP_VERSION = '2.49.0';
+const APP_VERSION = '2.50.0';
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
@@ -370,12 +370,17 @@ function parseRef(s) {
 
 const RECORD_STEPS = new Set(['out', 'ride', 'arrive', 'clockIn', 'clockOut', 'break', 'leave', 'ride2', 'home', 'meal', 'sleepStart', 'sleepEnd', 'sleepPair', 'rest']);
 
-function openRecord(wd, step) {
+function openRecord(wd, step, sid = null) {
   const c = ctx();
   const key = wd || c.wd;
-  // 冇指定要補邊樣：先出選單（整趟返工、睡眠、用餐、休息），唔使一開始就對住一長串步驟。
+  // 明確傳 'auto'：直接進逐項補登並預選最需要補的項目；冇指定：先出選單。
+  if (step === 'auto') {
+    ui.sheet = openRecordSheet(c.data, key, null, sid || null);
+    render();
+    return;
+  }
   if (!RECORD_STEPS.has(step)) { ui.sheet = { type: 'add-menu', wd: key }; render(); return; }
-  ui.sheet = openRecordSheet(c.data, key, step);
+  ui.sheet = openRecordSheet(c.data, key, step, sid || null);
   // 由卡片直接指定步驟打開時，滑入後捲到輸入時間的位置。
   if (RECORD_STEPS.has(step)) sheetScrollToForm = true;
   render();
@@ -746,7 +751,15 @@ const handlers = {
   'quick-wake': () => { ui.sheet = { type: 'quick-wake' }; render(); },
   'qw-wake': (el) => { if (ui.sheet?.type !== 'quick-wake') return; ui.sheet = { ...ui.sheet, wakeSel: el.dataset.key, wakeTime: '' }; render(); },
   'qw-start': (el) => { if (ui.sheet?.type !== 'quick-wake') return; ui.sheet = { ...ui.sheet, startSel: el.dataset.key, startTime: '' }; render(); },
-  'open-record': (el) => openRecord(el.dataset.wd, el.dataset.step),
+  'open-record': (el) => openRecord(el.dataset.wd, el.dataset.step, el.dataset.sid),
+  'rec-day-shift': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'record') return;
+    const nextWd = addDays(sh.wd, Number(el.dataset.dir) || 0);
+    const cat = sh.cat;
+    ui.sheet = { ...(cat ? { type: 'record', wd: nextWd, cat, step: defaultStepIn(store.get(), nextWd, cat) } : openRecordSheet(store.get(), nextWd, null)), wdTouched: true };
+    render();
+  },
   'expected-end-open': (el) => { ui.sheet = { type: 'expected-end', sid: el.dataset.id }; render(); },
   'expected-end-clear': () => {
     const sid = ui.sheet?.sid;
