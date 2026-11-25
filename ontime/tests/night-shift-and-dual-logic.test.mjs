@@ -89,10 +89,16 @@ test('createShift 驗證：阻擋未來時間、時間重疊、雙開進行中�
   const now = at('2026-11-25', '12:00');
   fresh({ jobs: [jobW], sessions: [{ id: 's1', jobId: 'jw', start: at('2026-11-24', '21:00'), end: at('2026-11-25', '09:00'), breaks: [] }] });
   assert.deepEqual(createShift('2026-11-25', at('2026-11-25', '14:00'), null, now), { ok: false, reason: 'future' });
-  assert.deepEqual(createShift('2026-11-24', at('2026-11-24', '22:00'), at('2026-11-25', '06:00'), now), { ok: false, reason: 'overlap' });
+  const ov = createShift('2026-11-24', at('2026-11-24', '22:00'), at('2026-11-25', '06:00'), now);
+  assert.equal(ov.ok, false);
+  assert.equal(ov.reason, 'overlap');
+  assert.equal(ov.other.id, 's1', '要講明撞到邊一班');
 
   fresh({ jobs: [jobW], sessions: [{ id: 'sOpen', jobId: 'jw', start: at('2026-11-25', '08:00'), end: null, breaks: [] }] });
-  assert.deepEqual(createShift('2026-11-25', now, null, now), { ok: false, reason: 'has-open' });
+  const open = createShift('2026-11-25', now, null, now);
+  assert.equal(open.reason, 'has-open');
+  assert.equal(open.other.id, 'sOpen');
+  assert.equal(open.other.open, true);
 });
 
 test('setStepTime 與 setRefTime 驗證一致性：攔截未來時間、步驟亂序、以及改休息開始唔會複製多筆', () => {

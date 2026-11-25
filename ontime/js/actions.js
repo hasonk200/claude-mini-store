@@ -5,7 +5,7 @@ import { mergeData } from './sync.js';
 import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
-  currentCycle, activeSession, OPEN_LIMIT, isOpenSession, sessionEndAt, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
+  currentCycle, activeSession, OPEN_LIMIT, isOpenSession, sessionEndAt, otherShiftInfo, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
   journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys, markFlag,
   sleepWorkdayChanges, activeRest, mealAutoWorkday, restAutoWorkday, journeyAutoWorkday, checkTrip, TRIP_JOURNEY_STEPS
 } from './logic.js';
@@ -155,8 +155,10 @@ function checkStepOrder(s, j, step, t) {
 function checkSessionOverlap(d, { id = null, start, end = null, now = Date.now() }) {
   const b = end ?? (now - start > OPEN_LIMIT ? start : now);
   const others = d.sessions.filter((x) => x.id !== id);
-  if (others.some((x) => x.start < b && sessionEndAt(x, now) > start)) return 'overlap';
-  if (end == null && now - start <= OPEN_LIMIT && others.some(isOpenSession)) return 'has-open';
+  const hit = others.find((x) => x.start < b && sessionEndAt(x, now) > start);
+  if (hit) return { reason: 'overlap', other: otherShiftInfo(hit, d) };
+  const open = end == null && now - start <= OPEN_LIMIT ? others.find(isOpenSession) : null;
+  if (open) return { reason: 'has-open', other: otherShiftInfo(open, d) };
   return null;
 }
 
@@ -167,7 +169,7 @@ export function createShift(wd, start, end = null, now = Date.now(), extra = {})
   if (end != null && end <= start) return { ok: false, reason: 'before-clock-in' };
   if (start > now || (end != null && end > now)) return { ok: false, reason: 'future' };
   const ov = checkSessionOverlap(get(), { start, end, now });
-  if (ov) return { ok: false, reason: ov };
+  if (ov) return { ok: false, ...ov };
   let id = null;
   update((d) => {
     const s = newSession(d, start, wd, extra.jobId || null);
@@ -216,7 +218,7 @@ export function setStepTime(wd, step, t, extra = {}) {
       const ord = checkStepOrder(s, j, 'clockIn', t);
       if (ord) { result = { ok: false, ...ord }; return; }
       const ov = checkSessionOverlap(d, { id: s?.id ?? null, start: t, end: s ? s.end : (extra.end ?? null), now });
-      if (ov) { result = { ok: false, reason: ov }; return; }
+      if (ov) { result = { ok: false, ...ov }; return; }
       // 補登：你揀了哪一個工作日，這班就固定屬於那一天，不會跑去別日。
       const target = s || newSession(d, t, wd);
       target.start = t;
@@ -236,7 +238,7 @@ export function setStepTime(wd, step, t, extra = {}) {
       const ord = checkStepOrder(s, j, 'clockOut', t);
       if (ord) { result = { ok: false, ...ord }; return; }
       const ov = checkSessionOverlap(d, { id: s.id, start: s.start, end: t, now });
-      if (ov) { result = { ok: false, reason: ov }; return; }
+      if (ov) { result = { ok: false, ...ov }; return; }
       s.end = t;
       delete s.endPending;
       mark(s, 'end');
@@ -351,58 +353,61 @@ export function clearStepTime(wd, step) {
 }
 
 // 修改單一時間之前先檢查：開始不能晚於結束、結束不能早於開始、不能在未來、同趟步驟不可亂序、不能撞班。
-// 所有修改入口（補登、時間線、桌面面板）共用這套規則。回傳 null 代表可以存。
-export function checkRefTime(d, ref, t, now = Date.now()) {
-  if (t == null || Number.isNaN(t)) return 'bad-time';
+// 所有修改入口（補登、時間線、桌面面板）共用這套規則。回傳 null 代表可以存；
+// 否則回傳 { reason, step?, prev?, other? }，畫面可以講清楚撞到邊一步、邊一班。
+export function refTimeProblem(d, ref, t, now = Date.now()) {
+  if (t == null || Number.isNaN(t)) return { reason: 'bad-time' };
   if (ref.type === 'session') {
     const s = d.sessions.find((x) => x.id === ref.id);
-    if (!s) return 'missing';
-    if (t > now) return 'future';
-    if (ref.field === 'start' && s.end != null && t >= s.end) return 'after-clock-out';
-    if (ref.field === 'end' && t <= s.start) return 'before-clock-in';
+    if (!s) return { reason: 'missing' };
+    if (t > now) return { reason: 'future' };
+    if (ref.field === 'start' && s.end != null && t >= s.end) return { reason: 'after-clock-out' };
+    if (ref.field === 'end' && t <= s.start) return { reason: 'before-clock-in' };
     if (ref.field === 'start' || ref.field === 'end') {
       const j = journeyOfSession(d, s);
       const ord = checkStepOrder(s, j, ref.field === 'start' ? 'clockIn' : 'clockOut', t);
-      if (ord) return 'order';
+      if (ord) return ord;
       const ov = checkSessionOverlap(d, { id: s.id, start: ref.field === 'start' ? t : s.start, end: ref.field === 'end' ? t : s.end, now });
       if (ov) return ov;
     }
   } else if (ref.type === 'journey') {
     const j = d.journeys.find((x) => x.id === ref.id);
-    if (!j) return 'missing';
-    if (t > now) return 'future';
+    if (!j) return { reason: 'missing' };
+    if (t > now) return { reason: 'future' };
     const s = j.sessionId ? d.sessions.find((x) => x.id === j.sessionId) || null : null;
     const ord = checkStepOrder(s, j, ref.field, t);
-    if (ord) return 'order';
+    if (ord) return ord;
   } else if (ref.type === 'sleep') {
     const s = d.sleeps.find((x) => x.id === ref.id);
-    if (!s) return 'missing';
-    if (s.start != null && (ref.field === 'start' || (ref.field === 'end' && s.end != null)) && t > now) return 'future';
+    if (!s) return { reason: 'missing' };
+    if (s.start != null && (ref.field === 'start' || (ref.field === 'end' && s.end != null)) && t > now) return { reason: 'future' };
     if (s.start != null) {
-      if (ref.field === 'start' && s.end != null && t >= s.end) return 'after-end';
-      if (ref.field === 'end' && s.end != null && t <= s.start) return 'before-start';
+      if (ref.field === 'start' && s.end != null && t >= s.end) return { reason: 'after-end' };
+      if (ref.field === 'end' && s.end != null && t <= s.start) return { reason: 'before-start' };
     } else {
-      if (ref.field === 'start' && s.planEnd != null && t >= s.planEnd) return 'after-end';
-      if (ref.field === 'end' && s.planStart != null && t <= s.planStart) return 'before-start';
+      if (ref.field === 'start' && s.planEnd != null && t >= s.planEnd) return { reason: 'after-end' };
+      if (ref.field === 'end' && s.planStart != null && t <= s.planStart) return { reason: 'before-start' };
     }
   } else if (ref.type === 'rest') {
     const r = (d.rests || []).find((x) => x.id === ref.id);
-    if (!r) return 'missing';
-    if (t > now) return 'future';
-    if (ref.field === 'start' && r.end != null && t >= r.end) return 'after-end';
-    if (ref.field === 'end' && r.start != null && t <= r.start) return 'before-start';
+    if (!r) return { reason: 'missing' };
+    if (t > now) return { reason: 'future' };
+    if (ref.field === 'start' && r.end != null && t >= r.end) return { reason: 'after-end' };
+    if (ref.field === 'end' && r.start != null && t <= r.start) return { reason: 'before-start' };
   } else if (ref.type === 'meal') {
     const m = d.meals.find((x) => x.id === ref.id);
-    if (!m) return 'missing';
-    if (m.confirmed !== false && t > now) return 'future';
+    if (!m) return { reason: 'missing' };
+    if (m.confirmed !== false && t > now) return { reason: 'future' };
   }
   return null;
 }
+export const checkRefTime = (d, ref, t, now = Date.now()) => refTimeProblem(d, ref, t, now)?.reason ?? null;
+
 
 // 直接改某一筆事件（時間線、桌面檢視面板用）。不合理的時間不寫入，回傳 { ok: false, reason }。
 export function setRefTime(ref, t, extra = {}) {
-  const bad = checkRefTime(get(), ref, t, extra.now ?? Date.now());
-  if (bad) return { ok: false, reason: bad };
+  const bad = refTimeProblem(get(), ref, t, extra.now ?? Date.now());
+  if (bad) return { ok: false, ...bad };
   update((d) => {
     if (ref.type === 'journey') {
       const j = d.journeys.find((x) => x.id === ref.id);
