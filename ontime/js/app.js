@@ -8,7 +8,7 @@ import * as act from './actions.js';
 import { icon, esc } from './ui.js';
 import { dateKey, addDays, fromInputs, monthStartKey, monthEndKey, MIN, HOUR, fmtTime, wdOfKey, wdOf, fmtMD, fmtDayMD, normTime, endOnOrAfter, fmtDur } from './time.js';
 import { quickWakeState, QUICK_WAKE_ERROR, lastClockBefore, latestOpenSleep, STEPS, tripState, tripErrorText, tripAllVerified } from './logic.js';
-import { activeSession, shiftDateMismatch, mealWorkday, mealAutoWorkday, restWorkday, restAutoWorkday, journeyAutoWorkday, needsWorkdayConfirm, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS } from './logic.js';
+import { activeSession, shiftDateMismatch, mealWorkday, mealAutoWorkday, restWorkday, restAutoWorkday, journeyAutoWorkday, needsWorkdayConfirm, currentWorkday, currentCycle, workdayEvents, sleepWorkdayChanges, dayOf, inferSleepWorkday, sleepWorkday, resolveStepTime, shiftDistance, SHIFT_FAR_MS, STEP_LABEL } from './logic.js';
 import { todayView, refKey, heroFor } from './views/today.js';
 import { phaseOf } from './views/shared.js';
 import { timelineView } from './views/timeline.js';
@@ -17,7 +17,7 @@ import { sleepView } from './views/sleep.js';
 import { mealsView } from './views/meals.js';
 import { statsView } from './views/stats.js';
 import { settingsView } from './views/settings.js';
-import { sheetView, defaultStepIn, openRecordSheet, previewText, freePreviewText, quickWakePreview, quickWakeChips, mealMovePreview, openTripSheet, tripHint, tripSummaryHTML, tripGroupDurText, tripGapHTML, tripRibbonHTML } from './views/sheet.js';
+import { sheetView, defaultStepIn, openRecordSheet, nextRecordStep, previewText, freePreviewText, quickWakePreview, quickWakeChips, mealMovePreview, openTripSheet, tripHint, tripSummaryHTML, tripGroupDurText, tripGapHTML, tripRibbonHTML } from './views/sheet.js';
 import { sleepPairPreview, SLEEP_PAIR_ERROR, sleepEndKey } from './views/sleep.js';
 import { mealPreview } from './views/meals.js';
 import { initSync, onSync, syncState, signIn, signOut, retrySync } from './sync.js';
@@ -36,7 +36,7 @@ const SIDEBAR = ['today', 'timeline', 'week', 'sleep', 'meals', 'stats'];
 // 手機底欄：左邊係返工（今天、時間線、班表），右邊係生活（用餐、睡眠）同統計；「＋」保持喺正中。
 const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'], ['week', '班表', 'calendar'], ['+', '', 'plus'], ['meals', '用餐', 'meal'], ['sleep', '睡眠', 'moon'], ['stats', '統計', 'chart']];
 
-const APP_VERSION = '2.48.1';
+const APP_VERSION = '2.49.0';
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
@@ -611,6 +611,14 @@ const handlers = {
     ui.sheet = openTripSheet(store.get(), addDays(sh.wd, Number(el.dataset.dir)), nowFn());
     render();
   },
+  'trip-anchor-day': (el) => {
+    const sh = ui.sheet;
+    if (sh?.type !== 'trip') return;
+    const off = Number(el.dataset.offset) || 0;
+    const st = tripState(store.get(), sh, nowFn());
+    ui.sheet = { ...sh, focus: null, vals: st.vals, anchor: addDays(sh.wd, off), anchorShifted: false, anchorShiftNote: '' };
+    render();
+  },
   'trip-now': (el) => {
     const sh = ui.sheet;
     if (sh?.type !== 'trip') return;
@@ -780,10 +788,33 @@ const handlers = {
   'rec-shift': (el) => { ui.sheet.sid = el.dataset.sid; ui.sheet.newShift = false; delete ui.sheet.t; render(); },
   'rec-newshift': () => { ui.sheet.newShift = true; render(); },
   'rec-newshift-cancel': () => { ui.sheet.newShift = false; render(); },
+  'newshift-day': (el) => {
+    const f = $('form[data-form=new-shift]');
+    if (!f) return;
+    f.date.value = el.dataset.date;
+    f.date.dataset.manual = '1';
+    syncNewShiftPills(f);
+  },
+  'newshift-job': (el) => {
+    const f = $('form[data-form=new-shift]');
+    if (!f || !f.jobId) return;
+    f.jobId.value = el.dataset.job;
+    f.querySelectorAll('[data-action="newshift-job"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.job === el.dataset.job)));
+  },
+  'rec-day': (el) => {
+    const f = $('#record-form');
+    if (!f?.date) return;
+    f.date.value = el.dataset.date;
+    markDateManual(f);
+  },
   'shift-range': (el) => {
     const f = $('form[data-form=new-shift]');
     if (!f) return;
     f.start.value = el.dataset.from; f.end.value = el.dataset.to;
+    if (f.date && f.wd && f.date.dataset.manual !== '1') {
+      const hh = normTime(el.dataset.from);
+      if (hh) { f.date.value = hh < '04:00' ? addDays(f.wd.value, 1) : f.wd.value; syncNewShiftPills(f); }
+    }
   },
   'rec-now': () => {
     const t = nowFn(); $('#record-form [name=date]').value = dateKey(t); $('#record-form [name=time]').value = fmtTime(t);
@@ -907,7 +938,7 @@ const handlers = {
       : r.reason === 'not-latest' ? '這班不是最近一班，請直接改時間，不能清空'
       : r.reason === 'too-old' ? '下班已經超過 24 小時，請直接改時間，不能清空'
       : '找不到這一筆，可能已經刪除';
-    toast(msg);
+    if (r.ok) toastUndo(msg); else toast(msg);
     render();
   },
   // 首頁「回到現在」或表單「改返自動」（用餐、休息、獨立通勤共用）。
@@ -950,9 +981,14 @@ const handlers = {
 };
 
 // 補登面板（已選班次）：你只打時間，日期由班次決定；按了「現在」、−15 分或手動改日期，就以你設的為準。
+function syncNewShiftPills(f) {
+  const val = f?.date?.value;
+  f?.querySelectorAll('[data-action="newshift-day"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.date === val)));
+}
 function markDateManual(f) {
   if (!f?.date) return;
   f.date.dataset.manual = '1';
+  f.querySelectorAll('[data-action="rec-day"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.date === f.date.value)));
   updatePreview(f);
 }
 function updatePreview(f) {
@@ -967,7 +1003,10 @@ function updatePreview(f) {
   const s = { start: Number(f.dataset.sStart), end: f.dataset.sEnd ? Number(f.dataset.sEnd) : null };
   if (f.date.dataset.manual !== '1') {
     const t = resolveStepTime(f.step.value, hhmm, s);
-    if (t != null) f.date.value = dateKey(t);
+    if (t != null) {
+      f.date.value = dateKey(t);
+      f.querySelectorAll('[data-action="rec-day"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.date === f.date.value)));
+    }
   }
   const t = fromInputs(f.date.value, hhmm);
   if (t != null) box.innerHTML = previewText(t, s);
@@ -1184,6 +1223,10 @@ function tripTyped(f, editedStep = null, { forceShift = false } = {}) {
   if (rib) rib.innerHTML = tripRibbonHTML(st, rib.dataset.workKind || 'work');
   // 實際日期未手動揀過：跟住第一格自動變（凌晨 4 點前 = 工作日隔天）。
   if (st.anchorAuto && f.anchor && f.anchor.value !== st.anchor) f.anchor.value = st.anchor;
+  f.querySelectorAll('[data-action="trip-anchor-day"]').forEach((b) => {
+    const off = Number(b.dataset.offset) || 0;
+    b.setAttribute('aria-pressed', String(addDays(sh.wd, off) === st.anchor));
+  });
 }
 
 // ---------- 補登防撳錯 ----------
@@ -1226,7 +1269,7 @@ function savePending(p) {
   const data = store.get();
   const rec = p.kind === 'meal' ? data.meals.find((m) => m.id === id) : data.rests.find((r) => r.id === id);
   const wk = rec ? (p.kind === 'meal' ? mealWorkday(rec, data, now) : restWorkday(rec, data)) : null;
-  toast(`已儲存${p.kind === 'meal' ? '這一餐' : '休息'}${wk ? ` · 歸屬 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日${rec.workdayManual ? '（手動指定）' : ''}` : ''}`);
+  toastUndo(`已儲存${p.kind === 'meal' ? '這一餐' : '休息'}${wk ? ` · 歸屬 ${wdOfKey(wk)} ${fmtMD(wk)} 工作日${rec.workdayManual ? '（手動指定）' : ''}` : ''}`);
   render();
 }
 
@@ -1242,8 +1285,17 @@ const RECORD_ERROR = {
   'after-end': '開始時間不能晚於結束時間',
   'bad-time': '請填寫日期和時間',
   'expected-past': '預計收工要晚於現在',
-  future: '還沒發生的時間不能補登'
+  future: '還沒發生的時間不能補登',
+  overlap: '同另一班的上班時間重疊',
+  'has-open': '另一班還未下班，請先補那一班的下班時間'
 };
+
+function recordErrorText(r) {
+  if (!r) return '沒有可更新的紀錄';
+  if (r.reason === 'order' && r.step && r.prev) return `「${STEP_LABEL[r.step]}」不能早過「${STEP_LABEL[r.prev]}」`;
+  if (r.reason === 'order') return '時間次序不對，不能越過同趟其他步驟';
+  return RECORD_ERROR[r.reason] || '沒有可更新的紀錄';
+}
 
 // 實際寫入補登，並把「這筆歸到哪個工作日」講清楚。
 function applyRecord(p) {
@@ -1251,7 +1303,7 @@ function applyRecord(p) {
   ui.sheet = p.stay ? { type: 'record', wd: p.wd, cat: p.cat, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
   const r = act.setStepTime(p.wd, p.step, p.t, p.extra);
   if (!r.ok) {
-    toast(RECORD_ERROR[r.reason] || '沒有可更新的紀錄');
+    toast(recordErrorText(r));
     // 「儲存」模式失敗時留在面板，保留剛填的時間。
     ui.sheet = p.stay ? { type: 'record', wd: p.wd, cat: p.cat, step: p.step, t: p.t, sid: p.extra?.sessionId } : null;
     render();
@@ -1266,16 +1318,27 @@ function applyRecord(p) {
       if (wk !== p.wd) note = `，歸屬 ${wdOfKey(wk)} ${fmtMD(wk)}`;
     }
   }
-  toast(`已儲存 ${fmtTime(p.t)}${note}`);
-  // 「儲存」只存不關，讓同一頁可以接著補下一個步驟。
-  if (p.stay) ui.sheet = { type: 'record', wd: p.wd, cat: p.cat, step: p.step, sid: p.extra?.sessionId };
+  const next = p.stay ? nextRecordStep(store.get(), p.wd, p.cat, p.step, p.extra?.sessionId) : null;
+  const nextNote = next ? ` · 接著補「${STEP_LABEL[next] || next}」` : '';
+  toastUndo(`已儲存 ${fmtTime(p.t)}${note}${nextNote}`);
+  // 「儲存並繼續」自動跳去同類別下一格未填步驟，減少捲動。
+  if (p.stay) {
+    ui.sheet = { type: 'record', wd: p.wd, cat: p.cat, step: next || p.step, sid: p.extra?.sessionId };
+    if (next) sheetScrollToForm = true;
+  }
   render();
 }
 
 function createShiftNow(p, wd) {
-  const r = act.createShift(wd, p.start, p.end, nowFn());
+  const r = act.createShift(wd, p.start, p.end, nowFn(), { jobId: p.jobId || null });
+  if (!r.ok) {
+    toast(recordErrorText(r));
+    ui.sheet = { type: 'record', wd: p.wd, cat: p.back?.cat || 'work', step: p.back?.step, newShift: true };
+    render();
+    return;
+  }
   ui.sheet = { type: 'record', wd, cat: p.back?.cat, step: p.back?.step || 'clockIn', sid: r.id };
-  toast(wd === p.wd ? '已新增班次' : `已新增班次，歸到 ${wdOfKey(wd)} ${fmtMD(wd)}`);
+  toastUndo(wd === p.wd ? '已新增班次' : `已新增班次，歸到 ${wdOfKey(wd)} ${fmtMD(wd)}`);
   render();
 }
 
@@ -1308,8 +1371,9 @@ const forms = {
     const stay = e?.submitter?.value === 'stay';
     const t = fromInputs(f.date.value, f.time.value);
     if (t == null) return;
-    const extra = {};
+    const extra = { now: nowFn() };
     if (f.sid && f.sid.value) extra.sessionId = f.sid.value;
+    if (f.origBreakStart && f.origBreakStart.value) extra.origStart = Number(f.origBreakStart.value);
     if (f.endTime && f.endTime.value) extra.end = fromInputs(f.endDate.value || f.date.value, f.endTime.value);
     if (f.mode) { extra.mode = f.mode.value.trim(); extra.from = f.from.value.trim(); }
     if (f.replace && f.replace.checked) extra.replace = true;
@@ -1351,7 +1415,7 @@ const forms = {
     const start = fromInputs(f.date.value, f.start.value);
     if (start == null) return;
     const end = f.end.value ? endOnOrAfter(f.date.value, start, f.end.value) : null;
-    const p = { wd: f.wd.value, start, end, back: { ...ui.sheet } };
+    const p = { wd: f.wd.value, start, end, jobId: f.jobId?.value || null, back: { ...ui.sheet } };
     // 開工日期跟工作日對不上（例如在 10/24 工作日填 10/21 開工）：先問要歸到哪一天，不要默默掛在 10/24。
     const other = shiftDateMismatch(p.wd, start);
     if (other) {
@@ -1369,7 +1433,7 @@ const forms = {
   },
   'ref-time': (f) => {
     const t = fromInputs(f.date.value, f.time.value);
-    const extra = f.mode ? { mode: f.mode.value.trim(), from: f.from.value.trim() } : {};
+    const extra = { now: nowFn(), ...(f.mode ? { mode: f.mode.value.trim(), from: f.from.value.trim() } : {}) };
     if (f.verified) extra.verified = f.verified.checked;
     if (f.origT) extra.origT = Number(f.origT.value);
     if (f.mainSleep) extra.mainSleep = f.mainSleep.checked;
@@ -1377,14 +1441,14 @@ const forms = {
     const r = act.setRefTime({ type: f.type.value, id: f.id.value, field: f.field.value || undefined }, t, extra);
     if (!r.ok) {
       // 不合理的時間不存；面板保持打開，保留剛填的日期和時間。
-      toast(RECORD_ERROR[r.reason] || '這個時間存不到');
+      toast(recordErrorText(r));
       if (ui.sheet?.type === 'ref' && t != null) ui.sheet = { ...ui.sheet, draftT: t, ...(f.wdMode ? { wdMode: f.wdMode.value, wdValue: f.wd.value } : {}) };
       render();
       return;
     }
     ui.selRef = `${f.type.value}:${f.id.value}:${f.field.value}`;
     ui.sheet = null;
-    toast('已更新時間');
+    toastUndo('已更新時間');
   },
   'meal': (f, e) => {
     const key = f.dataset.draft;
@@ -1683,6 +1747,14 @@ function bind() {
     }
     const cu = e.target.closest?.('form[data-form="sleep-catchup"]');
     if (cu) updateCatchupPreview(cu);
+    const ns = e.target.closest?.('form[data-form="new-shift"]');
+    if (ns && ns.date && ns.wd) {
+      if (e.target.name === 'date') { e.target.dataset.manual = '1'; syncNewShiftPills(ns); }
+      else if (e.target.name === 'start' && ns.date.dataset.manual !== '1') {
+        const hh = normTime(e.target.value);
+        if (hh) { ns.date.value = hh < '04:00' ? addDays(ns.wd.value, 1) : ns.wd.value; syncNewShiftPills(ns); }
+      }
+    }
   });
   // 「詳細」展開或收起：記住你的選擇（toggle 事件不會冒泡，用捕獲階段）。
   document.addEventListener('toggle', (e) => {
@@ -1732,11 +1804,10 @@ function bind() {
     if(el.dataset.action==='reminder-set') {
       act.saveSettings({reminders:{...store.get().settings.reminders,[el.dataset.key]:el.checked}});return;
     }
-    if (el.dataset.action === 'trip-anchor'  && el.value && ui.sheet?.type === 'trip') {
+    if (el.dataset.action === 'trip-anchor' && el.value && ui.sheet?.type === 'trip') {
       const st = tripState(store.get(), ui.sheet, nowFn());
-      // 新的一趟：工作日預設跟實際日期走（同臨時版一樣）；已有的一趟只改日期，不動歸屬。
-      const follow = !st.exists && !ui.sheet.wdTo;
-      ui.sheet = { ...ui.sheet, focus: null, vals: st.vals, anchor: el.value, anchorShifted: false, anchorShiftNote: '', ...(follow ? { wd: el.value } : {}) };
+      // 實際日期（第一格那天）只管日期推算，絕對唔可以偷改左邊揀好嘅工作日歸屬（例如夜班隔天朝早先開工仍屬前一日工作日）。
+      ui.sheet = { ...ui.sheet, focus: null, vals: st.vals, anchor: el.value, anchorShifted: false, anchorShiftNote: '' };
       asUser(render);
       return;
     }

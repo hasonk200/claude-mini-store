@@ -5,7 +5,7 @@ import { mergeData } from './sync.js';
 import { isLegacyBackup, convertLegacy } from './legacy.js';
 import { MIN, HOUR, dateKey, at, addDays, fmtTime, fromInputs } from './time.js';
 import {
-  currentCycle, activeSession, OPEN_LIMIT, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
+  currentCycle, activeSession, OPEN_LIMIT, isOpenSession, sessionEndAt, shiftForClockIn, sessionsOfWorkday, shiftsOfWorkday,
   journeyOfSession, sessionWorkMs, splitWorkByDay, jobOf, sleepWorkday, latestOpenSleep, sleepEndTarget, standaloneJourneys, markFlag,
   sleepWorkdayChanges, activeRest, mealAutoWorkday, restAutoWorkday, journeyAutoWorkday, checkTrip, TRIP_JOURNEY_STEPS
 } from './logic.js';
@@ -136,16 +136,54 @@ export function findWorkdayTargets(d, wd) {
   return { session: s, journey: j, sleep, shift };
 }
 
+const STEP_ORDER = ['out', 'ride', 'arrive', 'clockIn', 'clockOut', 'leave', 'ride2', 'home'];
+function checkStepOrder(s, j, step, t) {
+  const idx = STEP_ORDER.indexOf(step);
+  if (idx < 0) return null;
+  const valOf = (k) => (k === 'clockIn' ? s?.start : k === 'clockOut' ? s?.end : j?.[k]);
+  for (let i = 0; i < idx; i++) {
+    const prev = valOf(STEP_ORDER[i]);
+    if (prev != null && t < prev) return { reason: 'order', step, prev: STEP_ORDER[i] };
+  }
+  for (let i = idx + 1; i < STEP_ORDER.length; i++) {
+    const next = valOf(STEP_ORDER[i]);
+    if (next != null && t > next) return { reason: 'order', step: STEP_ORDER[i], prev: step };
+  }
+  return null;
+}
+
+function checkSessionOverlap(d, { id = null, start, end = null, now = Date.now() }) {
+  const b = end ?? (now - start > OPEN_LIMIT ? start : now);
+  const others = d.sessions.filter((x) => x.id !== id);
+  if (others.some((x) => x.start < b && sessionEndAt(x, now) > start)) return 'overlap';
+  if (end == null && now - start <= OPEN_LIMIT && others.some(isOpenSession)) return 'has-open';
+  return null;
+}
+
 // 新增班次：先建立一班出勤（開工、收工可以先空著收工），之後的時間都扣在這一班上。
 // 補很久以前的班又不填收工：標成「待補收工」，不當作現在還在上班。
-export function createShift(wd, start, end = null, now = Date.now()) {
+export function createShift(wd, start, end = null, now = Date.now(), extra = {}) {
+  if (start == null || Number.isNaN(start)) return { ok: false, reason: 'bad-time' };
+  if (end != null && end <= start) return { ok: false, reason: 'before-clock-in' };
+  if (start > now || (end != null && end > now)) return { ok: false, reason: 'future' };
+  const ov = checkSessionOverlap(get(), { start, end, now });
+  if (ov) return { ok: false, reason: ov };
   let id = null;
   update((d) => {
-    const s = newSession(d, start, wd);
+    const s = newSession(d, start, wd, extra.jobId || null);
     s.workdayDate = wd;
     s.workdayManual = true;
     s.end = end;
     if (end == null && now - start > OPEN_LIMIT) s.endPending = true;
+    const sj = standaloneJourneys(d, wd)[0];
+    if (sj) {
+      const compatPre = ['out', 'ride', 'arrive'].every((k) => sj[k] == null || sj[k] <= start);
+      const compatPost = ['leave', 'ride2', 'home'].every((k) => sj[k] == null || (end != null && sj[k] >= end));
+      if (compatPre && compatPost) {
+        const realJ = d.journeys.find((x) => x.id === sj.id);
+        if (realJ && !realJ.sessionId) { realJ.sessionId = s.id; delete realJ.workdayDate; delete realJ.workdayManual; }
+      }
+    }
     id = s.id;
   });
   return { ok: true, id };
@@ -153,6 +191,10 @@ export function createShift(wd, start, end = null, now = Date.now()) {
 
 // extra.sessionId：指定班次。有指定就一定寫進這一班，不再自己猜是哪一班。
 export function setStepTime(wd, step, t, extra = {}) {
+  const now = extra.now ?? Date.now();
+  if (t == null || Number.isNaN(t)) return { ok: false, reason: 'bad-time' };
+  if (t > now) return { ok: false, reason: 'future' };
+  if ((step === 'break' || step === 'clockIn') && extra.end != null && extra.end > now) return { ok: false, reason: 'future' };
   let result = { ok: true };
   // extra.verified：true = 已驗證、false = 取消、undefined = 不改。
   const mark = (rec, field) => {
@@ -171,6 +213,10 @@ export function setStepTime(wd, step, t, extra = {}) {
     if (step === 'clockIn') {
       if (s && s.end != null && t >= s.end) { result = { ok: false, reason: 'after-clock-out' }; return; }
       if (!s && extra.end != null && extra.end <= t) { result = { ok: false, reason: 'before-clock-in' }; return; }
+      const ord = checkStepOrder(s, j, 'clockIn', t);
+      if (ord) { result = { ok: false, ...ord }; return; }
+      const ov = checkSessionOverlap(d, { id: s?.id ?? null, start: t, end: s ? s.end : (extra.end ?? null), now });
+      if (ov) { result = { ok: false, reason: ov }; return; }
       // 補登：你揀了哪一個工作日，這班就固定屬於那一天，不會跑去別日。
       const target = s || newSession(d, t, wd);
       target.start = t;
@@ -178,7 +224,7 @@ export function setStepTime(wd, step, t, extra = {}) {
       target.workdayManual = true;
       if (!s) {
         target.end = extra.end ?? null;
-        if (target.end == null && (extra.now ?? Date.now()) - t > OPEN_LIMIT) target.endPending = true;
+        if (target.end == null && now - t > OPEN_LIMIT) target.endPending = true;
       }
       if (j && !j.sessionId) { j.sessionId = target.id; delete j.workdayDate; delete j.workdayManual; }
       mark(target, 'start');
@@ -187,6 +233,10 @@ export function setStepTime(wd, step, t, extra = {}) {
     if (step === 'clockOut') {
       if (!s) { result = { ok: false, reason: 'no-session' }; return; }
       if (t <= s.start) { result = { ok: false, reason: 'before-clock-in' }; return; }
+      const ord = checkStepOrder(s, j, 'clockOut', t);
+      if (ord) { result = { ok: false, ...ord }; return; }
+      const ov = checkSessionOverlap(d, { id: s.id, start: s.start, end: t, now });
+      if (ov) { result = { ok: false, reason: ov }; return; }
       s.end = t;
       delete s.endPending;
       mark(s, 'end');
@@ -197,10 +247,11 @@ export function setStepTime(wd, step, t, extra = {}) {
       const end = extra.end ?? null;
       if (end != null && end <= t) { result = { ok: false, reason: 'break-end-before-start' }; return; }
       s.breaks = s.breaks || [];
-      // 同一個開始時間 = 改這一段；這班已經下班卻還有沒結束的休息 = 補上它的結束。
+      // 優先用原本開始時間找這一段，改開始鐘數才不會變成多出一筆；找不到才看同開始時間或未結束的休息。
+      const orig = extra.origStart != null ? s.breaks.find((b) => b.start === extra.origStart) : null;
       const same = s.breaks.find((b) => b.start === t);
       const forgotten = s.end != null ? s.breaks.find((b) => b.end == null) : null;
-      let b = same || forgotten;
+      let b = orig || same || forgotten;
       if (b) { b.start = t; b.end = end; }
       else { b = { start: t, end }; s.breaks.push(b); }
       mark(b, 'start');
@@ -252,6 +303,8 @@ export function setStepTime(wd, step, t, extra = {}) {
       result = { ok: true, sleepId: touched };
       return;
     }
+    const ord = checkStepOrder(s, j, step, t);
+    if (ord) { result = { ok: false, ...ord }; return; }
     if (!j) {
       j = { id: uid('jr'), sessionId: s?.id ?? null, out: null, ride: null, arrive: null, leave: null, ride2: null, home: null };
       d.journeys.push(j);
@@ -297,18 +350,34 @@ export function clearStepTime(wd, step) {
   });
 }
 
-// 修改單一時間之前先檢查：開始不能晚於結束、結束不能早於開始。
+// 修改單一時間之前先檢查：開始不能晚於結束、結束不能早於開始、不能在未來、同趟步驟不可亂序、不能撞班。
 // 所有修改入口（補登、時間線、桌面面板）共用這套規則。回傳 null 代表可以存。
-export function checkRefTime(d, ref, t) {
+export function checkRefTime(d, ref, t, now = Date.now()) {
   if (t == null || Number.isNaN(t)) return 'bad-time';
   if (ref.type === 'session') {
     const s = d.sessions.find((x) => x.id === ref.id);
     if (!s) return 'missing';
+    if (t > now) return 'future';
     if (ref.field === 'start' && s.end != null && t >= s.end) return 'after-clock-out';
     if (ref.field === 'end' && t <= s.start) return 'before-clock-in';
+    if (ref.field === 'start' || ref.field === 'end') {
+      const j = journeyOfSession(d, s);
+      const ord = checkStepOrder(s, j, ref.field === 'start' ? 'clockIn' : 'clockOut', t);
+      if (ord) return 'order';
+      const ov = checkSessionOverlap(d, { id: s.id, start: ref.field === 'start' ? t : s.start, end: ref.field === 'end' ? t : s.end, now });
+      if (ov) return ov;
+    }
+  } else if (ref.type === 'journey') {
+    const j = d.journeys.find((x) => x.id === ref.id);
+    if (!j) return 'missing';
+    if (t > now) return 'future';
+    const s = j.sessionId ? d.sessions.find((x) => x.id === j.sessionId) || null : null;
+    const ord = checkStepOrder(s, j, ref.field, t);
+    if (ord) return 'order';
   } else if (ref.type === 'sleep') {
     const s = d.sleeps.find((x) => x.id === ref.id);
     if (!s) return 'missing';
+    if (s.start != null && (ref.field === 'start' || (ref.field === 'end' && s.end != null)) && t > now) return 'future';
     if (s.start != null) {
       if (ref.field === 'start' && s.end != null && t >= s.end) return 'after-end';
       if (ref.field === 'end' && s.end != null && t <= s.start) return 'before-start';
@@ -319,15 +388,20 @@ export function checkRefTime(d, ref, t) {
   } else if (ref.type === 'rest') {
     const r = (d.rests || []).find((x) => x.id === ref.id);
     if (!r) return 'missing';
+    if (t > now) return 'future';
     if (ref.field === 'start' && r.end != null && t >= r.end) return 'after-end';
     if (ref.field === 'end' && r.start != null && t <= r.start) return 'before-start';
+  } else if (ref.type === 'meal') {
+    const m = d.meals.find((x) => x.id === ref.id);
+    if (!m) return 'missing';
+    if (m.confirmed !== false && t > now) return 'future';
   }
   return null;
 }
 
 // 直接改某一筆事件（時間線、桌面檢視面板用）。不合理的時間不寫入，回傳 { ok: false, reason }。
 export function setRefTime(ref, t, extra = {}) {
-  const bad = checkRefTime(get(), ref, t);
+  const bad = checkRefTime(get(), ref, t, extra.now ?? Date.now());
   if (bad) return { ok: false, reason: bad };
   update((d) => {
     if (ref.type === 'journey') {
@@ -785,6 +859,14 @@ export function writeTrip(d, { sessionId = null, journeyId = null, wd, wdTo, tim
   }
   if (j) {
     for (const k of TRIP_JOURNEY_STEPS) j[k] = times[k] ?? null;
+    if (j.leave != null && (
+      (times.clockOut != null && j.leave < times.clockOut) ||
+      (times.ride2 != null && j.leave > times.ride2) ||
+      (times.home != null && j.leave > times.home)
+    )) {
+      j.leave = null;
+      markFlag(j, 'verified', 'leave', false);
+    }
     if (s && !j.sessionId) { j.sessionId = s.id; delete j.workdayDate; delete j.workdayManual; }
     if (!j.sessionId && wdTo) { j.workdayDate = wdTo; j.workdayManual = true; }
     const left = ['out', 'ride', 'arrive', 'leave', 'ride2', 'home'].some((k) => j[k] != null);
@@ -793,7 +875,10 @@ export function writeTrip(d, { sessionId = null, journeyId = null, wd, wdTo, tim
   }
   if (verified !== undefined) {
     if (s) { markFlag(s, 'verified', 'start', verified); markFlag(s, 'verified', 'end', verified && s.end != null); }
-    if (j) for (const k of TRIP_JOURNEY_STEPS) markFlag(j, 'verified', k, verified && j[k] != null);
+    if (j) {
+      for (const k of TRIP_JOURNEY_STEPS) markFlag(j, 'verified', k, verified && j[k] != null);
+      if (j.leave != null) markFlag(j, 'verified', 'leave', verified);
+    }
   }
   if (s?.payMode === 'perOrder' && pay) Object.assign(s, pay);
   return out;

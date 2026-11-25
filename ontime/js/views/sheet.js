@@ -2,7 +2,7 @@ import { tripPayMode, tripJobId } from '../actions.js';
 import { missingSleepDays, tripCommuteTemplate, tripNowStep, tripWorkBreakMs, tripStepGaps, workdayShiftForTrip } from '../planning.js';
 import { planningSheet, incomeFields } from './planning.js';
 import { esc, icon, bubble, STEP_ICON, STEP_KIND, verifyToggle } from '../ui.js';
-import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN, fromInputs, normTime, fmtDurLong, fmtDur } from '../time.js';
+import { dateKey, fmtTime, wdOf, wdOfKey, fmtMD, toDateInput, toTimeInput, MIN, fromInputs, normTime, fmtDurLong, fmtDur, addDays } from '../time.js';
 import { STEP_LABEL, STEPS, shiftOf, sleepWorkday, RIDE_MODES, recentPlaces, isFlag, eventVerified, journeyOfSession, sessionsOfWorkday, defaultStepTime, SHIFT_BOUND_STEPS, recentShiftRanges, jobOf, timeOnWorkday, restAutoWorkday, journeyAutoWorkday,
   quickWakeState, WAKE_AGO, QUICK_WAKE_ERROR, MAIN_SLEEP_MS, dayKeyOfWake, mealWorkday, lastClockBefore,
   tripState, tripsOfWorkday, tripErrorText, shiftsOfWorkday, tripAllVerified, currentCycle } from '../logic.js';
@@ -14,20 +14,20 @@ import { syncSummary, workdayField, workdayPreview } from './shared.js';
 const GROUPS = [
   ['去程', ['out', 'ride', 'arrive']],
   ['出勤', ['clockIn', 'clockOut', 'break']],
-  ['回程', ['leave', 'ride2', 'home']],
+  ['回程', ['ride2', 'home']],
   ['生活', ['meal', 'sleepStart', 'sleepEnd']]
 ];
 // 補登先揀「要補什麼」：只有工作和通勤要先選班次；睡眠、用餐直接填。
 export const CATS = [
   ['work', '工作', 'bag', 'work', ['clockIn', 'clockOut', 'break']],
-  ['commute', '通勤', 'bus', 'commute', ['out', 'ride', 'arrive', 'leave', 'ride2', 'home']],
+  ['commute', '通勤', 'bus', 'commute', ['out', 'ride', 'arrive', 'ride2', 'home']],
   ['sleep', '睡眠', 'moon', 'sleep', ['sleepPair', 'sleepStart', 'sleepEnd']],
   ['meal', '用餐', 'meal', 'meal', ['meal']],
   ['rest', '休息', 'cup', 'commute', ['rest']]
 ];
 const CAT_STEPS = Object.fromEntries(CATS.map(([k, , , , steps]) => [k, steps]));
 export const catOf = (step) => CATS.find(([, , , , steps]) => steps.includes(step))?.[0] ?? null;
-const LABEL = { ...STEP_LABEL, ride: '搭車', ride2: '搭車', break: '休息', meal: '用餐', sleepStart: '入睡', sleepEnd: '起床', sleepPair: '整段', rest: '休息' };
+const LABEL = { ...STEP_LABEL, ride: '去程上車', ride2: '回程上車', break: '休息', meal: '用餐', sleepStart: '入睡', sleepEnd: '起床', sleepPair: '整段', rest: '休息' };
 const ICON = { ...STEP_ICON, break: 'cup', meal: 'meal', sleepStart: 'moon', sleepEnd: 'sun', sleepPair: 'moon' };
 const KINDS = { ...STEP_KIND, break: 'commute', meal: 'meal', sleepStart: 'sleep', sleepEnd: 'sleep', sleepPair: 'sleep' };
 
@@ -70,6 +70,17 @@ export function defaultStepIn(data, wd, cat, sid) {
   const { val, session } = valuesFor(data, wd, sid);
   if (cat === 'work') return session && session.end == null ? 'clockOut' : val.clockIn == null ? 'clockIn' : 'clockOut';
   return CAT_STEPS.commute.find((k) => val[k] == null) || 'out';
+}
+
+// 「儲存並繼續」存完一項後，自動跳去同一類別下一個未記錄嘅步驟；全部記齊就回傳 null。
+export function nextRecordStep(data, wd, cat, currentStep, sid) {
+  if (cat !== 'commute' && cat !== 'work') return null;
+  const list = (CAT_STEPS[cat] || []).filter((k) => k !== 'break' || currentStep === 'break');
+  const idx = list.indexOf(currentStep);
+  if (idx < 0) return null;
+  const { val } = valuesFor(data, wd, sid);
+  const ordered = [...list.slice(idx + 1), ...list.slice(0, idx)];
+  return ordered.find((k) => k !== currentStep && val[k] == null) || null;
 }
 
 // 一般「＋」打開：這天有班次就預先揀好最需要補的類別；空白日（例如休息日）先問要補什麼。
@@ -119,13 +130,25 @@ function shiftChips(data, sessions, sid, newShift) {
 
 function newShiftForm(data, wd, no = 2) {
   const recent = recentShiftRanges(data);
-  return `<form class="form" data-form="new-shift"><input type="hidden" name="wd" value="${wd}">
+  const used = new Set(data.sessions.map((x) => x.shiftId).filter(Boolean));
+  const planned = shiftsOfWorkday(data, wd).find((x) => !used.has(x.id));
+  const defaultJobId = planned?.jobId || data.jobs[0]?.id || '';
+  const nextWd = addDays(wd, 1);
+  const jobPicker = data.jobs.length > 1
+    ? `<div class="trip-job-row" role="group" aria-label="這班的工作"><span class="chip-group-name">哪一份工作</span><div class="btn-wrap">${data.jobs.map((j) => `<button type="button" class="chip-btn job-chip k-${j.color === 'deliv' ? 'deliv' : 'work'}" data-action="newshift-job" data-job="${esc(j.id)}" aria-pressed="${j.id === defaultJobId}"><i class="sw k-${j.color === 'deliv' ? 'deliv' : 'work'}"></i> ${esc(j.name)}${j.payMode === 'perOrder' ? ' · 按單' : ''}</button>`).join('')}</div></div>`
+    : '';
+  return `<form class="form" data-form="new-shift"><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="jobId" value="${esc(defaultJobId)}">
     <div class="sheet-step-title"><span class="step-no">${no}</span>新增班次：幾點開工、幾點收工？</div>
+    ${jobPicker}
     ${recent.length ? `<div class="btn-wrap">${recent.map((r) => `<button type="button" class="btn btn-soft btn-sm" data-action="shift-range" data-from="${r.from}" data-to="${r.to}">${r.key}</button>`).join('')}</div>` : ''}
+    <div class="btn-wrap rec-day-pills" role="group" aria-label="開工日期快捷">
+      <button type="button" class="btn btn-soft btn-sm" data-action="newshift-day" data-date="${wd}" aria-pressed="true">當日 ${fmtMD(wd)}</button>
+      <button type="button" class="btn btn-soft btn-sm" data-action="newshift-day" data-date="${nextWd}" aria-pressed="false">${icon('moon', 13, 2.2)} 夜班隔天 ${fmtMD(nextWd)}</button>
+    </div>
     <div class="field-pair big-fields"><label class="field"><span>開工日期</span><input type="date" name="date" value="${wd}" required></label>
     <label class="field field-strong"><span>開工時間</span><input type="time" name="start" required></label></div>
     <label class="field"><span>收工時間（可空白；跨午夜會自動算隔天）</span><input type="time" name="end"></label>
-    <p class="fine">建好之後，這班的出門、搭車、抵達、下班、到家，都會自動算在這一班上。</p>
+    <p class="fine">建好之後，這班的出門、上車、抵達、下班、到家，都會自動算在這一班上。</p>
     <div class="sheet-foot btn-pair"><button type="button" class="btn btn-line btn-lg" data-action="rec-newshift-cancel">取消</button><button class="btn btn-ink btn-lg" type="submit">建立班次</button></div>
   </form>`;
 }
@@ -238,17 +261,19 @@ function recordForm(ctx, { wd, step, sid, sess, title }) {
   const rideFields = isRide ? rideFieldsHtml(data, jr?.[`${step}Mode`], jr?.[`${step}From`]) : '';
   const anchored = bound && !!sess;
   const quickBtns = `<div class="btn-wrap rec-quick"><button type="button" class="btn btn-soft btn-sm" data-action="rec-now">現在</button><button type="button" class="btn btn-soft btn-sm" data-action="rec-minus">−15 分</button>${plan[step] ? `<button type="button" class="btn btn-line btn-sm" data-action="rec-plan" data-t="${plan[step]}">用預計 ${fmtTime(plan[step])}</button>` : ''}</div>`;
+  const recDayPills = `<div class="btn-wrap rec-day-pills" role="group" aria-label="日期快捷"><button type="button" class="btn btn-soft btn-sm" data-action="rec-day" data-date="${wd}" aria-pressed="${toDateInput(t) === wd}">當日 ${fmtMD(wd)}</button><button type="button" class="btn btn-soft btn-sm" data-action="rec-day" data-date="${addDays(wd, 1)}" aria-pressed="${toDateInput(t) === addDays(wd, 1)}">${icon('moon', 13, 2.2)} 夜班隔天 ${fmtMD(addDays(wd, 1))}</button></div>`;
   const timeBlock = anchored
     ? `<label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label>
       ${quickBtns}
       <div class="cross-note" id="rec-preview" aria-live="polite">${previewText(t, sess)}</div>
       <details class="more"><summary>日期不對？手動改日期</summary>
+        ${recDayPills}
         <label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label></details>`
     : `<div class="field-pair big-fields"><label class="field"><span>實際日期</span><input type="date" name="date" value="${toDateInput(t)}" required></label>
       <label class="field field-strong"><span>${isBreak ? '開始時間' : '時間'}</span><input type="time" name="time" value="${toTimeInput(t)}" required></label></div>
       ${quickBtns}
       <div class="cross-note" id="rec-preview" data-wd="${wd}" aria-live="polite">${freePreviewText(t, wd)}</div>`;
-  return `<form class="form" data-form="record" id="record-form" ${anchored ? `data-anchored="1" data-s-start="${sess.start}" data-s-end="${sess.end ?? ''}"` : ''}><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="step" value="${step}"><input type="hidden" name="sid" value="${anchored ? esc(sess.id) : ''}">
+  return `<form class="form" data-form="record" id="record-form" ${anchored ? `data-anchored="1" data-s-start="${sess.start}" data-s-end="${sess.end ?? ''}"` : ''}><input type="hidden" name="wd" value="${wd}"><input type="hidden" name="step" value="${step}"><input type="hidden" name="sid" value="${anchored ? esc(sess.id) : ''}">${isBreak ? `<input type="hidden" name="origBreakStart" value="${savedBreak ? savedBreak.start : ''}">` : ''}
       ${title(`「${LABEL[step]}」在什麼時候？`)}
       ${timeBlock}
       ${isBreak ? `<div class="field-pair"><label class="field"><span>結束日期</span><input type="date" name="endDate" value="${toDateInput(breakEnd)}"></label><label class="field"><span>結束時間（可空白）</span><input type="time" name="endTime" value="${toTimeInput(breakEnd)}"></label></div>` : ''}
@@ -552,6 +577,7 @@ function tripSheet(ctx) {
   const allVerified = tripAllVerified(st.trip);
   const verified = sh.verified !== undefined ? sh.verified : allVerified;
   const wdNote = st.workday !== sh.wd ? ` · 計入 ${wdOfKey(st.workday)} ${fmtMD(st.workday)}` : '';
+  const nextAnchor = addDays(sh.wd, 1);
   const jobPicker = data.jobs.length > 1
     ? `<div class="trip-job-row" role="group" aria-label="這趟的工作"><span class="trip-bar-label">工作</span><div class="trip-tabs">${data.jobs.map((j) => `<button type="button" class="chip-btn job-chip k-${j.color === 'deliv' ? 'deliv' : 'work'}" data-action="trip-job" data-job="${esc(j.id)}" aria-pressed="${j.id === curJobId}"><i class="sw k-${j.color === 'deliv' ? 'deliv' : 'work'}"></i> ${esc(j.name)}${j.payMode === 'perOrder' ? ' · 按單' : ''}</button>`).join('')}</div></div>`
     : '';
@@ -571,7 +597,16 @@ function tripSheet(ctx) {
         </div>
         <div class="trip-dates">
           <div class="day-nav trip-nav"><button type="button" class="icon-btn" data-action="trip-day" data-dir="-1" aria-label="前一個工作日">${icon('left', 18, 2.2)}</button><div class="day-nav-text"><strong>${wdOfKey(sh.wd)}工作日 · ${fmtMD(sh.wd)}</strong></div><button type="button" class="icon-btn" data-action="trip-day" data-dir="1" aria-label="下一個工作日">${icon('right', 18, 2.2)}</button></div>
-          <label class="field trip-date${sh.anchorShifted ? ' is-shifted' : ''}" data-trip-anchor-wrap><span>實際日期（第一格那天）</span><input type="date" name="anchor" value="${st.anchor}" data-action="trip-anchor">${sh.anchorShifted && sh.anchorShiftNote ? `<small class="trip-shift-note" role="status">${esc(sh.anchorShiftNote)}</small>` : ''}</label>
+          <div class="field trip-date${sh.anchorShifted ? ' is-shifted' : ''}" data-trip-anchor-wrap>
+            <div class="trip-date-head">
+              <span>實際日期（第一格那天）</span>
+              <div class="trip-day-pills" role="group" aria-label="第一格日期快捷">
+                <button type="button" class="trip-day-pill" data-action="trip-anchor-day" data-offset="0" aria-pressed="${st.anchor === sh.wd}">當日 ${fmtMD(sh.wd)}</button>
+                <button type="button" class="trip-day-pill is-night" data-action="trip-anchor-day" data-offset="1" aria-pressed="${st.anchor === nextAnchor}">${icon('moon', 12, 2.2)} 夜班隔天 ${fmtMD(nextAnchor)}</button>
+              </div>
+            </div>
+            <input type="date" name="anchor" value="${st.anchor}" data-action="trip-anchor" aria-label="實際日期（第一格那天）">${sh.anchorShifted && sh.anchorShiftNote ? `<small class="trip-shift-note" role="status">${esc(sh.anchorShiftNote)}</small>` : ''}
+          </div>
         </div>
         <div class="trip-ribbon" data-trip-ribbon data-work-kind="${workKind}" aria-hidden="true">${tripRibbonHTML(st, workKind)}</div>
       </header>

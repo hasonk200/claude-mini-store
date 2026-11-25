@@ -83,7 +83,7 @@ function workdaySummary(data, wd, now) {
   const sess = tg.session;
   const jr = tg.journey;
   const workStep = pending ? 'clockOut' : !sess || sess.start == null ? 'clockIn' : sess.end == null ? 'clockOut' : 'clockIn';
-  const commuteStep = ['out', 'arrive', 'leave', 'home'].find((k) => jr?.[k] == null) || 'out';
+  const commuteStep = ['out', 'arrive', 'home'].find((k) => jr?.[k] == null) || 'out';
   const sl = tg.sleep;
   const sleepStep = !sl || sl.start == null ? 'sleepStart' : sl.end == null ? 'sleepEnd' : 'sleepStart';
   const card = (cls, label, value, note, action, step) =>
