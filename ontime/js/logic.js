@@ -1034,6 +1034,28 @@ export function homeSuggestion(data, now, cycle = currentCycle(data, now)) {
 export const TRIP_GROUPS = [['去程', ['out', 'ride', 'arrive']], ['上班', ['clockIn', 'clockOut']], ['回程', ['ride2', 'home']]];
 export const TRIP_JOURNEY_STEPS = ['out', 'ride', 'arrive', 'ride2', 'home'];
 const TRIP_GAP_MAX = 16 * HOUR;
+// 撞班時講清楚撞到邊一班、點樣處理（補登、時間線、整趟面板共用）。
+export function otherShiftInfo(x, data) {
+  return { id: x.id, start: x.start, end: x.end ?? null, open: x.end == null && !x.endPending, wd: workdayOfSession(x, data) };
+}
+export function overlapText(o) {
+  const day = `${wdOfKey(o.wd)} ${fmtMDKey(o.wd)}`;
+  if (o.open) return `${day} 那班 ${fmtTime(o.start)} 開工後未記下班，請先補那班的下班時間`;
+  return `同 ${day} 那班（${fmtTime(o.start)}–${o.end != null ? fmtTime(o.end) : '待補'}）時間重疊`;
+}
+
+// 整趟面板：已存好嘅一趟，係咪成趟（全部原有時間）一齊搬咗同一個日數。係就回傳日數（正 = 推後），否則 0。
+// 用嚟喺改「實際日期」或者撳「夜班隔天」之後提醒，免得以為只係改一格。
+export function tripMoveDays(st) {
+  if (!st?.exists) return 0;
+  const both = STEPS.filter((k) => st.orig[k] != null && st.times[k] != null);
+  if (!both.length) return 0;
+  const diffs = both.map((k) => st.times[k] - st.orig[k]);
+  if (diffs.some((x) => Math.abs(x - diffs[0]) > 2 * HOUR)) return 0;
+  return Math.round(diffs[0] / (24 * HOUR));
+}
+const fmtMDKey = (key) => `${Number(key.slice(5, 7))}/${Number(key.slice(8, 10))}`;
+
 export const TRIP_ERROR = {
   empty: '最少填一個時間',
   'no-clock-in': '有「下班」就要有「上班」時間',
@@ -1122,8 +1144,10 @@ export function checkTrip(data, { sessionId = null, times }, now) {
     const a = times.clockIn;
     const b = times.clockOut ?? (now - a > OPEN_LIMIT ? a : now);
     const others = data.sessions.filter((x) => x.id !== sessionId);
-    if (others.some((x) => x.start < b && sessionEndAt(x, now) > a)) return { reason: 'overlap', step: 'clockIn' };
-    if (times.clockOut == null && now - a <= OPEN_LIMIT && others.some(isOpenSession)) return { reason: 'has-open', step: 'clockOut' };
+    const hit = others.find((x) => x.start < b && sessionEndAt(x, now) > a);
+    if (hit) return { reason: 'overlap', step: 'clockIn', other: otherShiftInfo(hit, data) };
+    const open = times.clockOut == null && now - a <= OPEN_LIMIT ? others.find(isOpenSession) : null;
+    if (open) return { reason: 'has-open', step: 'clockOut', other: otherShiftInfo(open, data) };
     if (session && session.end != null && times.clockOut == null) {
       const later = others.some((x) => x.start > session.start);
       if (later || now - a > OPEN_LIMIT) return { reason: 'clear-end', step: 'clockOut' };
@@ -1135,6 +1159,7 @@ export function checkTrip(data, { sessionId = null, times }, now) {
 export function tripErrorText(err) {
   if (!err) return '';
   const base = TRIP_ERROR[err.reason] || '這一趟存不到';
+  if ((err.reason === 'overlap' || err.reason === 'has-open') && err.other) return overlapText(err.other);
   if (err.reason === 'order' && err.step && err.prev) return `「${STEP_LABEL[err.step]}」早過「${STEP_LABEL[err.prev]}」，${base}`;
   if (err.reason === 'gap' && err.step && err.prev) return `「${STEP_LABEL[err.step]}」早過「${STEP_LABEL[err.prev]}」，或者兩個時間${base}`;
   if (err.reason === 'future' && err.step) return `「${STEP_LABEL[err.step]}」${base.replace('這個時間', '的時間')}`;
@@ -1198,5 +1223,5 @@ export function tripState(data, sh, now) {
   const wd0 = trip.session ? workdayOfSession(trip.session, data) : trip.journey ? journeyWorkday(trip.journey, data) : sh.wd;
   const dirty = STEPS.some((k) => times[k] !== orig[k]) || (sh.wdTo && sh.wdTo !== wd0);
   const suggest = sh.wdTo ? null : tripWorkdaySuggestion(data, trip);
-  return { trip, orig, vals, anchor, anchorAuto: !sh.anchor, rechain, times, rows, repaired, error, summary: tripSummary(times), workday: sh.wdTo || wd0, wd0, dirty, suggest, exists: !!(trip.session || trip.journey) };
+  return { trip, orig, vals, anchor, origAnchor, anchorAuto: !sh.anchor, rechain, times, rows, repaired, error, summary: tripSummary(times), workday: sh.wdTo || wd0, wd0, dirty, suggest, exists: !!(trip.session || trip.journey) };
 }
