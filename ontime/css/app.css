@@ -794,6 +794,15 @@ details.more .form { padding: 0 14px 14px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  /* 街景停低：會移動嘅嘢唔可以停喺動畫起點（車會浮喺天上、雲貼住左邊），改為停喺路上／天空中間。 */
+  .hero .cloud, .hero .car, .hero .walker { animation: none; }
+  .hero .birds { display: none; }
+  .hero .cloud-a { transform: translateX(calc(var(--sw) * .4)); }
+  .hero .cloud-b { transform: translateX(calc(var(--sw) * .66)); }
+  .hero .cloud-c { transform: translateX(calc(var(--sw) * .86)); }
+  .hero .car-a { transform: translate(calc(var(--sw) * .58), var(--y)); }
+  .hero .car-b, .hero .car-oncoming { transform: translate(calc(var(--sw) * .9), var(--y)); }
+  .hero .walker { transform: translateX(var(--to)); }
 }
 @media (min-width: 1024px) { .tl-grid .summary-3 { grid-template-columns: minmax(0, 1fr); } }
 

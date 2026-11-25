@@ -36,7 +36,7 @@ const SIDEBAR = ['today', 'timeline', 'week', 'sleep', 'meals', 'stats'];
 // 手機底欄：左邊係返工（今天、時間線、班表），右邊係生活（用餐、睡眠）同統計；「＋」保持喺正中。
 const TABBAR = [['today', '今天', 'clock'], ['timeline', '時間線', 'list'], ['week', '班表', 'calendar'], ['+', '', 'plus'], ['meals', '用餐', 'meal'], ['sleep', '睡眠', 'moon'], ['stats', '統計', 'chart']];
 
-const APP_VERSION = '2.48.0';
+const APP_VERSION = '2.48.1';
 const ui = {
   route: 'today', wd: null, tlMode: 'workday', calKey: null, weekMode: 'workday', weekOffset: 0,
   monthKey: null, calDay: null, batch: false, batchDays: [], statsPeriod: 'week', statsOffset: 0, statsJob: 'all',
@@ -171,6 +171,7 @@ function swapSheet(html, type) {
   }
   const top = old?.querySelector('.sheet-body')?.scrollTop ?? 0;
   const enter = !wasOpen || type !== lastSheetType;
+  const oldHeight = wasOpen && enter ? old.getBoundingClientRect().height : 0;
   const active = document.activeElement;
   const keepKey = !enter && host.contains(active) ? focusKey(active) : null;
   if (!wasOpen) { sheetOpener = active && !host.contains(active) ? active : null; sheetOpenerKey = focusKey(sheetOpener); }
@@ -178,7 +179,8 @@ function swapSheet(html, type) {
   enhanceTimeInputs(host);
   lastSheetType = type;
   if (enter) {
-    host.querySelectorAll('.sheet, .sheet-backdrop').forEach((el) => el.classList.add('is-enter'));
+    if (wasOpen) switchSheet(host, oldHeight);
+    else host.querySelectorAll('.sheet, .sheet-backdrop').forEach((el) => el.classList.add('is-enter'));
     const title = host.querySelector('#sheet-title');
     if (title) { title.tabIndex = -1; title.focus({ preventScroll: true }); }
   } else {
@@ -191,6 +193,21 @@ function swapSheet(html, type) {
   }
 }
 
+// 面板開住時換成另一種面板（例如「新增」選單揀咗整趟）：暗底保持唔變，唔會突然光一下；
+// 面板唔再成塊跌出去再升返上嚟。手機版面板頂邊由舊高度順住伸到新高度，內容輕輕淡入。
+const centeredSheetMQ = matchMedia('(min-width: 720px)');
+function switchSheet(host, oldHeight) {
+  const sheet = host.querySelector('.sheet');
+  if (!sheet || reduceMotion() || !sheet.animate) return;
+  const grow = sheet.getBoundingClientRect().height - oldHeight;
+  if (!centeredSheetMQ.matches && grow > 1) {
+    sheet.animate([{ transform: `translateY(${Math.round(grow)}px)` }, { transform: 'translateY(0)' }], { duration: 260, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+  }
+  for (const el of sheet.querySelectorAll(':scope > :not(.sheet-handle)')) {
+    el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+  }
+}
+
 // 選了步驟之後，慢慢捲到「X 在什麼時候？」輸入時間的位置。
 function scrollSheetToForm() {
   const body = $('#sheet-host .sheet-body');
@@ -198,6 +215,30 @@ function scrollSheetToForm() {
   if (!body || !target) return;
   const y = target.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 8;
   body.scrollTo({ top: Math.max(0, y), behavior: reduceMotion() ? 'auto' : 'smooth' });
+}
+
+// 街景每分鐘都有少少唔同（標題倒數、太陽位置），以前成幅重畫，雲、車、小人會跳返起點。
+// 而家只改有變嘅文字同屬性，其餘元素原封不動，動畫順住播落去。
+// 結構唔同（例如轉狀態、日夜交替）先換嗰一部分；style 有變（動畫參數變咗）就換嗰個元素，等佢由頭播。
+function patchHero(host, html) {
+  const cur = host.firstElementChild;
+  if (!html || !cur) { host.innerHTML = html; return; }
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  const next = t.content.firstElementChild;
+  if (!next || t.content.childElementCount !== 1 || host.childElementCount !== 1) { host.innerHTML = html; return; }
+  morph(cur, next);
+}
+function morph(from, to) {
+  if (from.nodeType !== to.nodeType || from.nodeName !== to.nodeName) { from.replaceWith(to); return; }
+  if (from.nodeType !== Node.ELEMENT_NODE) { if (from.nodeValue !== to.nodeValue) from.nodeValue = to.nodeValue; return; }
+  if ((from.getAttribute('style') || '') !== (to.getAttribute('style') || '')) { from.replaceWith(to); return; }
+  for (const { name } of [...from.attributes]) if (!to.hasAttribute(name)) from.removeAttribute(name);
+  for (const { name, value } of [...to.attributes]) if (from.getAttribute(name) !== value) from.setAttribute(name, value);
+  const a = [...from.childNodes];
+  const b = [...to.childNodes];
+  if (a.length !== b.length) { from.replaceChildren(...b); return; }
+  a.forEach((n, i) => morph(n, b[i]));
 }
 let dirty = false;
 
@@ -237,7 +278,7 @@ function render() {
   const heroHost = $('#hero-host');
   // 街景（插畫）預設關閉，喺「我的 › 外觀」開；開咗先喺首頁頂顯示。
   const heroHTML = ui.route === 'today' && !ui.heroCollapsed ? heroFor(c.data, c.wd, currentCycle(c.data, c.now), c.now, !c.isDesktop, false) : '';
-  if (heroHTML !== lastHero) { heroHost.innerHTML = heroHTML; lastHero = heroHTML; }
+  if (heroHTML !== lastHero) { patchHero(heroHost, heroHTML); lastHero = heroHTML; }
   const html = r.view(c);
   const holdView = !userDepth && typingIn('#view');
   if (html !== lastView && holdView) pendingView = true;
